@@ -50,6 +50,8 @@
 import { ref, onMounted, computed } from 'vue'
 import axios from 'axios'
 
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
+
 const logs = ref([])
 const searchActor = ref('')
 const filterAction = ref('')
@@ -58,7 +60,7 @@ const filterAction = ref('')
 const fetchLogs = async () => {
   try {
     const token = localStorage.getItem('user_token')
-    const response = await axios.get('http://192.168.61.57:5004/api/v1/billing/management/system-logs', {
+    const response = await axios.get(`${API_BASE}/billing/management/system-logs`, {
       headers: { Authorization: `Bearer ${token}` }
     })
     logs.value = response.data

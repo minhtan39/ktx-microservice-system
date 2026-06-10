@@ -65,7 +65,7 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 builder.Services.AddHttpClient("Gateway", client =>
 {
     var gatewayBaseUrl = builder.Configuration["Integration:GatewayBaseUrl"]
-        ?? "http://localhost:8080";
+        ?? "http://api-gateway:8080";
 
     client.BaseAddress = new Uri(gatewayBaseUrl);
 });

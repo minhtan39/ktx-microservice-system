@@ -1,41 +1,66 @@
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowGateway", policy =>
+    {
+        policy.AllowAnyOrigin()
+            .AllowAnyHeader()
+            .AllowAnyMethod();
+    });
+});
+
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
 
-app.UseHttpsRedirection();
+app.UseCors("AllowGateway");
 
-var summaries = new[]
+var users = new Dictionary<string, DemoUser>(StringComparer.OrdinalIgnoreCase)
 {
-    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
+    ["admin"] = new("admin", "admin123", "Admin"),
+    ["nhanvien"] = new("nhanvien", "staff123", "Staff"),
+    ["sinhvien"] = new("sinhvien", "sv123", "Student")
 };
 
-app.MapGet("/weatherforecast", () =>
+app.MapGet("/health", () => Results.Ok(new
 {
-    var forecast =  Enumerable.Range(1, 5).Select(index =>
-        new WeatherForecast
-        (
-            DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-            Random.Shared.Next(-20, 55),
-            summaries[Random.Shared.Next(summaries.Length)]
-        ))
-        .ToArray();
-    return forecast;
-})
-.WithName("GetWeatherForecast");
+    service = "AuthService",
+    status = "Healthy"
+}));
+
+app.MapPost("/api/auth/login", (LoginRequest request) =>
+{
+    if (!users.TryGetValue(request.Username, out var user) ||
+        user.Password != request.Password)
+    {
+        return Results.Unauthorized();
+    }
+
+    return Results.Ok(new
+    {
+        data = new
+        {
+            token = CreateDemoToken(user),
+            role = user.Role,
+            username = user.Username
+        }
+    });
+});
 
 app.Run();
 
-record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
+static string CreateDemoToken(DemoUser user)
 {
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
+    var raw = $"{user.Username}:{user.Role}:{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}";
+    return Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(raw));
 }
+
+public sealed record LoginRequest(string Username, string Password);
+
+public sealed record DemoUser(string Username, string Password, string Role);
