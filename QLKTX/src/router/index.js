@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
 const ADMIN_ROLES = ['Admin', 'Staff']
+const ADMIN_ONLY_ROLES = ['Admin']
 const STUDENT_ROLES = ['Student']
 
 const normalizeRole = (role) => {
@@ -94,6 +95,13 @@ const routes = [
         meta: { roles: ADMIN_ROLES },
         component: () =>
           import('../modules/finance/views/IncidentManage.vue'),
+      },
+      {
+        path: 'auth/accounts',
+        name: 'AccountManage',
+        meta: { roles: ADMIN_ONLY_ROLES },
+        component: () =>
+          import('../modules/auth/views/AccountManageView.vue'),
       },
       {
         path: 'system/logs',
