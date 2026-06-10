@@ -1,23 +1,58 @@
 <template>
-  <section>
+  <section class="registration-page">
     <div class="page-heading">
       <div>
-        <span class="page-kicker">Room Registration</span>
-        <h2>Duyệt đăng ký phòng</h2>
+        <span class="page-kicker">{{ pageKicker }}</span>
+        <h2>{{ pageTitle }}</h2>
+        <p>{{ pageDescription }}</p>
       </div>
-      <v-btn color="primary" variant="flat" prepend-icon="mdi-refresh" @click="loadAll">Làm mới</v-btn>
+      <v-btn color="primary" variant="flat" prepend-icon="mdi-refresh" :loading="loading" @click="loadAll">
+        Làm mới
+      </v-btn>
     </div>
 
-    <v-card class="pa-5 mb-4 form-panel">
+    <div class="mode-switch">
+      <router-link
+        to="/student-service/registrations"
+        class="mode-card"
+        :class="{ active: !isApprovalView }"
+      >
+        <span>6</span>
+        <div>
+          <strong>Đăng ký nội trú online</strong>
+          <small>Nhập nguyện vọng, thời hạn ở và diện ưu tiên của sinh viên.</small>
+        </div>
+      </router-link>
+
+      <router-link
+        to="/student-service/registrations/approval"
+        class="mode-card"
+        :class="{ active: isApprovalView }"
+      >
+        <span>7</span>
+        <div>
+          <strong>Duyệt đơn xếp phòng</strong>
+          <small>N2 gọi RoomService để tìm giường trống, cập nhật phòng và sinh hợp đồng.</small>
+        </div>
+      </router-link>
+    </div>
+
+    <v-alert v-if="message" :type="messageType" variant="tonal" class="mb-4">{{ message }}</v-alert>
+
+    <v-card v-if="!isApprovalView" class="pa-5 mb-4 form-panel">
       <div class="panel-head">
         <div class="panel-icon">
           <span class="mdi mdi-clipboard-plus-outline"></span>
         </div>
-        <h3 class="section-title">Tạo đơn đăng ký nội trú</h3>
+        <div>
+          <h3 class="section-title">Tạo đơn đăng ký nội trú</h3>
+          <p>Sau khi tạo, đơn sẽ chuyển sang trạng thái chờ duyệt để cán bộ N2 xếp phòng.</p>
+        </div>
       </div>
+
       <v-form @submit.prevent="createRegistration">
         <v-row>
-          <v-col cols="12" md="3">
+          <v-col cols="12" md="4">
             <v-select
               v-model="form.studentId"
               :items="students"
@@ -30,12 +65,12 @@
             />
           </v-col>
           <v-col cols="12" md="2">
-            <v-select v-model="form.buildingName" :items="buildings" label="Tòa" density="compact" />
+            <v-select v-model="form.buildingName" :items="buildings" label="Tòa mong muốn" density="compact" />
           </v-col>
           <v-col cols="12" md="2">
             <v-select v-model="form.roomType" :items="roomTypes" label="Loại phòng" density="compact" />
           </v-col>
-          <v-col cols="12" md="2">
+          <v-col cols="12" md="4">
             <v-select
               v-model="form.priorityType"
               :items="priorityTypes"
@@ -45,7 +80,7 @@
               density="compact"
             />
           </v-col>
-          <v-col cols="12" md="3">
+          <v-col cols="12" md="4">
             <v-text-field v-model="form.priorityNote" label="Ghi chú ưu tiên" density="compact" />
           </v-col>
           <v-col cols="12" md="3">
@@ -54,14 +89,12 @@
           <v-col cols="12" md="3">
             <v-text-field v-model="form.endDate" label="Ngày kết thúc" type="date" density="compact" />
           </v-col>
-          <v-col cols="12" md="3" class="d-flex align-center">
+          <v-col cols="12" md="2" class="d-flex align-center">
             <v-btn color="success" type="submit" :loading="saving">Gửi đăng ký</v-btn>
           </v-col>
         </v-row>
       </v-form>
     </v-card>
-
-    <v-alert v-if="message" :type="messageType" variant="tonal" class="mb-4">{{ message }}</v-alert>
 
     <v-card class="pa-4 mb-4 filter-panel">
       <v-row>
@@ -92,25 +125,35 @@
             <th>Thời gian ở</th>
             <th>Trạng thái</th>
             <th>Phòng xếp</th>
-            <th>Thao tác</th>
+            <th v-if="isApprovalView">Thao tác</th>
           </tr>
         </thead>
         <tbody>
           <tr v-if="loading">
-            <td colspan="8">Đang tải dữ liệu...</td>
+            <td :colspan="isApprovalView ? 8 : 7">Đang tải dữ liệu...</td>
           </tr>
           <tr v-else-if="filteredRegistrations.length === 0">
-            <td colspan="8">Không có đơn đăng ký trong nhóm đang chọn.</td>
+            <td :colspan="isApprovalView ? 8 : 7">{{ emptyText }}</td>
           </tr>
           <tr v-for="registration in filteredRegistrations" :key="registration.id">
             <td>{{ registration.id }}</td>
             <td>{{ studentName(registration.studentId) }}</td>
-            <td>Tòa {{ registration.buildingName || 'bất kỳ' }}<br />{{ registration.roomType || 'Bất kỳ' }}</td>
-            <td>{{ priorityLabel(registration.priorityType) }}<br />Điểm: {{ registration.priorityScore }}</td>
-            <td>{{ formatDate(registration.startDate) }} - {{ formatDate(registration.endDate) }}</td>
-            <td>{{ registration.status }}</td>
-            <td>{{ registration.assignedRoomId || 'Chưa xếp' }}</td>
             <td>
+              <strong>Tòa {{ registration.buildingName || 'bất kỳ' }}</strong>
+              <span>{{ registration.roomType || 'Bất kỳ loại phòng' }}</span>
+            </td>
+            <td>
+              <strong>{{ priorityLabel(registration.priorityType) }}</strong>
+              <span>Điểm: {{ registration.priorityScore || 0 }}</span>
+            </td>
+            <td>{{ formatDate(registration.startDate) }} - {{ formatDate(registration.endDate) }}</td>
+            <td>
+              <span class="status-pill" :class="statusClass(registration.status)">
+                {{ statusLabel(registration.status) }}
+              </span>
+            </td>
+            <td>{{ registration.assignedRoomId ? `Phòng ${registration.assignedRoomId}` : 'Chưa xếp' }}</td>
+            <td v-if="isApprovalView">
               <div class="action-row">
                 <v-btn
                   color="success"
@@ -139,7 +182,8 @@
 </template>
 
 <script setup>
-import { computed, ref, onMounted } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import api from '@/services/api'
 import {
   buildStudentNameMap,
@@ -147,6 +191,7 @@ import {
   normalizeList,
 } from '../utils/studentDisplay'
 
+const route = useRoute()
 const loading = ref(false)
 const saving = ref(false)
 const message = ref('')
@@ -154,6 +199,20 @@ const messageType = ref('success')
 const students = ref([])
 const registrations = ref([])
 const statusFilter = ref('Pending')
+
+const isApprovalView = computed(() => route.name === 'RoomRegistrationApproval')
+const pageKicker = computed(() => isApprovalView.value ? 'Rubric 7 - Approval' : 'Rubric 6 - Online Registration')
+const pageTitle = computed(() => isApprovalView.value ? 'Duyệt đơn xếp phòng' : 'Đăng ký ở ký túc xá online')
+const pageDescription = computed(() =>
+  isApprovalView.value
+    ? 'Trọng tâm logic N2: đối chiếu giới tính, tòa, loại phòng, số giường trống rồi cập nhật RoomService và tạo hợp đồng.'
+    : 'Tiếp nhận đơn nội trú trực tuyến, lưu nguyện vọng phòng và tính điểm ưu tiên trước khi chuyển sang bước duyệt.',
+)
+const emptyText = computed(() =>
+  isApprovalView.value
+    ? 'Không có đơn chờ duyệt trong nhóm đang chọn.'
+    : 'Chưa có đơn đăng ký phù hợp.',
+)
 
 const statusOptions = [
   { title: 'Chỉ đơn chờ duyệt', value: 'Pending' },
@@ -189,15 +248,21 @@ const emptyForm = () => ({
 
 const form = ref(emptyForm())
 
-const studentMap = computed(() => {
-  return buildStudentNameMap(students.value)
-})
+const studentMap = computed(() => buildStudentNameMap(students.value))
 
 const filteredRegistrations = computed(() => {
   if (statusFilter.value === 'All') return registrations.value
-
   return registrations.value.filter((registration) => registration.status === statusFilter.value)
 })
+
+watch(
+  () => route.name,
+  () => {
+    statusFilter.value = isApprovalView.value ? 'Pending' : 'All'
+    message.value = ''
+  },
+  { immediate: true },
+)
 
 const showMessage = (text, type = 'success') => {
   message.value = text
@@ -231,10 +296,10 @@ const createRegistration = async () => {
     saving.value = true
     await api.post('/registrations', form.value)
     form.value = emptyForm()
-    showMessage('Đã tạo đơn đăng ký phòng.')
+    showMessage('Đã tạo đơn đăng ký. Chuyển sang bước duyệt để N2 tự động xếp phòng.')
     await loadRegistrations()
   } catch (err) {
-    showMessage('Không tạo được đơn đăng ký. Kiểm tra sinh viên và ngày ở.', 'error')
+    showMessage('Không tạo được đơn đăng ký. Kiểm tra sinh viên và thời gian ở.', 'error')
     console.error(err)
   } finally {
     saving.value = false
@@ -244,10 +309,10 @@ const createRegistration = async () => {
 const approveRegistration = async (id) => {
   try {
     await api.put(`/registrations/${id}/approve`)
-    showMessage('Đã duyệt đơn, tự xếp phòng và tạo hợp đồng.')
+    showMessage('Đã duyệt đơn, tự xếp phòng, cập nhật RoomService và tạo hợp đồng.')
     await loadAll()
   } catch (err) {
-    showMessage('Không duyệt được đơn. Có thể phòng phù hợp đã hết giường.', 'error')
+    showMessage('Không duyệt được đơn. Có thể RoomService chưa nối hoặc phòng phù hợp đã hết giường.', 'error')
     console.error(err)
   }
 }
@@ -273,6 +338,20 @@ const countByStatus = (status) => {
   return registrations.value.filter((registration) => registration.status === status).length
 }
 
+const statusLabel = (status) => {
+  const labels = {
+    Pending: 'Chờ duyệt',
+    Approved: 'Đã duyệt',
+    Rejected: 'Từ chối',
+  }
+
+  return labels[status] || status
+}
+
+const statusClass = (status) => {
+  return String(status || '').toLowerCase()
+}
+
 const formatDate = (value) => {
   if (!value) return ''
   return new Date(value).toLocaleDateString('vi-VN')
@@ -282,44 +361,94 @@ onMounted(loadAll)
 </script>
 
 <style scoped>
+.registration-page {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
 .page-heading {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
-  margin-bottom: 20px;
+  gap: 18px;
+  margin-bottom: 0;
 }
 
-.page-kicker {
-  display: block;
-  margin-bottom: 5px;
-  color: var(--primary);
-  font-size: 12px;
+.page-heading p {
+  max-width: 860px;
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.mode-switch {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.mode-card {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 14px;
+  min-height: 96px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  color: inherit;
+  text-decoration: none;
+}
+
+.mode-card.active {
+  border-color: rgba(22, 155, 99, 0.32);
+  background: #f0fdf4;
+}
+
+.mode-card > span {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 8px;
+  background: #111827;
+  color: #ffffff;
   font-weight: 900;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
 }
 
-.page-heading h2 {
-  margin: 0;
+.mode-card.active > span {
+  background: var(--brand);
+  color: #052e1c;
+}
+
+.mode-card strong {
+  display: block;
   color: var(--ink);
-  font-size: 26px;
+  font-size: 16px;
+}
+
+.mode-card small {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+  line-height: 1.45;
 }
 
 .section-title {
   margin: 0;
-  color: #1f5f8b;
+  color: #14532d;
 }
 
 .form-panel {
   background:
-    linear-gradient(135deg, rgba(32, 169, 139, 0.08), transparent 40%),
+    linear-gradient(135deg, rgba(22, 155, 99, 0.08), transparent 40%),
     #ffffff;
 }
 
 .filter-panel {
-  background:
-    linear-gradient(135deg, rgba(23, 107, 135, 0.07), transparent 38%),
-    #ffffff;
+  background: #ffffff;
 }
 
 .summary-row {
@@ -328,14 +457,20 @@ onMounted(loadAll)
   justify-content: flex-end;
   gap: 18px;
   color: #40576a;
-  font-weight: 700;
+  font-weight: 800;
 }
 
 .panel-head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
   margin-bottom: 18px;
+}
+
+.panel-head p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 14px;
 }
 
 .panel-icon {
@@ -343,9 +478,9 @@ onMounted(loadAll)
   place-items: center;
   width: 42px;
   height: 42px;
-  border-radius: 10px;
-  background: #e7f3ff;
-  color: #176b87;
+  border-radius: 8px;
+  background: #dcfce7;
+  color: #15803d;
   font-size: 23px;
 }
 
@@ -353,33 +488,64 @@ onMounted(loadAll)
   overflow: hidden;
 }
 
-.data-table {
-  width: 100%;
-  border-collapse: collapse;
-  background: #ffffff;
+.data-table td strong,
+.data-table td span {
+  display: block;
 }
 
-.data-table th,
-.data-table td {
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--line);
-  text-align: left;
-  vertical-align: top;
-}
-
-.data-table th {
-  background: #f5f9fc;
-  color: #2c3e50;
-  font-weight: 700;
-}
-
-.data-table tbody tr:hover {
-  background: #f8fbfd;
+.data-table td span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 13px;
 }
 
 .action-row {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.status-pill {
+  display: inline-flex !important;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: #e8eef5;
+  color: #34495e !important;
+  font-size: 12px !important;
+  font-weight: 900;
+}
+
+.status-pill.pending {
+  background: #fef3c7;
+  color: #b45309 !important;
+}
+
+.status-pill.approved {
+  background: #dcfce7;
+  color: #15803d !important;
+}
+
+.status-pill.rejected {
+  background: #ffe4e6;
+  color: #be123c !important;
+}
+
+@media (max-width: 860px) {
+  .page-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .mode-switch {
+    grid-template-columns: 1fr;
+  }
+
+  .summary-row {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
 }
 </style>

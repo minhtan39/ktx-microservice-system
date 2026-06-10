@@ -69,7 +69,7 @@
             <span class="panel-kicker">Nhóm 1</span>
             <h3>Tình trạng phòng</h3>
           </div>
-          <router-link to="/student-service/registrations">Duyệt xếp phòng</router-link>
+          <router-link to="/student-service/registrations/approval">Duyệt xếp phòng</router-link>
         </header>
         <div class="room-summary">
           <div>

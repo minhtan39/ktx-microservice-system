@@ -1,11 +1,14 @@
 <template>
-  <section>
+  <section class="student-page">
     <div class="page-heading">
       <div>
-        <span class="page-kicker">Student Profile</span>
-        <h2>Quản lý sinh viên</h2>
+        <span class="page-kicker">Rubric 5 - Student Profile</span>
+        <h2>Hồ sơ sinh viên</h2>
+        <p>Lưu thông tin cá nhân, lớp, khoa và lịch sử lưu trú trước khi sinh viên đăng ký nội trú.</p>
       </div>
-      <v-btn color="primary" variant="flat" prepend-icon="mdi-refresh" @click="loadStudents">Làm mới</v-btn>
+      <v-btn color="primary" variant="flat" prepend-icon="mdi-refresh" :loading="loading" @click="loadStudents">
+        Làm mới
+      </v-btn>
     </div>
 
     <v-card class="pa-5 mb-4 form-panel">
@@ -13,7 +16,10 @@
         <div class="panel-icon">
           <span class="mdi mdi-account-plus-outline"></span>
         </div>
-        <h3 class="section-title">Thêm hồ sơ sinh viên</h3>
+        <div>
+          <h3 class="section-title">Thêm hồ sơ sinh viên</h3>
+          <p>Mỗi hồ sơ là đầu vào bắt buộc cho bước đăng ký phòng online.</p>
+        </div>
       </div>
       <v-form @submit.prevent="createStudent">
         <v-row>
@@ -77,14 +83,24 @@
           <tr v-if="loading">
             <td colspan="7">Đang tải dữ liệu...</td>
           </tr>
+          <tr v-else-if="students.length === 0">
+            <td colspan="7">Chưa có hồ sơ sinh viên hợp lệ.</td>
+          </tr>
           <tr v-for="student in students" :key="student.id">
             <td>{{ student.studentCode }}</td>
-            <td>{{ student.fullName }}</td>
+            <td>
+              <strong>{{ student.fullName }}</strong>
+              <span>{{ student.gender ? 'Nam' : 'Nữ' }}</span>
+            </td>
             <td>{{ student.facultyName }}</td>
             <td>{{ student.className }}</td>
             <td>{{ student.phone }}<br />{{ student.email }}</td>
-            <td>{{ student.status }}</td>
-            <td>{{ student.residenceHistory || 'Chưa có' }}</td>
+            <td>
+              <span class="status-pill" :class="statusClass(student.status)">
+                {{ statusLabel(student.status) }}
+              </span>
+            </td>
+            <td>{{ student.residenceHistory || 'Chưa có lịch sử lưu trú' }}</td>
           </tr>
         </tbody>
       </table>
@@ -93,7 +109,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { onMounted, ref } from 'vue'
 import api from '@/services/api'
 import { cleanStudents } from '../utils/studentDisplay'
 
@@ -150,49 +166,62 @@ const createStudent = async () => {
   }
 }
 
+const statusLabel = (status) => {
+  if (status === 'Active') return 'Đang lưu trú'
+  if (status === 'Pending') return 'Chờ đăng ký'
+  return status || 'Chưa xác định'
+}
+
+const statusClass = (status) => String(status || 'pending').toLowerCase()
+
 onMounted(loadStudents)
 </script>
 
 <style scoped>
+.student-page {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
 .page-heading {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
-  margin-bottom: 20px;
+  gap: 18px;
+  margin-bottom: 0;
 }
 
-.page-kicker {
-  display: block;
-  margin-bottom: 5px;
-  color: var(--primary);
-  font-size: 12px;
-  font-weight: 900;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.page-heading h2 {
-  margin: 0;
-  color: var(--ink);
-  font-size: 26px;
+.page-heading p {
+  max-width: 760px;
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.5;
 }
 
 .section-title {
   margin: 0;
-  color: #1f5f8b;
+  color: #14532d;
 }
 
 .form-panel {
   background:
-    linear-gradient(135deg, rgba(23, 107, 135, 0.07), transparent 38%),
+    linear-gradient(135deg, rgba(22, 155, 99, 0.08), transparent 38%),
     #ffffff;
 }
 
 .panel-head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
   margin-bottom: 18px;
+}
+
+.panel-head p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 14px;
 }
 
 .panel-icon {
@@ -200,9 +229,9 @@ onMounted(loadStudents)
   place-items: center;
   width: 42px;
   height: 42px;
-  border-radius: 10px;
-  background: #e5f5f1;
-  color: #128b73;
+  border-radius: 8px;
+  background: #dcfce7;
+  color: #15803d;
   font-size: 23px;
 }
 
@@ -210,27 +239,38 @@ onMounted(loadStudents)
   overflow: hidden;
 }
 
-.data-table {
-  width: 100%;
-  border-collapse: collapse;
-  background: #ffffff;
+.data-table td strong,
+.data-table td span {
+  display: block;
 }
 
-.data-table th,
-.data-table td {
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--line);
-  text-align: left;
-  vertical-align: top;
+.data-table td span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 13px;
 }
 
-.data-table th {
-  background: #f5f9fc;
-  color: #2c3e50;
-  font-weight: 700;
+.status-pill {
+  display: inline-flex !important;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: #fef3c7;
+  color: #b45309 !important;
+  font-size: 12px !important;
+  font-weight: 900;
 }
 
-.data-table tbody tr:hover {
-  background: #f8fbfd;
+.status-pill.active {
+  background: #dcfce7;
+  color: #15803d !important;
+}
+
+@media (max-width: 860px) {
+  .page-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
 }
 </style>

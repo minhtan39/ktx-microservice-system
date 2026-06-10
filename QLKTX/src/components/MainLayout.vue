@@ -12,31 +12,31 @@
       </div>
 
       <nav class="nav">
-        <p class="nav-section">Vận hành N2</p>
+        <p class="nav-section">Tổng quan hệ thống</p>
 
-        <router-link to="/student-service/dashboard" class="nav-item" active-class="active">
-          <span class="mdi mdi-view-dashboard-outline"></span>
-          <span>Bảng tin kết nối</span>
+        <router-link
+          v-for="item in overviewItems"
+          :key="item.label"
+          :to="item.to"
+          class="nav-item"
+          :class="{ active: item.names.includes(route.name) }"
+        >
+          <span :class="['mdi', item.icon]"></span>
+          <span>{{ item.label }}</span>
         </router-link>
 
-        <router-link to="/student-service/students" class="nav-item" active-class="active">
-          <span class="mdi mdi-account-school-outline"></span>
-          <span>Hồ sơ sinh viên</span>
-        </router-link>
+        <p class="nav-section">Theo yêu cầu N2</p>
 
-        <router-link to="/student-service/registrations" class="nav-item" active-class="active">
-          <span class="mdi mdi-clipboard-check-outline"></span>
-          <span>Đăng ký & duyệt phòng</span>
-        </router-link>
-
-        <router-link to="/student-service/contracts" class="nav-item" active-class="active">
-          <span class="mdi mdi-file-document-outline"></span>
-          <span>Danh sách hợp đồng</span>
-        </router-link>
-
-        <router-link to="/student-service/contracts/manage" class="nav-item" active-class="active">
-          <span class="mdi mdi-file-cog-outline"></span>
-          <span>Quản lý hợp đồng</span>
+        <router-link
+          v-for="item in rubricItems"
+          :key="item.label"
+          :to="item.to"
+          class="nav-item rubric-item"
+          :class="{ active: item.names.includes(route.name) }"
+        >
+          <b>{{ item.step }}</b>
+          <span :class="['mdi', item.icon]"></span>
+          <span>{{ item.label }}</span>
         </router-link>
       </nav>
 
@@ -110,10 +110,58 @@ const fullName = ref(localStorage.getItem('fullName') || 'demo_admin')
 const titleByRoute = {
   StudentServiceDashboard: 'Theo dõi kết nối 3 nhóm và luồng end-to-end',
   StudentManage: 'Quản lý hồ sơ sinh viên, lớp, khoa và lịch sử lưu trú',
-  RoomRegistrationManage: 'Tiếp nhận đăng ký online và duyệt xếp phòng tự động',
+  RoomRegistrationCreate: 'Tiếp nhận đăng ký nội trú trực tuyến',
+  RoomRegistrationApproval: 'Duyệt đơn và tự động xếp sinh viên vào phòng phù hợp',
   ContractList: 'Tra cứu hợp đồng đã tạo từ đơn được duyệt',
-  ContractManage: 'Theo dõi hiệu lực, tiền cọc và thời hạn hợp đồng',
+  ContractManage: 'Theo dõi hiệu lực và xử lý trạng thái hợp đồng',
 }
+
+const overviewItems = [
+  {
+    to: '/student-service/dashboard',
+    names: ['StudentServiceDashboard'],
+    icon: 'mdi-view-dashboard-outline',
+    label: 'Bảng tin kết nối',
+  },
+]
+
+const rubricItems = [
+  {
+    step: '5',
+    to: '/student-service/students',
+    names: ['StudentManage'],
+    icon: 'mdi-account-school-outline',
+    label: 'Hồ sơ sinh viên',
+  },
+  {
+    step: '6',
+    to: '/student-service/registrations',
+    names: ['RoomRegistrationCreate'],
+    icon: 'mdi-form-select',
+    label: 'Đăng ký nội trú',
+  },
+  {
+    step: '7',
+    to: '/student-service/registrations/approval',
+    names: ['RoomRegistrationApproval'],
+    icon: 'mdi-clipboard-check-outline',
+    label: 'Duyệt xếp phòng',
+  },
+  {
+    step: '8',
+    to: '/student-service/contracts',
+    names: ['ContractList'],
+    icon: 'mdi-file-document-outline',
+    label: 'Hợp đồng thuê phòng',
+  },
+  {
+    step: '+',
+    to: '/student-service/contracts/manage',
+    names: ['ContractManage'],
+    icon: 'mdi-file-cog-outline',
+    label: 'Vận hành hợp đồng',
+  },
+]
 
 const pageTitle = computed(() =>
   titleByRoute[route.name] || 'Nghiệp vụ Contract & Student Service')
@@ -221,6 +269,22 @@ const gatewayLabel = computed(() => {
   text-decoration: none;
 }
 
+.nav-item.rubric-item {
+  grid-template-columns: 24px 24px minmax(0, 1fr);
+}
+
+.nav-item b {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: #24282c;
+  color: #c8f4df;
+  font-size: 12px;
+  font-weight: 900;
+}
+
 .nav-item .mdi {
   color: #b8bdc2;
   font-size: 21px;
@@ -242,6 +306,11 @@ const gatewayLabel = computed(() => {
 .nav-item.active .mdi,
 .nav-item.active span:last-child {
   color: #ffffff;
+}
+
+.nav-item.active b {
+  background: var(--brand);
+  color: #052e1c;
 }
 
 .scope-box,

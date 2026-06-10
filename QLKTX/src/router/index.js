@@ -27,7 +27,13 @@ const routes = [
       },
       {
         path: 'student-service/registrations',
-        name: 'RoomRegistrationManage',
+        name: 'RoomRegistrationCreate',
+        component: () =>
+          import('../modules/contract-student/views/RoomRegistrationView.vue'),
+      },
+      {
+        path: 'student-service/registrations/approval',
+        name: 'RoomRegistrationApproval',
         component: () =>
           import('../modules/contract-student/views/RoomRegistrationView.vue'),
       },

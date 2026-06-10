@@ -1,61 +1,36 @@
 <template>
-  <section>
+  <section class="contract-ops-page">
     <div class="page-heading">
       <div>
         <span class="page-kicker">Contract Operations</span>
-        <h2>Quản lý hợp đồng</h2>
+        <h2>Vận hành hợp đồng</h2>
+        <p>
+          Hợp đồng chính được tạo tự động ở bước duyệt xếp phòng. Màn này chỉ
+          dùng để theo dõi, hủy hoặc kết thúc hợp đồng khi có thay đổi nghiệp vụ.
+        </p>
       </div>
-      <v-btn color="primary" variant="flat" prepend-icon="mdi-refresh" @click="loadAll">Làm mới</v-btn>
+      <v-btn color="primary" variant="flat" prepend-icon="mdi-refresh" :loading="loading" @click="loadAll">
+        Làm mới
+      </v-btn>
     </div>
 
-    <v-card class="pa-5 mb-4 form-panel">
-      <div class="panel-head">
-        <div class="panel-icon">
-          <span class="mdi mdi-file-plus-outline"></span>
-        </div>
-        <h3 class="section-title">Tạo hợp đồng thủ công</h3>
-      </div>
-      <v-form @submit.prevent="createContract">
-        <v-row>
-          <v-col cols="12" md="3">
-            <v-select
-              v-model="form.studentId"
-              :items="students"
-              item-title="displayName"
-              item-value="id"
-              label="Sinh viên"
-              density="compact"
-              no-data-text="Chưa có hồ sơ sinh viên hợp lệ"
-              required
-            />
-          </v-col>
-          <v-col cols="12" md="2">
-            <v-text-field v-model.number="form.roomId" label="Room ID" type="number" density="compact" />
-          </v-col>
-          <v-col cols="12" md="2">
-            <v-text-field v-model="form.startDate" label="Ngày bắt đầu" type="date" density="compact" />
-          </v-col>
-          <v-col cols="12" md="2">
-            <v-text-field v-model="form.endDate" label="Ngày kết thúc" type="date" density="compact" />
-          </v-col>
-          <v-col cols="12" md="3">
-            <v-text-field v-model="form.contractCode" label="Mã hợp đồng (có thể bỏ trống)" density="compact" />
-          </v-col>
-          <v-col cols="12" md="2">
-            <v-text-field v-model.number="form.depositAmount" label="Tiền cọc" type="number" density="compact" />
-          </v-col>
-          <v-col cols="12" md="2">
-            <v-text-field v-model.number="form.monthlyFee" label="Tiền phòng/tháng" type="number" density="compact" />
-          </v-col>
-          <v-col cols="12" md="6">
-            <v-text-field v-model="form.terms" label="Điều khoản" density="compact" />
-          </v-col>
-          <v-col cols="12" md="2" class="d-flex align-center">
-            <v-btn color="success" type="submit" :loading="saving">Lưu hợp đồng</v-btn>
-          </v-col>
-        </v-row>
-      </v-form>
-    </v-card>
+    <section class="ops-explainer">
+      <article>
+        <span class="mdi mdi-clipboard-check-outline"></span>
+        <strong>Nguồn tạo hợp đồng</strong>
+        <p>Duyệt đơn đăng ký sẽ tự gọi RoomService, xếp phòng và tạo hợp đồng.</p>
+      </article>
+      <article>
+        <span class="mdi mdi-cash-sync"></span>
+        <strong>Liên thông Billing</strong>
+        <p>Sau khi hợp đồng được tạo, N2 gửi tiền cọc và tiền phòng tháng đầu sang BillingService.</p>
+      </article>
+      <article>
+        <span class="mdi mdi-file-cog-outline"></span>
+        <strong>Quản trị trạng thái</strong>
+        <p>Chỉ hợp đồng đang hiệu lực mới được hủy hoặc kết thúc.</p>
+      </article>
+    </section>
 
     <v-alert v-if="message" :type="messageType" variant="tonal" class="mb-4">
       {{ message }}
@@ -64,19 +39,27 @@
     <v-card class="pa-4 mb-4 filter-panel">
       <v-row>
         <v-col cols="12" md="4">
-          <v-text-field v-model="keyword" label="Tìm mã hợp đồng hoặc sinh viên" density="compact" clearable />
+          <v-text-field
+            v-model="keyword"
+            label="Tìm mã hợp đồng, sinh viên hoặc phòng"
+            density="compact"
+            clearable
+            prepend-inner-icon="mdi-magnify"
+          />
         </v-col>
         <v-col cols="12" md="3">
           <v-select
             v-model="statusFilter"
             :items="statusOptions"
+            item-title="title"
+            item-value="value"
             label="Lọc trạng thái"
             density="compact"
           />
         </v-col>
         <v-col cols="12" md="5" class="summary-row">
           <span>Tổng: {{ contracts.length }}</span>
-          <span>Đang hiệu lực: {{ countByStatus('Active') }}</span>
+          <span>Hiệu lực: {{ countByStatus('Active') }}</span>
           <span>Hết hạn: {{ countByStatus('Expired') }}</span>
         </v-col>
       </v-row>
@@ -90,29 +73,32 @@
             <th>Sinh viên</th>
             <th>Phòng</th>
             <th>Thời hạn</th>
-            <th>Tiền cọc</th>
-            <th>Tiền phòng</th>
+            <th>Tài chính</th>
             <th>Trạng thái</th>
             <th>Thao tác</th>
           </tr>
         </thead>
         <tbody>
           <tr v-if="loading">
-            <td colspan="8">Đang tải dữ liệu...</td>
+            <td colspan="7">Đang tải dữ liệu...</td>
           </tr>
           <tr v-else-if="filteredContracts.length === 0">
-            <td colspan="8">Chưa có hợp đồng phù hợp.</td>
+            <td colspan="7">Chưa có hợp đồng phù hợp.</td>
           </tr>
           <tr v-for="contract in filteredContracts" :key="contract.id">
-            <td>{{ contract.contractCode }}</td>
-            <td>{{ studentName(contract.studentId) }}</td>
-            <td>#{{ contract.roomId }}</td>
-            <td>{{ formatDate(contract.startDate) }} - {{ formatDate(contract.endDate) }}</td>
-            <td>{{ formatMoney(contract.depositAmount) }}</td>
-            <td>{{ formatMoney(contract.monthlyFee) }}</td>
             <td>
-              <span class="status-pill" :class="contract.status.toLowerCase()">
-                {{ contract.status }}
+              <strong class="contract-code">{{ contract.contractCode }}</strong>
+            </td>
+            <td>{{ studentName(contract.studentId) }}</td>
+            <td>Phòng {{ contract.roomId }}</td>
+            <td>{{ formatDate(contract.startDate) }} - {{ formatDate(contract.endDate) }}</td>
+            <td>
+              Cọc: {{ formatMoney(contract.depositAmount) }}<br />
+              Tháng: {{ formatMoney(contract.monthlyFee) }}
+            </td>
+            <td>
+              <span class="status-pill" :class="statusClass(contract.status)">
+                {{ statusText(contract.status) }}
               </span>
             </td>
             <td>
@@ -144,7 +130,7 @@
 </template>
 
 <script setup>
-import { computed, ref, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import api from '@/services/api'
 import {
   buildStudentNameMap,
@@ -153,7 +139,6 @@ import {
 } from '../utils/studentDisplay'
 
 const loading = ref(false)
-const saving = ref(false)
 const message = ref('')
 const messageType = ref('success')
 const contracts = ref([])
@@ -161,28 +146,14 @@ const students = ref([])
 const keyword = ref('')
 const statusFilter = ref('All')
 
-const statusOptions = ['All', 'Active', 'Cancelled', 'Expired']
+const statusOptions = [
+  { title: 'Tất cả', value: 'All' },
+  { title: 'Đang hiệu lực', value: 'Active' },
+  { title: 'Đã hủy', value: 'Cancelled' },
+  { title: 'Hết hạn', value: 'Expired' },
+]
 
-const today = new Date().toISOString().slice(0, 10)
-const nextYear = new Date()
-nextYear.setFullYear(nextYear.getFullYear() + 1)
-
-const emptyForm = () => ({
-  contractCode: '',
-  studentId: null,
-  roomId: 101,
-  startDate: today,
-  endDate: nextYear.toISOString().slice(0, 10),
-  depositAmount: 500000,
-  monthlyFee: 800000,
-  terms: '',
-})
-
-const form = ref(emptyForm())
-
-const studentMap = computed(() => {
-  return buildStudentNameMap(students.value)
-})
+const studentMap = computed(() => buildStudentNameMap(students.value))
 
 const filteredContracts = computed(() => {
   const search = (keyword.value || '').trim().toLowerCase()
@@ -228,22 +199,6 @@ const loadAll = async () => {
   }
 }
 
-const createContract = async () => {
-  try {
-    saving.value = true
-    message.value = ''
-    await api.post('/contracts', form.value)
-    form.value = emptyForm()
-    showMessage('Đã tạo hợp đồng.')
-    await loadContracts()
-  } catch (err) {
-    showMessage('Không tạo được hợp đồng. Kiểm tra sinh viên, phòng và thời hạn.', 'error')
-    console.error(err)
-  } finally {
-    saving.value = false
-  }
-}
-
 const cancelContract = async (id) => {
   try {
     await api.put(`/contracts/${id}/cancel`)
@@ -267,8 +222,15 @@ const expireContract = async (id) => {
 }
 
 const studentName = (id) => studentMap.value.get(id) || `Sinh viên #${id}`
-
 const countByStatus = (status) => contracts.value.filter((contract) => contract.status === status).length
+const statusClass = (status) => String(status || '').toLowerCase()
+
+const statusText = (status) => {
+  if (status === 'Active') return 'Hiệu lực'
+  if (status === 'Expired') return 'Hết hạn'
+  if (status === 'Cancelled') return 'Đã hủy'
+  return status
+}
 
 const formatDate = (value) => {
   if (!value) return ''
@@ -286,62 +248,70 @@ onMounted(loadAll)
 </script>
 
 <style scoped>
+.contract-ops-page {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
 .page-heading {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
-  margin-bottom: 20px;
+  gap: 18px;
+  margin-bottom: 0;
 }
 
-.page-kicker {
-  display: block;
-  margin-bottom: 5px;
-  color: var(--primary);
-  font-size: 12px;
-  font-weight: 900;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+.page-heading p {
+  max-width: 860px;
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.5;
 }
 
-.page-heading h2 {
-  margin: 0;
-  color: var(--ink);
-  font-size: 26px;
+.ops-explainer {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
 }
 
-.section-title {
-  margin: 0;
-  color: #1f5f8b;
+.ops-explainer article {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 14px;
+  min-height: 112px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
 }
 
-.form-panel {
-  background:
-    linear-gradient(135deg, rgba(215, 139, 19, 0.10), transparent 40%),
-    #ffffff;
-}
-
-.filter-panel {
-  background:
-    linear-gradient(135deg, rgba(23, 107, 135, 0.07), transparent 38%),
-    #ffffff;
-}
-
-.panel-head {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 18px;
-}
-
-.panel-icon {
+.ops-explainer .mdi {
   display: grid;
   place-items: center;
   width: 42px;
   height: 42px;
-  border-radius: 10px;
-  background: #fff4df;
-  color: #a76a00;
+  border-radius: 8px;
+  background: #ecfdf5;
+  color: var(--brand-dark);
   font-size: 23px;
+}
+
+.ops-explainer strong {
+  display: block;
+  color: var(--ink);
+}
+
+.ops-explainer p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.filter-panel {
+  background: #ffffff;
 }
 
 .summary-row {
@@ -350,35 +320,15 @@ onMounted(loadAll)
   justify-content: flex-end;
   gap: 18px;
   color: #40576a;
-  font-weight: 600;
+  font-weight: 800;
 }
 
 .table-card {
   overflow: hidden;
 }
 
-.data-table {
-  width: 100%;
-  border-collapse: collapse;
-  background: #ffffff;
-}
-
-.data-table th,
-.data-table td {
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--line);
-  text-align: left;
-  vertical-align: top;
-}
-
-.data-table th {
-  background: #f5f9fc;
-  color: #2c3e50;
-  font-weight: 700;
-}
-
-.data-table tbody tr:hover {
-  background: #f8fbfd;
+.contract-code {
+  color: var(--brand-dark);
 }
 
 .action-row {
@@ -390,26 +340,44 @@ onMounted(loadAll)
 .status-pill {
   display: inline-block;
   min-width: 86px;
-  padding: 4px 10px;
+  padding: 5px 10px;
   border-radius: 999px;
   text-align: center;
-  font-weight: 700;
+  font-size: 12px;
+  font-weight: 900;
   background: #e8eef5;
   color: #34495e;
 }
 
 .status-pill.active {
-  background: #e3f6ec;
-  color: #12834c;
+  background: #dcfce7;
+  color: #15803d;
 }
 
 .status-pill.cancelled {
-  background: #fff3dc;
-  color: #9a6200;
+  background: #fef3c7;
+  color: #b45309;
 }
 
 .status-pill.expired {
-  background: #fbe4e8;
-  color: #b4233c;
+  background: #ffe4e6;
+  color: #be123c;
+}
+
+@media (max-width: 980px) {
+  .page-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .ops-explainer {
+    grid-template-columns: 1fr;
+  }
+
+  .summary-row {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
 }
 </style>

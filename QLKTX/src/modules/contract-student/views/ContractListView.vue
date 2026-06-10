@@ -2,12 +2,16 @@
   <section class="contract-page">
     <div class="contract-hero">
       <div>
-        <span class="hero-kicker">Contract Registry</span>
-        <h2>Danh sách hợp đồng</h2>
-        <p>Theo dõi hợp đồng nội trú, trạng thái hiệu lực và thông tin tài chính của sinh viên.</p>
+        <span class="hero-kicker">Rubric 8 - Contract Registry</span>
+        <h2>Hợp đồng thuê phòng</h2>
+        <p>
+          Đây là sổ hợp đồng được sinh sau khi đơn đăng ký được duyệt. Màn này
+          dùng để chứng minh N2 tự khởi tạo hợp đồng, thời hạn ở, tiền cọc và
+          tiền phòng.
+        </p>
       </div>
 
-      <v-btn color="primary" variant="flat" prepend-icon="mdi-refresh" @click="loadAll">
+      <v-btn color="primary" variant="flat" prepend-icon="mdi-refresh" :loading="loading" @click="loadAll">
         Làm mới
       </v-btn>
     </div>
@@ -39,7 +43,7 @@
       <div class="filter-grid">
         <v-text-field
           v-model="keyword"
-          label="Tìm theo mã, sinh viên hoặc phòng"
+          label="Tìm theo mã hợp đồng, sinh viên hoặc phòng"
           density="compact"
           clearable
           prepend-inner-icon="mdi-magnify"
@@ -48,6 +52,8 @@
         <v-select
           v-model="statusFilter"
           :items="statusOptions"
+          item-title="title"
+          item-value="value"
           label="Trạng thái"
           density="compact"
         />
@@ -80,13 +86,13 @@
               <strong class="contract-code">{{ contract.contractCode }}</strong>
             </td>
             <td>{{ studentName(contract.studentId) }}</td>
-            <td>#{{ contract.roomId }}</td>
+            <td>Phòng {{ contract.roomId }}</td>
             <td>{{ formatDate(contract.startDate) }} - {{ formatDate(contract.endDate) }}</td>
             <td>{{ formatMoney(contract.depositAmount) }}</td>
             <td>{{ formatMoney(contract.monthlyFee) }}</td>
             <td class="terms-cell">{{ contract.terms || 'Điều khoản mặc định' }}</td>
             <td>
-              <span class="status-pill" :class="contract.status.toLowerCase()">
+              <span class="status-pill" :class="statusClass(contract.status)">
                 {{ statusText(contract.status) }}
               </span>
             </td>
@@ -108,7 +114,7 @@
             <span class="mini-label">Mã hợp đồng</span>
             <strong>{{ contract.contractCode }}</strong>
           </div>
-          <span class="status-pill" :class="contract.status.toLowerCase()">
+          <span class="status-pill" :class="statusClass(contract.status)">
             {{ statusText(contract.status) }}
           </span>
         </div>
@@ -120,7 +126,7 @@
           </div>
           <div>
             <span>Phòng</span>
-            <strong>#{{ contract.roomId }}</strong>
+            <strong>{{ contract.roomId }}</strong>
           </div>
           <div>
             <span>Thời hạn</span>
@@ -139,7 +145,7 @@
 </template>
 
 <script setup>
-import { computed, ref, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import api from '@/services/api'
 import {
   buildStudentNameMap,
@@ -155,11 +161,14 @@ const students = ref([])
 const keyword = ref('')
 const statusFilter = ref('All')
 
-const statusOptions = ['All', 'Active', 'Cancelled', 'Expired']
+const statusOptions = [
+  { title: 'Tất cả', value: 'All' },
+  { title: 'Đang hiệu lực', value: 'Active' },
+  { title: 'Đã hủy', value: 'Cancelled' },
+  { title: 'Hết hạn', value: 'Expired' },
+]
 
-const studentMap = computed(() => {
-  return buildStudentNameMap(students.value)
-})
+const studentMap = computed(() => buildStudentNameMap(students.value))
 
 const filteredContracts = computed(() => {
   const search = (keyword.value || '').trim().toLowerCase()
@@ -206,8 +215,8 @@ const loadAll = async () => {
 }
 
 const studentName = (id) => studentMap.value.get(id) || `Sinh viên #${id}`
-
 const countByStatus = (status) => contracts.value.filter((contract) => contract.status === status).length
+const statusClass = (status) => String(status || '').toLowerCase()
 
 const statusText = (status) => {
   if (status === 'Active') return 'Hiệu lực'
@@ -243,21 +252,19 @@ onMounted(loadAll)
   justify-content: space-between;
   gap: 18px;
   align-items: center;
-  min-height: 150px;
+  min-height: 148px;
   padding: 26px;
-  border: 1px solid rgba(20, 58, 88, 0.10);
-  border-radius: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
   background:
-    linear-gradient(135deg, rgba(23, 107, 135, 0.16), transparent 42%),
-    linear-gradient(315deg, rgba(32, 169, 139, 0.15), transparent 40%),
+    linear-gradient(135deg, rgba(22, 155, 99, 0.12), transparent 42%),
     #ffffff;
-  box-shadow: var(--shadow);
 }
 
 .hero-kicker {
   display: block;
   margin-bottom: 8px;
-  color: var(--primary);
+  color: var(--brand-dark);
   font-size: 12px;
   font-weight: 900;
   letter-spacing: 0.08em;
@@ -272,10 +279,11 @@ onMounted(loadAll)
 }
 
 .contract-hero p {
-  max-width: 680px;
+  max-width: 760px;
   margin: 10px 0 0;
   color: var(--muted);
   font-size: 15px;
+  line-height: 1.5;
 }
 
 .metric-strip {
@@ -287,10 +295,9 @@ onMounted(loadAll)
 .metric-chip {
   min-height: 92px;
   padding: 18px;
-  border: 1px solid rgba(20, 58, 88, 0.10);
-  border-radius: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
   background: #ffffff;
-  box-shadow: var(--shadow-soft);
 }
 
 .metric-chip span,
@@ -313,15 +320,15 @@ onMounted(loadAll)
 }
 
 .metric-chip.success strong {
-  color: #128b73;
+  color: #15803d;
 }
 
 .metric-chip.danger strong {
-  color: #b4233c;
+  color: #be123c;
 }
 
 .metric-chip.warning strong {
-  color: #a76a00;
+  color: #b45309;
 }
 
 .filter-card {
@@ -340,33 +347,8 @@ onMounted(loadAll)
   overflow: hidden;
 }
 
-.data-table {
-  width: 100%;
-  border-collapse: collapse;
-  background: #ffffff;
-}
-
-.data-table th,
-.data-table td {
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--line);
-  text-align: left;
-  vertical-align: top;
-}
-
-.data-table th {
-  background: #f5f9fc;
-  color: #2c3e50;
-  font-size: 13px;
-  font-weight: 900;
-}
-
-.data-table tbody tr:hover {
-  background: #f8fbfd;
-}
-
 .contract-code {
-  color: var(--primary);
+  color: var(--brand-dark);
 }
 
 .terms-cell {
@@ -388,18 +370,18 @@ onMounted(loadAll)
 }
 
 .status-pill.active {
-  background: #e3f6ec;
-  color: #12834c;
+  background: #dcfce7;
+  color: #15803d;
 }
 
 .status-pill.cancelled {
-  background: #fff3dc;
-  color: #9a6200;
+  background: #fef3c7;
+  color: #b45309;
 }
 
 .status-pill.expired {
-  background: #fbe4e8;
-  color: #b4233c;
+  background: #ffe4e6;
+  color: #be123c;
 }
 
 .contract-cards {
@@ -408,10 +390,9 @@ onMounted(loadAll)
 
 .contract-card {
   padding: 18px;
-  border: 1px solid rgba(20, 58, 88, 0.10);
-  border-radius: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
   background: #ffffff;
-  box-shadow: var(--shadow-soft);
 }
 
 .muted-card {
@@ -430,7 +411,7 @@ onMounted(loadAll)
 .card-top strong {
   display: block;
   margin-top: 5px;
-  color: var(--primary);
+  color: var(--brand-dark);
   font-size: 18px;
 }
 
