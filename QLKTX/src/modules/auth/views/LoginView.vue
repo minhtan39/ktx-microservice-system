@@ -30,7 +30,7 @@
       <div class="panel-card">
         <span class="page-kicker">Nhóm 3 - AuthService</span>
         <h2>Đăng nhập</h2>
-        <p class="panel-copy">Admin/nhân viên vào màn quản trị, sinh viên vào cổng tự phục vụ.</p>
+        <p class="panel-copy">Admin/nhân viên vào màn quản trị. Sinh viên đăng nhập bằng MSSV, mật khẩu mặc định cũng là MSSV.</p>
 
         <v-alert v-if="error" type="error" variant="tonal" class="mb-4">
           {{ error }}
@@ -71,7 +71,7 @@
           <strong>Tài khoản demo</strong>
           <button type="button" @click="useDemo('admin', 'admin123')">Quản trị: admin / admin123</button>
           <button type="button" @click="useDemo('nhanvien', 'staff123')">Nhân viên: nhanvien / staff123</button>
-          <button type="button" @click="useDemo('sinhvien', 'sv123')">Sinh viên: sinhvien / sv123</button>
+          <button type="button" @click="useDemo('SV20260001', 'SV20260001')">Sinh viên: SV20260001 / SV20260001</button>
         </div>
       </div>
     </section>

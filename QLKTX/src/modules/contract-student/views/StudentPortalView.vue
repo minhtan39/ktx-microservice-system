@@ -359,7 +359,12 @@ const ownContracts = ref([])
 const ownIncidents = ref([])
 
 const studentId = ref(Number(localStorage.getItem('student_id') || 0))
-const studentCode = ref(localStorage.getItem('student_code') || '')
+const studentCode = ref(
+  localStorage.getItem('student_code') ||
+  (localStorage.getItem('user_role') === 'Student'
+    ? localStorage.getItem('username')
+    : '') ||
+  '')
 const displayName = computed(() =>
   student.value?.fullName || localStorage.getItem('fullName') || 'Sinh viên')
 
@@ -426,7 +431,7 @@ const resolveStudent = async () => {
     Number(item.id) === studentId.value ||
     (studentCode.value && item.studentCode === studentCode.value))
 
-  student.value = matched || students[0] || null
+  student.value = matched || null
 
   if (student.value) {
     studentId.value = Number(student.value.id)

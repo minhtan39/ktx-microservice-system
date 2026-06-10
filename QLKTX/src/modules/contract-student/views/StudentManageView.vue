@@ -18,7 +18,7 @@
         </div>
         <div>
           <h3 class="section-title">Thêm hồ sơ sinh viên</h3>
-          <p>Mỗi hồ sơ là đầu vào bắt buộc cho bước đăng ký phòng online.</p>
+          <p>Mỗi hồ sơ sẽ được cấp tài khoản đăng nhập mặc định: tên đăng nhập và mật khẩu đều là MSSV.</p>
         </div>
       </div>
       <v-form @submit.prevent="createStudent">
@@ -58,13 +58,14 @@
             />
           </v-col>
           <v-col cols="12" md="3" class="d-flex align-center">
-            <v-btn color="success" type="submit" :loading="saving">Lưu sinh viên</v-btn>
+            <v-btn color="success" type="submit" :loading="saving">Lưu & tạo tài khoản</v-btn>
           </v-col>
         </v-row>
       </v-form>
     </v-card>
 
     <v-alert v-if="error" type="error" variant="tonal" class="mb-4">{{ error }}</v-alert>
+    <v-alert v-if="success" type="success" variant="tonal" class="mb-4">{{ success }}</v-alert>
 
     <v-card class="table-card">
       <table class="data-table">
@@ -76,15 +77,16 @@
             <th>Lớp</th>
             <th>Liên hệ</th>
             <th>Trạng thái</th>
+            <th>Tài khoản</th>
             <th>Lịch sử lưu trú</th>
           </tr>
         </thead>
         <tbody>
           <tr v-if="loading">
-            <td colspan="7">Đang tải dữ liệu...</td>
+            <td colspan="8">Đang tải dữ liệu...</td>
           </tr>
           <tr v-else-if="students.length === 0">
-            <td colspan="7">Chưa có hồ sơ sinh viên hợp lệ.</td>
+            <td colspan="8">Chưa có hồ sơ sinh viên hợp lệ.</td>
           </tr>
           <tr v-for="student in students" :key="student.id">
             <td>{{ student.studentCode }}</td>
@@ -99,6 +101,10 @@
               <span class="status-pill" :class="statusClass(student.status)">
                 {{ statusLabel(student.status) }}
               </span>
+            </td>
+            <td>
+              <strong>{{ student.studentCode }}</strong>
+              <span>Mật khẩu mặc định: {{ student.studentCode }}</span>
             </td>
             <td>{{ student.residenceHistory || 'Chưa có lịch sử lưu trú' }}</td>
           </tr>
@@ -116,6 +122,7 @@ import { cleanStudents } from '../utils/studentDisplay'
 const loading = ref(false)
 const saving = ref(false)
 const error = ref('')
+const success = ref('')
 const students = ref([])
 
 const genderOptions = [
@@ -154,8 +161,30 @@ const loadStudents = async () => {
 const createStudent = async () => {
   try {
     error.value = ''
+    success.value = ''
     saving.value = true
-    await api.post('/students', form.value)
+
+    const payload = {
+      ...form.value,
+      studentCode: normalizeStudentCode(form.value.studentCode),
+    }
+
+    const res = await api.post('/students', payload)
+    const createdStudent = res.data?.data || res.data || payload
+
+    try {
+      await api.post('/auth/student-accounts', {
+        studentId: createdStudent.id,
+        studentCode: createdStudent.studentCode || payload.studentCode,
+        fullName: createdStudent.fullName || payload.fullName,
+      })
+
+      success.value = `Đã tạo hồ sơ và tài khoản sinh viên: ${payload.studentCode} / ${payload.studentCode}.`
+    } catch (accountError) {
+      success.value = `Đã tạo hồ sơ sinh viên. Tài khoản sẽ dùng mặc định ${payload.studentCode} / ${payload.studentCode} sau khi AuthService được deploy bản mới.`
+      console.warn(accountError)
+    }
+
     form.value = emptyForm()
     await loadStudents()
   } catch (err) {
@@ -165,6 +194,8 @@ const createStudent = async () => {
     saving.value = false
   }
 }
+
+const normalizeStudentCode = (value) => String(value || '').trim().toUpperCase()
 
 const statusLabel = (status) => {
   if (status === 'Active') return 'Đang lưu trú'
