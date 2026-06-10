@@ -53,6 +53,7 @@ services:
       ConnectionStrings__DefaultConnection: "Server=sqlserver,1433;Database=SmartDormitory_ContractStudentDB;User Id=sa;Password=${SQL_SA_PASSWORD:-KtxServer@2026Demo!};TrustServerCertificate=True;Encrypt=False"
       Integration__GatewayBaseUrl: "http://api-gateway:8080"
       Database__AutoMigrate: "true"
+      Auth__DisableForLocalDemo: "true"
 
   api-gateway:
     build:
