@@ -1,76 +1,130 @@
 <template>
-  <div class="login-wrapper">
-    <div class="login-container">
-      <h2>Đăng Nhập Hệ Thống KTX</h2>
-
-      <form @submit.prevent="handleLogin">
-        <div class="form-group">
-          <label>Tài khoản</label>
-          <input
-            v-model="username"
-            type="text"
-            required
-            placeholder="Nhập tài khoản"
-          />
+  <main class="login-page">
+    <section class="login-visual">
+      <div class="brand-row">
+        <span class="mdi mdi-home-city-outline"></span>
+        <div>
+          <strong>KTX Management</strong>
+          <small>Smart Dormitory Microservices</small>
         </div>
+      </div>
 
-        <div class="form-group">
-          <label>Mật khẩu</label>
-          <input
-            v-model="password"
-            type="password"
-            required
-            placeholder="Nhập mật khẩu"
+      <div class="visual-content">
+        <span class="eyebrow">API Gateway Login</span>
+        <h1>Đăng nhập hệ thống quản lý ký túc xá</h1>
+        <p>
+          Một frontend dùng chung cho Room & Building, Contract & Student,
+          Billing/Maintenance và AuthService.
+        </p>
+      </div>
+
+      <div class="service-strip">
+        <span>Gateway</span>
+        <span>RoomService</span>
+        <span>ContractStudent</span>
+        <span>Billing</span>
+      </div>
+    </section>
+
+    <section class="login-panel">
+      <div class="panel-card">
+        <span class="page-kicker">Nhóm 3 - AuthService</span>
+        <h2>Đăng nhập</h2>
+        <p class="panel-copy">Dùng tài khoản demo do nhóm 3 cấp để vào hệ thống.</p>
+
+        <v-alert v-if="error" type="error" variant="tonal" class="mb-4">
+          {{ error }}
+        </v-alert>
+
+        <v-form @submit.prevent="login">
+          <v-text-field
+            v-model="form.username"
+            label="Tên đăng nhập"
+            density="comfortable"
+            prepend-inner-icon="mdi-account-outline"
+            autocomplete="username"
           />
+
+          <v-text-field
+            v-model="form.password"
+            label="Mật khẩu"
+            density="comfortable"
+            prepend-inner-icon="mdi-lock-outline"
+            :type="showPassword ? 'text' : 'password'"
+            :append-inner-icon="showPassword ? 'mdi-eye-off-outline' : 'mdi-eye-outline'"
+            autocomplete="current-password"
+            @click:append-inner="showPassword = !showPassword"
+          />
+
+          <v-btn
+            block
+            color="success"
+            size="large"
+            type="submit"
+            :loading="loading"
+          >
+            Đăng nhập
+          </v-btn>
+        </v-form>
+
+        <div class="demo-box">
+          <strong>Tài khoản demo</strong>
+          <button type="button" @click="useDemo('admin', 'admin123')">admin / admin123</button>
+          <button type="button" @click="useDemo('nhanvien', 'staff123')">nhanvien / staff123</button>
+          <button type="button" @click="useDemo('sinhvien', 'sv123')">sinhvien / sv123</button>
         </div>
-
-        <button type="submit" :disabled="loading" class="btn-login">
-          {{ loading ? 'Đang xác thực...' : 'Đăng nhập' }}
-        </button>
-
-        <p v-if="errorMessage" class="error-msg">{{ errorMessage }}</p>
-      </form>
-    </div>
-  </div>
+      </div>
+    </section>
+  </main>
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/services/api'
 
-const username = ref('')
-const password = ref('')
-const loading = ref(false)
-const errorMessage = ref('')
 const router = useRouter()
+const loading = ref(false)
+const error = ref('')
+const showPassword = ref(false)
 
-const handleLogin = async () => {
-  loading.value = true
-  errorMessage.value = ''
+const form = reactive({
+  username: 'admin',
+  password: 'admin123',
+})
 
+const useDemo = (username, password) => {
+  form.username = username
+  form.password = password
+  error.value = ''
+}
+
+const login = async () => {
   try {
+    loading.value = true
+    error.value = ''
+
     const response = await api.post('/auth/login', {
-      username: username.value,
-      password: password.value,
+      username: form.username,
+      password: form.password,
     })
 
-    const authData = response.data.data || response.data
+    const payload = response.data?.data || response.data || {}
+    const token = payload.token || payload.accessToken || payload.jwt
 
-    localStorage.setItem('user_token', authData.token)
-    localStorage.setItem('user_role', authData.role)
-    localStorage.setItem('fullName', authData.username)
-    localStorage.setItem('username', authData.username)
-
-    router.push('/student-service/dashboard')
-  } catch (error) {
-    console.error(error)
-
-    if (error.response && error.response.status === 401) {
-      errorMessage.value = 'Tài khoản hoặc mật khẩu không chính xác.'
-    } else {
-      errorMessage.value = 'Không kết nối được server. Kiểm tra Backend và API Gateway.'
+    if (!token) {
+      throw new Error('AuthService không trả token.')
     }
+
+    localStorage.setItem('user_token', token)
+    localStorage.setItem('user_role', payload.role || 'User')
+    localStorage.setItem('fullName', payload.fullName || payload.username || form.username)
+    localStorage.setItem('username', payload.username || form.username)
+
+    await router.push('/student-service/dashboard')
+  } catch (err) {
+    error.value = 'Không đăng nhập được. Kiểm tra AuthService hoặc tài khoản demo.'
+    console.error(err)
   } finally {
     loading.value = false
   }
@@ -78,86 +132,183 @@ const handleLogin = async () => {
 </script>
 
 <style scoped>
-.login-wrapper {
+.login-page {
+  display: grid;
+  grid-template-columns: minmax(420px, 1fr) minmax(420px, 520px);
+  min-height: 100vh;
+  background: #f7f8fa;
+}
+
+.login-visual {
+  position: relative;
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 46px;
+  overflow: hidden;
+  background:
+    linear-gradient(135deg, rgba(22, 155, 99, 0.92), rgba(5, 56, 37, 0.92)),
+    url('/src/assets/hero.png') center/cover;
+  color: #ffffff;
+}
+
+.brand-row {
+  display: flex;
   align-items: center;
-  width: 100vw;
-  height: 100vh;
-  background-color: #f5f6fa;
-  font-family: Arial, sans-serif;
+  gap: 14px;
+  position: relative;
+  z-index: 1;
 }
 
-.login-container {
-  width: 100%;
-  max-width: 420px;
-  padding: 35px;
-  background: white;
-  border-radius: 8px;
-  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
-  text-align: center;
+.brand-row .mdi {
+  color: #c8f4df;
+  font-size: 42px;
 }
 
-h2 {
-  margin-bottom: 25px;
-  color: #2c3e50;
-  font-size: 22px;
-  font-weight: bold;
-}
-
-.form-group {
-  text-align: left;
-  margin-bottom: 18px;
-}
-
-.form-group label {
+.brand-row strong,
+.brand-row small {
   display: block;
-  font-size: 14px;
-  margin-bottom: 6px;
-  color: #333;
-  font-weight: 600;
 }
 
-.form-group input {
-  width: 100%;
-  padding: 10px;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  font-size: 14px;
-  box-sizing: border-box;
+.brand-row strong {
+  font-size: 23px;
+  font-weight: 900;
 }
 
-.form-group input:focus {
-  border-color: #1abc9c;
-  outline: none;
-}
-
-.btn-login {
-  width: 100%;
-  padding: 12px;
-  background-color: #1abc9c;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  font-size: 15px;
-  font-weight: bold;
-  cursor: pointer;
-  margin-top: 10px;
-}
-
-.btn-login:hover {
-  background-color: #16a085;
-}
-
-.btn-login:disabled {
-  background-color: #bdc3c7;
-  cursor: not-allowed;
-}
-
-.error-msg {
-  color: #e74c3c;
-  margin-top: 15px;
+.brand-row small {
+  margin-top: 4px;
+  color: #d7f8e7;
   font-size: 13px;
-  font-weight: bold;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.visual-content {
+  position: relative;
+  z-index: 1;
+  max-width: 680px;
+}
+
+.eyebrow {
+  display: block;
+  margin-bottom: 12px;
+  color: #c8f4df;
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.visual-content h1 {
+  margin: 0;
+  max-width: 720px;
+  font-size: 46px;
+  line-height: 1.08;
+}
+
+.visual-content p {
+  max-width: 560px;
+  margin: 18px 0 0;
+  color: #e7fff1;
+  font-size: 17px;
+  line-height: 1.6;
+}
+
+.service-strip {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.service-strip span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.login-panel {
+  display: grid;
+  place-items: center;
+  padding: 42px;
+}
+
+.panel-card {
+  width: 100%;
+  max-width: 430px;
+  padding: 30px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.panel-card h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 30px;
+}
+
+.panel-copy {
+  margin: 8px 0 24px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.demo-box {
+  display: grid;
+  gap: 8px;
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.demo-box strong {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.demo-box button {
+  min-height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #334155;
+  cursor: pointer;
+  font-weight: 800;
+  text-align: left;
+  padding: 0 12px;
+}
+
+.demo-box button:hover {
+  border-color: rgba(22, 155, 99, 0.42);
+  background: #f0fdf4;
+}
+
+@media (max-width: 920px) {
+  .login-page {
+    grid-template-columns: 1fr;
+  }
+
+  .login-visual {
+    min-height: 420px;
+    padding: 30px;
+  }
+
+  .visual-content h1 {
+    font-size: 34px;
+  }
+
+  .login-panel {
+    padding: 24px;
+  }
 }
 </style>

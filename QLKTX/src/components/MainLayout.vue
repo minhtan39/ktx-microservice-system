@@ -38,6 +38,19 @@
           <span :class="['mdi', item.icon]"></span>
           <span>{{ item.label }}</span>
         </router-link>
+
+        <p class="nav-section">Dịch vụ nhóm khác</p>
+
+        <router-link
+          v-for="item in serviceItems"
+          :key="item.label"
+          :to="item.to"
+          class="nav-item"
+          :class="{ active: item.names.includes(route.name) }"
+        >
+          <span :class="['mdi', item.icon]"></span>
+          <span>{{ item.label }}</span>
+        </router-link>
       </nav>
 
       <div class="scope-box">
@@ -88,6 +101,7 @@
             </div>
             <div class="user-avatar">{{ userInitial }}</div>
           </div>
+          <v-btn icon="mdi-logout" variant="tonal" color="error" @click="logout" />
         </div>
       </header>
 
@@ -100,10 +114,11 @@
 
 <script setup>
 import { computed, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
 
 const route = useRoute()
+const router = useRouter()
 const userRole = ref(localStorage.getItem('user_role') || 'N2 Admin')
 const fullName = ref(localStorage.getItem('fullName') || 'demo_admin')
 
@@ -114,6 +129,9 @@ const titleByRoute = {
   RoomRegistrationApproval: 'Duyệt đơn và tự động xếp sinh viên vào phòng phù hợp',
   ContractList: 'Tra cứu hợp đồng đã tạo từ đơn được duyệt',
   ContractManage: 'Theo dõi hiệu lực và xử lý trạng thái hợp đồng',
+  RoomDashboard: 'Sơ đồ phòng và dữ liệu Room & Building Service',
+  IncidentManage: 'Quản lý sự cố, bảo trì và nghiệp vụ Billing/Maintenance',
+  SystemLogs: 'Nhật ký hệ thống và kiểm tra vận hành',
 }
 
 const overviewItems = [
@@ -163,6 +181,27 @@ const rubricItems = [
   },
 ]
 
+const serviceItems = [
+  {
+    to: '/facility/rooms',
+    names: ['RoomDashboard'],
+    icon: 'mdi-door-open',
+    label: 'Room & Building',
+  },
+  {
+    to: '/finance/incidents',
+    names: ['IncidentManage'],
+    icon: 'mdi-tools',
+    label: 'Billing & Maintenance',
+  },
+  {
+    to: '/system/logs',
+    names: ['SystemLogs'],
+    icon: 'mdi-text-box-search-outline',
+    label: 'Nhật ký hệ thống',
+  },
+]
+
 const pageTitle = computed(() =>
   titleByRoute[route.name] || 'Nghiệp vụ Contract & Student Service')
 
@@ -176,6 +215,13 @@ const gatewayLabel = computed(() => {
   if (baseUrl === '/api') return 'VPS /api'
   return baseUrl.replace(/^https?:\/\//, '')
 })
+
+const logout = async () => {
+  localStorage.removeItem('user_token')
+  localStorage.removeItem('user_role')
+  localStorage.removeItem('fullName')
+  await router.push('/login')
+}
 </script>
 
 <style scoped>

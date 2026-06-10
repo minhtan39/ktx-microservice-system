@@ -3,10 +3,12 @@ import { createRouter, createWebHistory } from 'vue-router'
 const routes = [
   {
     path: '/login',
-    redirect: '/student-service/dashboard',
+    name: 'Login',
+    component: () => import('../modules/auth/views/LoginView.vue'),
   },
   {
     path: '/',
+    meta: { requiresAuth: true },
     component: () => import('../components/MainLayout.vue'),
     children: [
       {
@@ -50,6 +52,24 @@ const routes = [
           import('../modules/contract-student/views/ContractManageView.vue'),
       },
       {
+        path: 'facility/rooms',
+        name: 'RoomDashboard',
+        component: () =>
+          import('../modules/facility/views/RoomDashboard.vue'),
+      },
+      {
+        path: 'finance/incidents',
+        name: 'IncidentManage',
+        component: () =>
+          import('../modules/finance/views/IncidentManage.vue'),
+      },
+      {
+        path: 'system/logs',
+        name: 'SystemLogs',
+        component: () =>
+          import('../modules/billing/views/SystemLogsView.vue'),
+      },
+      {
         path: 'contract/register',
         redirect: '/student-service/registrations',
       },
@@ -68,6 +88,20 @@ const routes = [
 const router = createRouter({
   history: createWebHistory(),
   routes,
+})
+
+router.beforeEach((to) => {
+  const token = localStorage.getItem('user_token')
+
+  if (to.name === 'Login' && token) {
+    return '/student-service/dashboard'
+  }
+
+  if (to.matched.some((record) => record.meta.requiresAuth) && !token) {
+    return '/login'
+  }
+
+  return true
 })
 
 export default router
