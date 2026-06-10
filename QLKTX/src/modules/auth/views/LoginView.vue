@@ -50,16 +50,17 @@ const handleLogin = async () => {
   errorMessage.value = ''
 
   try {
-    const response = await api.post('/Auth/login', {
+    const response = await api.post('/auth/login', {
       username: username.value,
       password: password.value,
     })
 
-    const authData = response.data.data
+    const authData = response.data.data || response.data
 
     localStorage.setItem('user_token', authData.token)
     localStorage.setItem('user_role', authData.role)
     localStorage.setItem('fullName', authData.username)
+    localStorage.setItem('username', authData.username)
 
     router.push('/student-service/dashboard')
   } catch (error) {

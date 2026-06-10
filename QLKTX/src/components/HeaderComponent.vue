@@ -41,6 +41,8 @@
 import { ref, onMounted, computed } from 'vue'
 import axios from 'axios'
 
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
+
 const isOpen = ref(false)
 const notifications = ref([])
 const fullName = ref(localStorage.getItem('fullName') || 'User')
@@ -63,7 +65,7 @@ const toggleDropdown = () => {
 const fetchNotifications = async () => {
   try {
     const token = localStorage.getItem('user_token')
-    const response = await axios.get('http://192.168.61.57:5004/api/v1/billing/management/notifications', {
+    const response = await axios.get(`${API_BASE}/billing/management/notifications`, {
       headers: { Authorization: `Bearer ${token}` }
     })
     notifications.value = response.data
@@ -78,7 +80,7 @@ const handleMarkAsRead = async (noti) => {
   
   try {
     const token = localStorage.getItem('user_token')
-    await axios.put(`http://192.168.61.57:5004/api/v1/billing/management/notifications/${noti.id}/read`, {}, {
+    await axios.put(`${API_BASE}/billing/management/notifications/${noti.id}/read`, {}, {
       headers: { Authorization: `Bearer ${token}` }
     })
     noti.isRead = true // Cập nhật trạng thái lập tức trên giao diện
