@@ -1,63 +1,116 @@
 <template>
-  <div>
-    <h2 class="text-h5 font-weight-bold mb-4 text-primary">Quản lý sửa chữa và Sự cố</h2>
+  <section class="incident-page">
+    <div class="page-head">
+      <div>
+        <span class="page-kicker">Billing & Maintenance</span>
+        <h2>Quan ly yeu cau sua chua</h2>
+        <p>Sinh vien gui yeu cau tu cong sinh vien, nhan vien/admin tiep nhan va cap nhat tien do xu ly.</p>
+      </div>
 
-    <v-tabs v-model="activeTab" bg-color="white" color="primary" grow class="rounded elevation-1 mb-4">
-      <v-tab value="new">🆕 Mới tiếp nhận ({{ countIncidents('new') }})</v-tab>
-      <v-tab value="processing">🛠️ Đang xử lý ({{ countIncidents('processing') }})</v-tab>
-      <v-tab value="done">✅ Hoàn thành ({{ countIncidents('done') }})</v-tab>
+      <v-btn color="success" prepend-icon="mdi-refresh" :loading="loading" @click="loadIncidents">
+        Lam moi
+      </v-btn>
+    </div>
+
+    <v-alert v-if="error" type="error" variant="tonal" class="mb-4">
+      {{ error }}
+    </v-alert>
+
+    <v-alert v-if="success" type="success" variant="tonal" class="mb-4">
+      {{ success }}
+    </v-alert>
+
+    <v-progress-linear v-if="loading" indeterminate color="success" class="mb-4" />
+
+    <v-tabs v-model="activeTab" bg-color="white" color="success" grow class="rounded elevation-1 mb-4">
+      <v-tab v-for="tab in statusTabs" :key="tab.value" :value="tab.value">
+        {{ tab.label }} ({{ countIncidents(tab.value) }})
+      </v-tab>
     </v-tabs>
 
     <v-window v-model="activeTab">
-      <v-window-item v-for="status in ['new', 'processing', 'done']" :key="status" :value="status">
+      <v-window-item v-for="tab in statusTabs" :key="tab.value" :value="tab.value">
         <v-row>
-          <v-col v-if="getIncidentsByStatus(status).length === 0" cols="12">
-            <v-alert type="info" text="Không có yêu cầu sự cố nào ở trạng thái này."></v-alert>
+          <v-col v-if="getIncidentsByStatus(tab.value).length === 0" cols="12">
+            <v-alert type="info" variant="tonal">
+              Khong co yeu cau sua chua nao o trang thai nay.
+            </v-alert>
           </v-col>
-          
-          <v-col 
-            v-for="incident in getIncidentsByStatus(status)" 
-            :key="incident.id" 
-            cols="12" md="6"
+
+          <v-col
+            v-for="incident in getIncidentsByStatus(tab.value)"
+            :key="incident.id"
+            cols="12"
+            md="6"
           >
-            <v-card class="elevation-2" :border="true">
+            <v-card class="incident-card" variant="outlined">
               <v-card-item>
-                <div class="d-flex justify-space-between">
-                  <v-card-title class="text-subtitle-1 font-weight-bold">
-                    Phòng {{ incident.roomName }} — Tòa {{ incident.building }}
-                  </v-card-title>
+                <div class="card-title-row">
+                  <div>
+                    <v-card-title>Phong {{ incident.roomName }} - Toa {{ incident.building }}</v-card-title>
+                    <v-card-subtitle>
+                      {{ incident.studentName }} · {{ incident.studentCode }} · {{ formatDateTime(incident.createdAt) }}
+                    </v-card-subtitle>
+                  </div>
+
                   <v-chip size="small" :color="getCategoryColor(incident.category)">
                     {{ incident.category }}
                   </v-chip>
                 </div>
-                <v-card-subtitle class="mt-1">Người gửi: {{ incident.studentName }}</v-card-subtitle>
               </v-card-item>
 
-              <v-card-text class="text-body-2 bg-grey-lighten-5 py-3 mx-4 rounded text-grey-darken-3">
-                <strong>Mô tả lỗi:</strong> {{ incident.description }}
+              <v-card-text>
+                <div class="description-box">
+                  <strong>Mo ta:</strong>
+                  <p>{{ incident.description }}</p>
+                </div>
+
+                <div v-if="incident.staffNote || incident.handledBy" class="note-box">
+                  <strong>Xu ly:</strong>
+                  <p>{{ incident.staffNote || 'Da cap nhat trang thai' }}</p>
+                  <small v-if="incident.handledBy">Nguoi xu ly: {{ incident.handledBy }}</small>
+                </div>
               </v-card-text>
 
-              <v-card-actions class="pa-4 justify-end">
-                <v-btn 
-                  v-if="status === 'new'" 
-                  color="warning" 
-                  variant="elevated" 
+              <v-card-actions class="justify-end">
+                <v-btn
+                  v-if="tab.value === 'new'"
+                  color="warning"
+                  variant="elevated"
                   prepend-icon="mdi-wrench"
                   @click="updateStatus(incident.id, 'processing')"
                 >
-                  Tiếp nhận sửa chữa
+                  Tiep nhan
                 </v-btn>
-                <v-btn 
-                  v-if="status === 'processing'" 
-                  color="success" 
-                  variant="elevated" 
-                  prepend-icon="mdi-check-circle"
+
+                <v-btn
+                  v-if="tab.value === 'new'"
+                  color="error"
+                  variant="tonal"
+                  prepend-icon="mdi-close-circle-outline"
+                  @click="updateStatus(incident.id, 'rejected')"
+                >
+                  Tu choi
+                </v-btn>
+
+                <v-btn
+                  v-if="tab.value === 'processing'"
+                  color="success"
+                  variant="elevated"
+                  prepend-icon="mdi-check-circle-outline"
                   @click="updateStatus(incident.id, 'done')"
                 >
-                  Báo cáo hoàn thành
+                  Hoan thanh
                 </v-btn>
-                <span v-if="status === 'done'" class="text-success text-caption font-weight-bold">
-                  <v-icon>mdi-check-all</v-icon> Đã sửa xong
+
+                <span v-if="tab.value === 'done'" class="status-done">
+                  <span class="mdi mdi-check-all"></span>
+                  Da sua xong
+                </span>
+
+                <span v-if="tab.value === 'rejected'" class="status-rejected">
+                  <span class="mdi mdi-close-circle-outline"></span>
+                  Da tu choi
                 </span>
               </v-card-actions>
             </v-card>
@@ -65,40 +118,177 @@
         </v-row>
       </v-window-item>
     </v-window>
-  </div>
+  </section>
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { onMounted, ref } from 'vue'
+import api from '@/services/api'
 
 const activeTab = ref('new')
+const loading = ref(false)
+const error = ref('')
+const success = ref('')
+const incidents = ref([])
 
-const incidents = ref([
-  { id: 'ic1', roomName: '302', building: 'Tòa A1', studentName: 'Trần Văn C', category: 'Điện', description: 'Hỏng công tắc điều hòa, bật không lên điện nguồn.', status: 'new' },
-  { id: 'ic2', roomName: '105', building: 'Tòa B1', studentName: 'Lê Văn D', category: 'Nước', description: 'Vòi hoa sen nhà vệ sinh bị rỉ nước liên tục gây ngập nền.', status: 'new' },
-  { id: 'ic3', roomName: '204', building: 'Tòa A2', studentName: 'Phạm Thị E', category: 'Cơ sở vật chất', description: 'Khóa cửa ban công bị kẹt không khóa được.', status: 'processing' }
-])
+const statusTabs = [
+  { value: 'new', label: 'Moi tiep nhan' },
+  { value: 'processing', label: 'Dang xu ly' },
+  { value: 'done', label: 'Hoan thanh' },
+  { value: 'rejected', label: 'Tu choi' },
+]
+
+const normalizeList = (data) => {
+  if (Array.isArray(data)) return data
+  if (Array.isArray(data?.data)) return data.data
+  if (Array.isArray(data?.items)) return data.items
+  return []
+}
+
+const loadIncidents = async () => {
+  try {
+    loading.value = true
+    error.value = ''
+
+    const response = await api.get('/incidents')
+    incidents.value = normalizeList(response.data)
+  } catch (err) {
+    error.value = 'Khong tai duoc danh sach yeu cau sua chua tu BillingService.'
+    console.error(err)
+  } finally {
+    loading.value = false
+  }
+}
 
 const getIncidentsByStatus = (status) => {
-  return incidents.value.filter(i => i.status === status)
+  return incidents.value.filter((incident) => incident.status === status)
 }
 
 const countIncidents = (status) => {
-  return incidents.value.filter(i => i.status === status).length
+  return getIncidentsByStatus(status).length
 }
 
-const getCategoryColor = (cat) => {
-  if (cat === 'Điện') return 'orange-darken-2'
-  if (cat === 'Nước') return 'blue'
-  return 'brown'
+const getCategoryColor = (category) => {
+  if (category === 'Electric') return 'orange-darken-2'
+  if (category === 'Water') return 'blue'
+  if (category === 'Internet') return 'indigo'
+  if (category === 'Furniture') return 'brown'
+  return 'grey-darken-1'
 }
 
-const updateStatus = (id, newStatus) => {
-  const item = incidents.value.find(i => i.id === id)
-  if (item) {
-    item.status = newStatus
-    // Thực tế: Gửi lệnh PATCH cập nhật trạng thái sự cố tới Incident Service
-    console.log(`Sự cố ${id} đã được chuyển sang trạng thái: ${newStatus}`)
+const updateStatus = async (id, status) => {
+  const staffNote = window.prompt('Ghi chu xu ly', '')
+
+  try {
+    error.value = ''
+    success.value = ''
+
+    await api.patch(`/incidents/${id}/status`, {
+      status,
+      handledBy: localStorage.getItem('username') || localStorage.getItem('fullName') || 'staff',
+      staffNote,
+    })
+
+    success.value = 'Da cap nhat trang thai yeu cau sua chua.'
+    await loadIncidents()
+  } catch (err) {
+    error.value = 'Khong cap nhat duoc trang thai yeu cau sua chua.'
+    console.error(err)
   }
 }
+
+const formatDateTime = (value) => {
+  if (!value) return '-'
+  return new Intl.DateTimeFormat('vi-VN', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+  }).format(new Date(value))
+}
+
+onMounted(loadIncidents)
 </script>
+
+<style scoped>
+.incident-page {
+  display: grid;
+  gap: 16px;
+}
+
+.page-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.page-head h2 {
+  margin: 4px 0 6px;
+  color: var(--brand-dark);
+  font-size: 28px;
+}
+
+.page-head p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.incident-card {
+  height: 100%;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.card-title-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.description-box,
+.note-box {
+  padding: 12px;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.description-box p,
+.note-box p {
+  margin: 6px 0 0;
+  color: var(--ink);
+  line-height: 1.55;
+}
+
+.note-box {
+  margin-top: 10px;
+  background: #f0fdf4;
+}
+
+.note-box small {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+}
+
+.status-done,
+.status-rejected {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.status-done {
+  color: #0f7a44;
+}
+
+.status-rejected {
+  color: #b91c1c;
+}
+
+@media (max-width: 760px) {
+  .page-head {
+    display: grid;
+  }
+}
+</style>
