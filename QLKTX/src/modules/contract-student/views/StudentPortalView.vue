@@ -169,6 +169,96 @@
 
       <section class="panel">
         <div class="panel-title">
+          <span class="mdi mdi-tools"></span>
+          <div>
+            <strong>Yeu cau sua chua</strong>
+            <small>Sinh vien gui su co phong o, nhan vien/admin tiep nhan va cap nhat trang thai</small>
+          </div>
+        </div>
+
+        <v-form class="registration-form" @submit.prevent="submitIncident">
+          <v-row dense>
+            <v-col cols="12" sm="4">
+              <v-text-field
+                v-model="incidentForm.roomName"
+                label="Phong"
+                density="comfortable"
+              />
+            </v-col>
+            <v-col cols="12" sm="4">
+              <v-select
+                v-model="incidentForm.building"
+                :items="buildingOptions"
+                label="Toa"
+                density="comfortable"
+              />
+            </v-col>
+            <v-col cols="12" sm="4">
+              <v-select
+                v-model="incidentForm.category"
+                :items="incidentCategories"
+                label="Loai su co"
+                density="comfortable"
+              />
+            </v-col>
+            <v-col cols="12">
+              <v-textarea
+                v-model="incidentForm.description"
+                label="Mo ta chi tiet"
+                rows="3"
+                density="comfortable"
+              />
+            </v-col>
+          </v-row>
+
+          <div class="form-actions">
+            <v-btn
+              color="success"
+              type="submit"
+              :loading="incidentSubmitting"
+              :disabled="!student"
+              prepend-icon="mdi-send-outline"
+            >
+              Gui yeu cau sua chua
+            </v-btn>
+          </div>
+        </v-form>
+
+        <div class="table-wrap mt-4">
+          <table>
+            <thead>
+              <tr>
+                <th>Ngay gui</th>
+                <th>Phong</th>
+                <th>Loai su co</th>
+                <th>Mo ta</th>
+                <th>Trang thai</th>
+                <th>Phan hoi</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-if="ownIncidents.length === 0">
+                <td colspan="6" class="empty-cell">Ban chua co yeu cau sua chua nao.</td>
+              </tr>
+              <tr v-for="incident in ownIncidents" :key="incident.id">
+                <td>{{ formatDate(incident.createdAt) }}</td>
+                <td>{{ incident.building }}-{{ incident.roomName }}</td>
+                <td>{{ incident.category }}</td>
+                <td>{{ incident.description }}</td>
+                <td>
+                  <span class="status-pill" :class="incidentStatusClass(incident.status)">
+                    {{ incidentStatusLabel(incident.status) }}
+                  </span>
+                </td>
+                <td>{{ incident.staffNote || incident.handledBy || '-' }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title">
           <span class="mdi mdi-clipboard-list-outline"></span>
           <div>
             <strong>Đơn đăng ký của tôi</strong>
@@ -266,6 +356,7 @@ const success = ref('')
 const student = ref(null)
 const ownRegistrations = ref([])
 const ownContracts = ref([])
+const ownIncidents = ref([])
 
 const studentId = ref(Number(localStorage.getItem('student_id') || 0))
 const studentCode = ref(localStorage.getItem('student_code') || '')
@@ -290,6 +381,15 @@ const form = reactive({
   priorityNote: '',
   startDate: '',
   endDate: '',
+})
+
+const incidentCategories = ['Electric', 'Water', 'Furniture', 'Internet', 'Other']
+const incidentSubmitting = ref(false)
+const incidentForm = reactive({
+  roomName: '',
+  building: 'A',
+  category: 'Electric',
+  description: '',
 })
 
 const currentRoom = computed(() => {
@@ -363,6 +463,16 @@ const loadContracts = async () => {
   }
 }
 
+const loadIncidents = async () => {
+  if (!studentId.value) {
+    ownIncidents.value = []
+    return
+  }
+
+  const response = await api.get(`/incidents?studentId=${studentId.value}`)
+  ownIncidents.value = normalizeList(response.data)
+}
+
 const loadAll = async () => {
   try {
     loading.value = true
@@ -373,12 +483,50 @@ const loadAll = async () => {
     await Promise.all([
       loadRegistrations(),
       loadContracts(),
+      loadIncidents(),
     ])
   } catch (err) {
     error.value = 'Không tải được dữ liệu sinh viên. Kiểm tra Gateway và ContractStudentService.'
     console.error(err)
   } finally {
     loading.value = false
+  }
+}
+
+const submitIncident = async () => {
+  if (!student.value) {
+    error.value = 'Chua tim thay ho so sinh vien de gui yeu cau sua chua.'
+    return
+  }
+
+  if (!incidentForm.roomName.trim() || !incidentForm.description.trim()) {
+    error.value = 'Vui long nhap phong va mo ta su co.'
+    return
+  }
+
+  try {
+    incidentSubmitting.value = true
+    error.value = ''
+    success.value = ''
+
+    await api.post('/incidents', {
+      studentId: studentId.value,
+      studentCode: studentCode.value,
+      studentName: displayName.value,
+      roomName: incidentForm.roomName,
+      building: incidentForm.building,
+      category: incidentForm.category,
+      description: incidentForm.description,
+    })
+
+    success.value = 'Da gui yeu cau sua chua. Nhan vien/admin se tiep nhan va cap nhat trang thai.'
+    incidentForm.description = ''
+    await loadIncidents()
+  } catch (err) {
+    error.value = 'Khong gui duoc yeu cau sua chua. Kiem tra Gateway va BillingService.'
+    console.error(err)
+  } finally {
+    incidentSubmitting.value = false
   }
 }
 
@@ -443,6 +591,24 @@ const statusClass = (status) => {
     'status-approved': normalized === 'approved' || normalized === 'active',
     'status-rejected': normalized === 'rejected' || normalized === 'cancelled',
     'status-expired': normalized === 'expired',
+  }
+}
+
+const incidentStatusLabel = (status) => {
+  const normalized = String(status || '').toLowerCase()
+  if (normalized === 'new') return 'Moi gui'
+  if (normalized === 'processing') return 'Dang xu ly'
+  if (normalized === 'done') return 'Hoan thanh'
+  if (normalized === 'rejected') return 'Tu choi'
+  return status || 'Chua cap nhat'
+}
+
+const incidentStatusClass = (status) => {
+  const normalized = String(status || '').toLowerCase()
+  return {
+    'status-pending': normalized === 'new',
+    'status-approved': normalized === 'processing' || normalized === 'done',
+    'status-rejected': normalized === 'rejected',
   }
 }
 
