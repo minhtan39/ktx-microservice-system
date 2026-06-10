@@ -7,16 +7,16 @@
         </div>
         <div>
           <div class="brand-name">KTX</div>
-          <span class="brand-subtitle">Contract & Student</span>
+          <span class="brand-subtitle">Smart Dormitory</span>
         </div>
       </div>
 
       <nav class="nav">
-        <p class="nav-section">Nghiệp vụ nhóm N2</p>
+        <p class="nav-section">Vận hành N2</p>
 
         <router-link to="/student-service/dashboard" class="nav-item" active-class="active">
           <span class="mdi mdi-view-dashboard-outline"></span>
-          <span>Tổng quan N2</span>
+          <span>Bảng tin kết nối</span>
         </router-link>
 
         <router-link to="/student-service/students" class="nav-item" active-class="active">
@@ -41,10 +41,18 @@
       </nav>
 
       <div class="scope-box">
-        <span class="mdi mdi-shield-check-outline"></span>
+        <span class="mdi mdi-transit-connection-variant"></span>
         <div>
-          <strong>Phạm vi N2</strong>
-          <p>Sinh viên, đăng ký phòng, duyệt xếp phòng và hợp đồng.</p>
+          <strong>Luồng liên thông</strong>
+          <p>N2 nhận đăng ký, gọi RoomService để xếp phòng, tạo hợp đồng rồi gửi Billing.</p>
+        </div>
+      </div>
+
+      <div class="deploy-box">
+        <span class="mdi mdi-cloud-check-outline"></span>
+        <div>
+          <strong>VPS Gateway</strong>
+          <p>Frontend gọi qua API Gateway, các service nói chuyện bằng Docker internal URL.</p>
         </div>
       </div>
 
@@ -61,16 +69,25 @@
       <header class="topbar">
         <div>
           <span class="service-label">Contract & Student Service</span>
-          <h1>KTX MANAGEMENT - QUẢN LÝ KÝ TÚC XÁ THÔNG MINH</h1>
+          <h1>KTX Management - Quản lý ký túc xá thông minh</h1>
           <p>{{ pageTitle }}</p>
         </div>
 
-        <div class="user-chip">
-          <div>
-            <strong>{{ fullName }}</strong>
-            <span>{{ userRole }}</span>
+        <div class="topbar-actions">
+          <div class="gateway-chip">
+            <span class="mdi mdi-lan-connect"></span>
+            <div>
+              <strong>Gateway</strong>
+              <small>{{ gatewayLabel }}</small>
+            </div>
           </div>
-          <div class="user-avatar">{{ userInitial }}</div>
+          <div class="user-chip">
+            <div>
+              <strong>{{ fullName }}</strong>
+              <span>{{ userRole }}</span>
+            </div>
+            <div class="user-avatar">{{ userInitial }}</div>
+          </div>
         </div>
       </header>
 
@@ -84,24 +101,32 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
+import api from '@/services/api'
 
 const route = useRoute()
 const userRole = ref(localStorage.getItem('user_role') || 'N2 Admin')
 const fullName = ref(localStorage.getItem('fullName') || 'demo_admin')
 
 const titleByRoute = {
-  StudentServiceDashboard: 'Tổng quan nghiệp vụ N2',
-  StudentManage: 'Quản lý hồ sơ sinh viên',
-  RoomRegistrationManage: 'Đăng ký phòng và duyệt xếp phòng',
-  ContractList: 'Danh sách hợp đồng',
-  ContractManage: 'Quản lý hợp đồng',
+  StudentServiceDashboard: 'Theo dõi kết nối 3 nhóm và luồng end-to-end',
+  StudentManage: 'Quản lý hồ sơ sinh viên, lớp, khoa và lịch sử lưu trú',
+  RoomRegistrationManage: 'Tiếp nhận đăng ký online và duyệt xếp phòng tự động',
+  ContractList: 'Tra cứu hợp đồng đã tạo từ đơn được duyệt',
+  ContractManage: 'Theo dõi hiệu lực, tiền cọc và thời hạn hợp đồng',
 }
 
 const pageTitle = computed(() =>
-  titleByRoute[route.name] || 'Tổng quan nghiệp vụ N2')
+  titleByRoute[route.name] || 'Nghiệp vụ Contract & Student Service')
 
 const userInitial = computed(() => {
   return (fullName.value || 'U').trim().charAt(0).toUpperCase()
+})
+
+const gatewayLabel = computed(() => {
+  const baseUrl = api.defaults.baseURL || '/api'
+
+  if (baseUrl === '/api') return 'VPS /api'
+  return baseUrl.replace(/^https?:\/\//, '')
 })
 </script>
 
@@ -219,29 +244,33 @@ const userInitial = computed(() => {
   color: #ffffff;
 }
 
-.scope-box {
+.scope-box,
+.deploy-box {
   display: grid;
   grid-template-columns: 32px minmax(0, 1fr);
   gap: 10px;
-  margin: 16px 0;
+  margin: 10px 0 0;
   padding: 14px;
   border: 1px solid #24282c;
   border-radius: 8px;
   background: #111416;
 }
 
-.scope-box .mdi {
+.scope-box .mdi,
+.deploy-box .mdi {
   color: var(--brand);
   font-size: 24px;
 }
 
-.scope-box strong {
+.scope-box strong,
+.deploy-box strong {
   display: block;
   color: #ffffff;
   font-size: 13px;
 }
 
-.scope-box p {
+.scope-box p,
+.deploy-box p {
   margin: 4px 0 0;
   color: #9aa1a8;
   font-size: 12px;
@@ -253,7 +282,7 @@ const userInitial = computed(() => {
   grid-template-columns: 42px minmax(0, 1fr);
   gap: 12px;
   align-items: center;
-  margin-top: 8px;
+  margin-top: 16px;
   padding-top: 18px;
   border-top: 1px solid #24282c;
 }
@@ -339,11 +368,51 @@ const userInitial = computed(() => {
   font-weight: 700;
 }
 
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 0 0 auto;
+}
+
+.gateway-chip {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  min-width: 154px;
+  min-height: 48px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.gateway-chip .mdi {
+  color: var(--brand-dark);
+  font-size: 24px;
+}
+
+.gateway-chip strong,
+.gateway-chip small {
+  display: block;
+}
+
+.gateway-chip strong {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.gateway-chip small {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .user-chip {
   display: flex;
   align-items: center;
   gap: 12px;
-  flex: 0 0 auto;
 }
 
 .user-chip strong,
@@ -400,6 +469,7 @@ const userInitial = computed(() => {
 
   .nav-section,
   .scope-box,
+  .deploy-box,
   .account-box {
     display: none;
   }
@@ -416,8 +486,13 @@ const userInitial = computed(() => {
     padding: 18px;
   }
 
-  .user-chip {
+  .topbar-actions {
+    align-items: stretch;
+    flex-direction: column;
     width: 100%;
+  }
+
+  .user-chip {
     justify-content: flex-start;
   }
 
