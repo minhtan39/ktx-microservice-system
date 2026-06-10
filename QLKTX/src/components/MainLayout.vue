@@ -143,6 +143,7 @@ const titleByRoute = {
   ContractManage: 'Theo dõi hiệu lực và xử lý trạng thái hợp đồng',
   RoomDashboard: 'Sơ đồ phòng và dữ liệu Room & Building Service',
   IncidentManage: 'Quản lý sự cố, bảo trì và nghiệp vụ Billing/Maintenance',
+  AccountManage: 'Quản lý tài khoản đăng nhập của nhân viên và sinh viên',
   SystemLogs: 'Nhật ký hệ thống và kiểm tra vận hành',
 }
 
@@ -216,6 +217,13 @@ const adminServiceItems = [
     label: 'Billing & Maintenance',
   },
   {
+    to: '/auth/accounts',
+    names: ['AccountManage'],
+    icon: 'mdi-account-key-outline',
+    label: 'Quản lý tài khoản',
+    adminOnly: true,
+  },
+  {
     to: '/system/logs',
     names: ['SystemLogs'],
     icon: 'mdi-text-box-search-outline',
@@ -230,7 +238,9 @@ const rubricItems = computed(() =>
   isStudent.value ? [] : adminRubricItems)
 
 const serviceItems = computed(() =>
-  isStudent.value ? [] : adminServiceItems)
+  isStudent.value
+    ? []
+    : adminServiceItems.filter((item) => !item.adminOnly || roleKey.value === 'Admin'))
 
 const overviewSectionTitle = computed(() =>
   isStudent.value ? 'Tài khoản sinh viên' : 'Tổng quan hệ thống')

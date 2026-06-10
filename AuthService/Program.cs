@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Text;
 using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -133,12 +134,116 @@ app.MapPost("/api/auth/student-accounts", (StudentAccountRequest request) =>
     });
 });
 
+app.MapGet("/api/auth/accounts", (HttpRequest request) =>
+{
+    if (!IsAdminRequest(request))
+        return Results.Unauthorized();
+
+    var accounts = users.Values
+        .Where(user => !user.Role.Equals("Admin", StringComparison.OrdinalIgnoreCase))
+        .OrderBy(user => user.Role)
+        .ThenBy(user => user.Username)
+        .Select(ToAccountResponse)
+        .ToList();
+
+    return Results.Ok(new { data = accounts });
+});
+
+app.MapGet("/api/auth/accounts/{username}", (string username, HttpRequest request) =>
+{
+    if (!IsAdminRequest(request))
+        return Results.Unauthorized();
+
+    return users.TryGetValue(username, out var user) &&
+        !user.Role.Equals("Admin", StringComparison.OrdinalIgnoreCase)
+            ? Results.Ok(new { data = ToAccountResponse(user) })
+            : Results.NotFound(new { message = "Account not found." });
+});
+
+app.MapPut("/api/auth/accounts/{username}", (string username, UpdateAccountRequest update, HttpRequest request) =>
+{
+    if (!IsAdminRequest(request))
+        return Results.Unauthorized();
+
+    if (!users.TryGetValue(username, out var current) ||
+        current.Role.Equals("Admin", StringComparison.OrdinalIgnoreCase))
+    {
+        return Results.NotFound(new { message = "Account not found." });
+    }
+
+    var nextUsername = string.IsNullOrWhiteSpace(update.Username)
+        ? current.Username
+        : update.Username.Trim();
+
+    var nextPassword = string.IsNullOrWhiteSpace(update.Password)
+        ? current.Password
+        : update.Password.Trim();
+
+    var nextFullName = string.IsNullOrWhiteSpace(update.FullName)
+        ? current.FullName
+        : update.FullName.Trim();
+
+    if (string.IsNullOrWhiteSpace(nextUsername) || string.IsNullOrWhiteSpace(nextPassword))
+    {
+        return Results.BadRequest(new { message = "Username and password are required." });
+    }
+
+    if (!nextUsername.Equals(username, StringComparison.OrdinalIgnoreCase) &&
+        users.ContainsKey(nextUsername))
+    {
+        return Results.Conflict(new { message = "Username already exists." });
+    }
+
+    var updated = current with
+    {
+        Username = nextUsername,
+        Password = nextPassword,
+        FullName = nextFullName,
+        StudentCode = current.Role.Equals("Student", StringComparison.OrdinalIgnoreCase)
+            ? nextUsername
+            : current.StudentCode
+    };
+
+    if (!nextUsername.Equals(username, StringComparison.OrdinalIgnoreCase))
+    {
+        users.TryRemove(username, out _);
+    }
+
+    users[nextUsername] = updated;
+
+    return Results.Ok(new { data = ToAccountResponse(updated) });
+});
+
 app.Run();
 
 static string CreateDemoToken(DemoUser user)
 {
     var raw = $"{user.Username}:{user.Role}:{user.StudentCode}:{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}";
-    return Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(raw));
+    return Convert.ToBase64String(Encoding.UTF8.GetBytes(raw));
+}
+
+static bool IsAdminRequest(HttpRequest request)
+{
+    var authorization = request.Headers.Authorization.ToString();
+    const string bearerPrefix = "Bearer ";
+
+    if (!authorization.StartsWith(bearerPrefix, StringComparison.OrdinalIgnoreCase))
+        return false;
+
+    var token = authorization[bearerPrefix.Length..].Trim();
+
+    try
+    {
+        var raw = Encoding.UTF8.GetString(Convert.FromBase64String(token));
+        var parts = raw.Split(':');
+
+        return parts.Length >= 2 &&
+            parts[1].Equals("Admin", StringComparison.OrdinalIgnoreCase);
+    }
+    catch
+    {
+        return false;
+    }
 }
 
 static object ToAuthResponse(DemoUser user)
@@ -157,6 +262,19 @@ static object ToAuthResponse(DemoUser user)
                 ? "/student/portal"
                 : "/student-service/dashboard"
         }
+    };
+}
+
+static object ToAccountResponse(DemoUser user)
+{
+    return new
+    {
+        user.Username,
+        user.Password,
+        user.Role,
+        user.FullName,
+        user.StudentId,
+        user.StudentCode
     };
 }
 
@@ -245,6 +363,11 @@ public sealed record StudentAccountRequest(
     long StudentId,
     string StudentCode,
     string FullName);
+
+public sealed record UpdateAccountRequest(
+    string? Username,
+    string? Password,
+    string? FullName);
 
 public sealed record DemoUser(
     string Username,
