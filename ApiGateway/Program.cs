@@ -115,7 +115,7 @@ static string ResolveServiceKey(string path)
     return firstSegment switch
     {
         "auth" => "AuthService",
-        "buildings" or "rooms" or "roomtypes" => "RoomService",
+        "buildings" or "rooms" or "roomtypes" or "room-types" => "RoomService",
         "bills" or "billing" or "maintenance" or "incidents" => "BillingService",
         "students" or "registrations" or "roomregistration" or "contracts"
             or "contract" or "dashboard" or "checkhistory" => "ContractStudentService",
