@@ -3,7 +3,8 @@ import { createRouter, createWebHistory } from 'vue-router'
 const routes = [
   {
     path: '/login',
-    redirect: '/student-service/dashboard',
+    name: 'Login',
+    component: () => import('../modules/auth/views/LoginView.vue'),
   },
   {
     path: '/',
@@ -68,6 +69,20 @@ const routes = [
 const router = createRouter({
   history: createWebHistory(),
   routes,
+})
+
+router.beforeEach((to) => {
+  const token = localStorage.getItem('user_token')
+
+  if (!token && to.path !== '/login') {
+    return '/login'
+  }
+
+  if (token && to.path === '/login') {
+    return '/student-service/dashboard'
+  }
+
+  return true
 })
 
 export default router
