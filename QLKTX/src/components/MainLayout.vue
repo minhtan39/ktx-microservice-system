@@ -12,7 +12,7 @@
       </div>
 
       <nav class="nav">
-        <p class="nav-section">Tổng quan hệ thống</p>
+        <p v-if="overviewItems.length" class="nav-section">{{ overviewSectionTitle }}</p>
 
         <router-link
           v-for="item in overviewItems"
@@ -25,7 +25,7 @@
           <span>{{ item.label }}</span>
         </router-link>
 
-        <p class="nav-section">Theo yêu cầu N2</p>
+        <p v-if="rubricItems.length" class="nav-section">Theo yêu cầu N2</p>
 
         <router-link
           v-for="item in rubricItems"
@@ -39,7 +39,7 @@
           <span>{{ item.label }}</span>
         </router-link>
 
-        <p class="nav-section">Dịch vụ nhóm khác</p>
+        <p v-if="serviceItems.length" class="nav-section">Dịch vụ nhóm khác</p>
 
         <router-link
           v-for="item in serviceItems"
@@ -53,7 +53,7 @@
         </router-link>
       </nav>
 
-      <div class="scope-box">
+      <div v-if="!isStudent" class="scope-box">
         <span class="mdi mdi-transit-connection-variant"></span>
         <div>
           <strong>Luồng liên thông</strong>
@@ -61,7 +61,7 @@
         </div>
       </div>
 
-      <div class="deploy-box">
+      <div v-if="!isStudent" class="deploy-box">
         <span class="mdi mdi-cloud-check-outline"></span>
         <div>
           <strong>VPS Gateway</strong>
@@ -81,8 +81,8 @@
     <main class="main-panel">
       <header class="topbar">
         <div>
-          <span class="service-label">Contract & Student Service</span>
-          <h1>KTX Management - Quản lý ký túc xá thông minh</h1>
+          <span class="service-label">{{ serviceLabel }}</span>
+          <h1>{{ appTitle }}</h1>
           <p>{{ pageTitle }}</p>
         </div>
 
@@ -122,7 +122,19 @@ const router = useRouter()
 const userRole = ref(localStorage.getItem('user_role') || 'N2 Admin')
 const fullName = ref(localStorage.getItem('fullName') || 'demo_admin')
 
+const normalizeRole = (role) => {
+  const normalized = String(role || '').toLowerCase()
+
+  if (normalized === 'student' || normalized === 'sinhvien') return 'Student'
+  if (normalized === 'staff' || normalized === 'nhanvien') return 'Staff'
+  return 'Admin'
+}
+
+const roleKey = computed(() => normalizeRole(userRole.value))
+const isStudent = computed(() => roleKey.value === 'Student')
+
 const titleByRoute = {
+  StudentPortal: 'Theo dõi hồ sơ, đăng ký nội trú và hợp đồng của bạn',
   StudentServiceDashboard: 'Theo dõi kết nối 3 nhóm và luồng end-to-end',
   StudentManage: 'Quản lý hồ sơ sinh viên, lớp, khoa và lịch sử lưu trú',
   RoomRegistrationCreate: 'Tiếp nhận đăng ký nội trú trực tuyến',
@@ -134,7 +146,16 @@ const titleByRoute = {
   SystemLogs: 'Nhật ký hệ thống và kiểm tra vận hành',
 }
 
-const overviewItems = [
+const studentOverviewItems = [
+  {
+    to: '/student/portal',
+    names: ['StudentPortal'],
+    icon: 'mdi-account-school-outline',
+    label: 'Cổng sinh viên',
+  },
+]
+
+const adminOverviewItems = [
   {
     to: '/student-service/dashboard',
     names: ['StudentServiceDashboard'],
@@ -143,7 +164,7 @@ const overviewItems = [
   },
 ]
 
-const rubricItems = [
+const adminRubricItems = [
   {
     step: '5',
     to: '/student-service/students',
@@ -181,7 +202,7 @@ const rubricItems = [
   },
 ]
 
-const serviceItems = [
+const adminServiceItems = [
   {
     to: '/facility/rooms',
     names: ['RoomDashboard'],
@@ -202,6 +223,26 @@ const serviceItems = [
   },
 ]
 
+const overviewItems = computed(() =>
+  isStudent.value ? studentOverviewItems : adminOverviewItems)
+
+const rubricItems = computed(() =>
+  isStudent.value ? [] : adminRubricItems)
+
+const serviceItems = computed(() =>
+  isStudent.value ? [] : adminServiceItems)
+
+const overviewSectionTitle = computed(() =>
+  isStudent.value ? 'Tài khoản sinh viên' : 'Tổng quan hệ thống')
+
+const serviceLabel = computed(() =>
+  isStudent.value ? 'Student Portal' : 'Contract & Student Service')
+
+const appTitle = computed(() =>
+  isStudent.value
+    ? 'KTX Management - Cổng sinh viên'
+    : 'KTX Management - Quản lý ký túc xá thông minh')
+
 const pageTitle = computed(() =>
   titleByRoute[route.name] || 'Nghiệp vụ Contract & Student Service')
 
@@ -220,6 +261,10 @@ const logout = async () => {
   localStorage.removeItem('user_token')
   localStorage.removeItem('user_role')
   localStorage.removeItem('fullName')
+  localStorage.removeItem('username')
+  localStorage.removeItem('user_home')
+  localStorage.removeItem('student_id')
+  localStorage.removeItem('student_code')
   await router.push('/login')
 }
 </script>

@@ -30,7 +30,7 @@
       <div class="panel-card">
         <span class="page-kicker">Nhóm 3 - AuthService</span>
         <h2>Đăng nhập</h2>
-        <p class="panel-copy">Dùng tài khoản demo do nhóm 3 cấp để vào hệ thống.</p>
+        <p class="panel-copy">Admin/nhân viên vào màn quản trị, sinh viên vào cổng tự phục vụ.</p>
 
         <v-alert v-if="error" type="error" variant="tonal" class="mb-4">
           {{ error }}
@@ -69,9 +69,9 @@
 
         <div class="demo-box">
           <strong>Tài khoản demo</strong>
-          <button type="button" @click="useDemo('admin', 'admin123')">admin / admin123</button>
-          <button type="button" @click="useDemo('nhanvien', 'staff123')">nhanvien / staff123</button>
-          <button type="button" @click="useDemo('sinhvien', 'sv123')">sinhvien / sv123</button>
+          <button type="button" @click="useDemo('admin', 'admin123')">Quản trị: admin / admin123</button>
+          <button type="button" @click="useDemo('nhanvien', 'staff123')">Nhân viên: nhanvien / staff123</button>
+          <button type="button" @click="useDemo('sinhvien', 'sv123')">Sinh viên: sinhvien / sv123</button>
         </div>
       </div>
     </section>
@@ -99,6 +99,12 @@ const useDemo = (username, password) => {
   error.value = ''
 }
 
+const homePathByRole = (role) => {
+  return String(role || '').toLowerCase() === 'student'
+    ? '/student/portal'
+    : '/student-service/dashboard'
+}
+
 const login = async () => {
   try {
     loading.value = true
@@ -116,12 +122,28 @@ const login = async () => {
       throw new Error('AuthService không trả token.')
     }
 
+    const role = payload.role || 'User'
+    const homePath = payload.homePath || homePathByRole(role)
+
     localStorage.setItem('user_token', token)
-    localStorage.setItem('user_role', payload.role || 'User')
+    localStorage.setItem('user_role', role)
     localStorage.setItem('fullName', payload.fullName || payload.username || form.username)
     localStorage.setItem('username', payload.username || form.username)
+    localStorage.setItem('user_home', homePath)
 
-    await router.push('/student-service/dashboard')
+    if (payload.studentId) {
+      localStorage.setItem('student_id', String(payload.studentId))
+    } else {
+      localStorage.removeItem('student_id')
+    }
+
+    if (payload.studentCode) {
+      localStorage.setItem('student_code', payload.studentCode)
+    } else {
+      localStorage.removeItem('student_code')
+    }
+
+    await router.push(homePath)
   } catch (err) {
     error.value = 'Không đăng nhập được. Kiểm tra AuthService hoặc tài khoản demo.'
     console.error(err)
