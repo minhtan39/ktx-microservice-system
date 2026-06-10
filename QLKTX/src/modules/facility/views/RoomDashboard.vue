@@ -532,10 +532,14 @@ const emptyRoomTypeForm = () => ({
 const emptyRoomForm = () => {
   const firstBuilding = buildings.value[0]?.buildingName || ''
   const firstRoomType = roomTypes.value[0]
+  const roomId = rooms.value.reduce(
+    (max, room) => Math.max(max, Number(room.roomId || 0)),
+    0,
+  ) + 1
 
   return {
-    roomId: nextRoomId(),
-    roomNumber: String(nextRoomId()),
+    roomId,
+    roomNumber: String(roomId),
     buildingName: firstBuilding,
     floor: 1,
     roomType: firstRoomType?.roomType || '',
@@ -913,11 +917,6 @@ const deleteRoom = async (room) => {
     showMessage(error.response?.data?.message || 'Không xóa được phòng.', 'error')
     console.error(error)
   }
-}
-
-const nextRoomId = () => {
-  const maxId = rooms.value.reduce((max, room) => Math.max(max, Number(room.roomId || 0)), 0)
-  return maxId + 1
 }
 
 const getStatusColor = (status) => {
