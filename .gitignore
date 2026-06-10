@@ -1,0 +1,13 @@
+bin/
+obj/
+.vs/
+.vscode/
+DataProtectionKeys/
+node_modules/
+dist/
+*.user
+*.suo
+*.log
+.env
+.env.local
+docker-data/

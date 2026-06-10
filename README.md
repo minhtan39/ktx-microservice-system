@@ -1,0 +1,41 @@
+# KTX Microservice System
+
+Repo tong de deploy demo he thong quan ly ky tuc xa theo kien truc microservices.
+
+## Thanh phan
+
+- `ApiGateway`: diem vao duy nhat cho frontend.
+- `AuthService`: service dang nhap/xac thuc cua nhom 3.
+- `RoomService`: service phong/toa nha cua nhom 1.
+- `ContractStudentService`: service ho so sinh vien, dang ky phong, duyet xep phong, hop dong cua nhom 2.
+- `BillingService`: service khoan thu/hoa don.
+- `QLKTX`: frontend Vue.
+- `sqlserver`: SQL Server container dung cho database cua N2.
+
+## Chay tren VPS
+
+```bash
+cd /opt/ktx-microservice-system
+cp .env.example .env
+docker-compose up -d --build
+```
+
+Kiem tra:
+
+```bash
+docker-compose ps
+curl http://localhost:8080/health
+curl http://localhost:8080/api/rooms
+```
+
+Frontend:
+
+```text
+http://IP_VPS
+```
+
+Gateway:
+
+```text
+http://IP_VPS:8080
+```

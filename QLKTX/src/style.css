@@ -1,0 +1,127 @@
+:root {
+  --app-bg: #f7f8fa;
+  --surface: #ffffff;
+  --surface-soft: #fbfcfd;
+  --line: #e8ebef;
+  --line-strong: #d7dde4;
+  --ink: #111827;
+  --muted: #6b7280;
+  --muted-strong: #4b5563;
+  --brand: #169b63;
+  --brand-dark: #0f7f51;
+  --amber: #d99a00;
+  --rose: #e11d48;
+  --blue: #2563eb;
+  --slate: #64748b;
+  --sidebar: #050606;
+  --sidebar-soft: #17191c;
+  --shadow-soft: 0 8px 18px rgba(17, 24, 39, 0.06);
+  font-family: Inter, "Segoe UI", Arial, sans-serif;
+  color: var(--ink);
+  background: var(--app-bg);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  min-height: 100vh;
+  margin: 0;
+}
+
+body {
+  background: var(--app-bg);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+a {
+  color: inherit;
+}
+
+.v-card {
+  border: 1px solid var(--line) !important;
+  border-radius: 8px !important;
+  box-shadow: none !important;
+}
+
+.v-field {
+  border-radius: 8px !important;
+  box-shadow: none !important;
+}
+
+.v-btn {
+  border-radius: 8px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+}
+
+.v-alert {
+  border-radius: 8px !important;
+}
+
+.mdi {
+  line-height: 1;
+}
+
+.page-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.page-kicker {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--brand);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.page-heading h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 28px;
+  line-height: 1.2;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #ffffff;
+}
+
+.data-table th,
+.data-table td {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.data-table th {
+  background: #f8fafc;
+  color: #1f2937;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.data-table tbody tr:hover {
+  background: #fbfcfd;
+}
