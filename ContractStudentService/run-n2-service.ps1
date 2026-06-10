@@ -1,5 +1,5 @@
 $env:ASPNETCORE_ENVIRONMENT = "Production"
-$env:Integration__GatewayBaseUrl = "http://172.16.19.206:8080"
+$env:Integration__GatewayBaseUrl = "http://localhost:8080"
 
 $logFile = Join-Path $PSScriptRoot (
     "n2-service-{0}.log" -f (Get-Date -Format "yyyyMMdd-HHmmss"))

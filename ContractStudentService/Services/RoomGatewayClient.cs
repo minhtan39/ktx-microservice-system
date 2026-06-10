@@ -133,7 +133,7 @@ public class RoomGatewayClient : IRoomGatewayClient
         SetNumber(roomNode, "availableBeds", newAvailableBeds);
 
         if (HasProperty(roomNode, "status"))
-            roomNode["status"] = newAvailableBeds == 0 ? "\u0110\u1EA7y" : "Tr\u1ED1ng";
+            roomNode["status"] = newAvailableBeds == 0 ? "Full" : "Available";
 
         var updatePayload = BuildRoomUpdatePayload(
             roomNode,
@@ -487,7 +487,7 @@ public class RoomGatewayClient : IRoomGatewayClient
             payload["id"] = roomId;
 
         payload["currentOccupancy"] = occupiedBeds;
-        payload["status"] = availableBeds == 0 ? "\u0110\u1EA7y" : "Tr\u1ED1ng";
+        payload["status"] = availableBeds == 0 ? "Full" : "Available";
 
         return payload;
     }
