@@ -265,7 +265,7 @@
                 <th>Giới tính</th>
                 <th>Sức chứa</th>
                 <th>Giá</th>
-                <th>Trạng thái</th>
+                <th>Trạng thái tự động</th>
                 <th>Thao tác</th>
               </tr>
             </thead>
@@ -275,20 +275,20 @@
                 <td>{{ room.buildingDisplayName }} / {{ room.floorName }}</td>
                 <td>{{ room.roomType }}</td>
                 <td>{{ room.genderText }}</td>
-                <td>{{ room.occupiedBeds }}/{{ room.capacity }}</td>
+                <td>
+                  <div class="occupancy-cell">
+                    <strong>{{ room.occupiedBeds }}/{{ room.capacity }}</strong>
+                    <small>Còn {{ room.availableBeds }} giường</small>
+                  </div>
+                </td>
                 <td>{{ formatPrice(room.monthlyFee) }}</td>
                 <td>
-                  <v-select
-                    :model-value="room.status"
-                    :items="statusOptions"
-                    item-title="title"
-                    item-value="value"
-                    density="compact"
-                    variant="outlined"
-                    hide-details
-                    class="status-select"
-                    @update:model-value="updateRoomStatus(room, $event)"
-                  />
+                  <div class="auto-status">
+                    <v-chip size="small" variant="tonal" :color="getStatusColor(room.status)">
+                      {{ getStatusText(room.status) }}
+                    </v-chip>
+                    <small>Theo duyệt xếp phòng N2</small>
+                  </div>
                 </td>
                 <td>
                   <div class="row-actions">
@@ -426,22 +426,24 @@
               />
             </v-col>
             <v-col cols="12" md="3">
-              <v-text-field v-model.number="roomForm.capacity" label="Sức chứa" type="number" density="compact" />
-            </v-col>
-            <v-col cols="12" md="3">
-              <v-text-field v-model.number="roomForm.monthlyFee" label="Đơn giá" type="number" density="compact" />
-            </v-col>
-            <v-col cols="12" md="4">
-              <v-select
-                v-model="roomForm.status"
-                :items="statusOptions"
-                item-title="title"
-                item-value="value"
-                label="Trạng thái"
+              <v-text-field
+                v-model.number="roomForm.capacity"
+                label="Số giường tối đa"
+                type="number"
                 density="compact"
+                readonly
               />
             </v-col>
-            <v-col cols="12" md="8">
+            <v-col cols="12" md="3">
+              <v-text-field
+                v-model.number="roomForm.monthlyFee"
+                label="Đơn giá"
+                type="number"
+                density="compact"
+                readonly
+              />
+            </v-col>
+            <v-col cols="12" md="6">
               <v-text-field v-model="roomForm.amenities" label="Tiện nghi" density="compact" />
             </v-col>
           </v-row>
@@ -498,7 +500,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import api from '@/services/api'
 
 const ALL_VALUE = 'all'
@@ -509,6 +511,7 @@ const saving = ref(false)
 const message = ref('')
 const messageType = ref('success')
 const roomSearch = ref('')
+let refreshTimer = null
 
 const rooms = ref([])
 const buildings = ref([])
@@ -560,7 +563,6 @@ const emptyRoomForm = () => {
     gender: true,
     capacity: firstRoomType?.capacity || 4,
     monthlyFee: firstRoomType?.monthlyFee || 0,
-    status: 'Available',
     amenities: firstRoomType?.amenities || '',
   }
 }
@@ -703,9 +705,11 @@ const normalizeList = (payload) => {
   return []
 }
 
-const loadAll = async () => {
+const loadAll = async ({ silent = false } = {}) => {
   try {
-    loading.value = true
+    if (!silent) {
+      loading.value = true
+    }
     const [buildingResponse, roomTypeResponse, roomResponse] = await Promise.all([
       api.get('/buildings'),
       api.get('/room-types'),
@@ -716,10 +720,14 @@ const loadAll = async () => {
     roomTypes.value = normalizeList(roomTypeResponse.data)
     rooms.value = normalizeList(roomResponse.data).map(normalizeRoom)
   } catch (error) {
-    showMessage('Không tải được dữ liệu RoomService.', 'error')
+    if (!silent) {
+      showMessage('Không tải được dữ liệu RoomService.', 'error')
+    }
     console.error(error)
   } finally {
-    loading.value = false
+    if (!silent) {
+      loading.value = false
+    }
   }
 }
 
@@ -728,7 +736,7 @@ const normalizeRoom = (room) => {
   const occupiedBeds = Number(room.occupiedBeds ?? room.currentOccupancy ?? 0)
   const availableBeds = Number(room.availableBeds ?? Math.max(capacity - occupiedBeds, 0))
   const buildingName = String(room.buildingName ?? '').replace(/^Tòa\s*/i, '')
-  const status = normalizeStatus(room.status, availableBeds)
+  const status = normalizeStatus(room.status, availableBeds, occupiedBeds, capacity)
 
   return {
     ...room,
@@ -757,11 +765,10 @@ const parseGender = (value) => {
   return normalized === 'true' || normalized === 'nam' || normalized === 'male'
 }
 
-const normalizeStatus = (status, availableBeds = 0) => {
+const normalizeStatus = (status, availableBeds = 0, occupiedBeds = 0, capacity = 0) => {
   const normalized = String(status || '').toLowerCase()
   if (normalized.includes('maintenance') || normalized.includes('sửa')) return 'Maintenance'
-  if (normalized.includes('full') || normalized.includes('đầy') || normalized.includes('day')) return 'Full'
-  if (normalized.includes('available') || normalized.includes('trống') || normalized.includes('trong')) return 'Available'
+  if (capacity > 0 && occupiedBeds >= capacity) return 'Full'
   return availableBeds > 0 ? 'Available' : 'Full'
 }
 
@@ -888,7 +895,6 @@ const openEditRoom = (room) => {
     gender: room.gender,
     capacity: room.capacity,
     monthlyFee: room.monthlyFee,
-    status: room.status,
     amenities: room.amenities || '',
   }
   roomDialog.value = true
@@ -913,6 +919,7 @@ const saveRoom = async () => {
       capacity: Number(roomForm.value.capacity),
       monthlyFee: Number(roomForm.value.monthlyFee),
     }
+    delete payload.status
 
     if (editingRoomId.value) {
       await api.put(`/rooms/${editingRoomId.value}`, payload)
@@ -929,17 +936,6 @@ const saveRoom = async () => {
     console.error(error)
   } finally {
     saving.value = false
-  }
-}
-
-const updateRoomStatus = async (room, status) => {
-  try {
-    await api.patch(`/rooms/${room.roomId}/status`, { status })
-    showMessage('Đã cập nhật trạng thái phòng.')
-    await loadAll()
-  } catch (error) {
-    showMessage(error.response?.data?.message || 'Không cập nhật được trạng thái phòng.', 'error')
-    console.error(error)
   }
 }
 
@@ -975,7 +971,16 @@ const formatPrice = (value) => {
   }).format(value || 0)
 }
 
-onMounted(loadAll)
+onMounted(() => {
+  loadAll()
+  refreshTimer = window.setInterval(() => loadAll({ silent: true }), 10000)
+})
+
+onBeforeUnmount(() => {
+  if (refreshTimer) {
+    window.clearInterval(refreshTimer)
+  }
+})
 </script>
 
 <style scoped>
@@ -1155,8 +1160,22 @@ onMounted(loadAll)
   gap: 4px;
 }
 
-.status-select {
-  min-width: 150px;
+.occupancy-cell,
+.auto-status {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.occupancy-cell strong {
+  color: #17365f;
+  font-size: 0.98rem;
+}
+
+.occupancy-cell small,
+.auto-status small {
+  color: #607085;
+  font-size: 0.76rem;
 }
 
 .room-dialog {

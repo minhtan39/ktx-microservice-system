@@ -396,9 +396,10 @@ app.MapPost("/api/rooms", (RoomRequest request) =>
             request.Capacity ?? roomType.Capacity,
             0,
             request.MonthlyFee ?? roomType.MonthlyFee,
-            NormalizeStatus(request.Status),
+            InitialRoomStatus(request.Status),
             CleanOrDefault(request.Amenities, roomType.Amenities));
 
+        room.RefreshStatus();
         rooms.Add(room);
 
         return Results.Created(
@@ -442,7 +443,9 @@ app.MapPut("/api/rooms/{roomId:long}", (
         room.Gender = request.Gender;
         room.Capacity = newCapacity;
         room.MonthlyFee = request.MonthlyFee ?? roomType.MonthlyFee;
-        room.Status = NormalizeStatus(request.Status);
+        room.Status = string.IsNullOrWhiteSpace(request.Status)
+            ? room.Status
+            : InitialRoomStatus(request.Status);
         room.Amenities = CleanOrDefault(request.Amenities, roomType.Amenities);
         room.RefreshStatus();
 
@@ -461,23 +464,27 @@ app.MapPatch("/api/rooms/{roomId:long}/status", (
         if (room == null)
             return Results.NotFound(new { message = "Room not found." });
 
-        var normalizedStatus = NormalizeStatus(request.Status);
-
         if (request.OccupiedBeds.HasValue)
         {
-            if (request.OccupiedBeds.Value < 0 || request.OccupiedBeds.Value > room.Capacity)
-                return Results.BadRequest(new { message = "OccupiedBeds must be between 0 and capacity." });
-
-            room.OccupiedBeds = request.OccupiedBeds.Value;
-            TrimReferences(room);
+            return Results.BadRequest(new
+            {
+                message = "OccupiedBeds is managed automatically by the N2 room approval flow. Use /occupy or /release."
+            });
         }
 
-        if (normalizedStatus == "Full")
-            room.OccupiedBeds = room.Capacity;
-        else if (normalizedStatus == "Available" && room.OccupiedBeds >= room.Capacity)
-            room.OccupiedBeds = Math.Max(room.Capacity - 1, 0);
+        var normalizedStatus = NormalizeStatus(request.Status);
 
-        room.Status = normalizedStatus;
+        if (normalizedStatus == "Full")
+        {
+            return Results.BadRequest(new
+            {
+                message = "Full status is calculated automatically from occupied beds and capacity."
+            });
+        }
+
+        room.Status = normalizedStatus == "Maintenance"
+            ? "Maintenance"
+            : "Available";
         room.RefreshStatus();
 
         return Results.Ok(RoomResponse.FromRoom(room, buildings));
@@ -522,9 +529,6 @@ app.MapPost("/api/rooms/{roomId:long}/occupy", (
         if (room.IsMaintenance)
             return Results.BadRequest(new { message = "Room is under maintenance." });
 
-        if (room.AvailableBeds <= 0)
-            return Results.BadRequest(new { message = "Room is full." });
-
         var existingRoom = rooms.FirstOrDefault(item =>
             item.RoomId != roomId &&
             item.OccupancyReferences.Any(reference =>
@@ -543,15 +547,23 @@ app.MapPost("/api/rooms/{roomId:long}/occupy", (
             reference => reference.StudentId == request.StudentId ||
                 reference.RegistrationId == request.RegistrationId);
 
-        if (existingReference == null)
+        if (existingReference != null)
         {
-            room.OccupancyReferences.Add(new RoomOccupancyReference(
-                request.StudentId,
-                request.RegistrationId,
-                request.ContractCode,
-                DateTime.UtcNow));
-            room.OccupiedBeds++;
+            room.LastContractCode = request.ContractCode;
+            room.RefreshStatus();
+
+            return Results.Ok(RoomResponse.FromRoom(room, buildings));
         }
+
+        if (room.AvailableBeds <= 0)
+            return Results.BadRequest(new { message = "Room is full." });
+
+        room.OccupancyReferences.Add(new RoomOccupancyReference(
+            request.StudentId,
+            request.RegistrationId,
+            request.ContractCode,
+            DateTime.UtcNow));
+        room.OccupiedBeds++;
 
         room.LastContractCode = request.ContractCode;
         room.RefreshStatus();
@@ -765,12 +777,11 @@ static string NormalizeStatus(string? status)
     };
 }
 
-static void TrimReferences(DormRoom room)
+static string InitialRoomStatus(string? status)
 {
-    while (room.OccupancyReferences.Count > room.OccupiedBeds)
-    {
-        room.OccupancyReferences.RemoveAt(room.OccupancyReferences.Count - 1);
-    }
+    return NormalizeStatus(status) == "Maintenance"
+        ? "Maintenance"
+        : "Available";
 }
 
 public sealed class DormBuilding
@@ -1009,6 +1020,7 @@ public sealed record RoomResponse(
         DormRoom room,
         List<DormBuilding> buildings)
     {
+        room.RefreshStatus();
         var building = RoomServiceShared.FindBuilding(buildings, room.BuildingName);
 
         return new RoomResponse(
