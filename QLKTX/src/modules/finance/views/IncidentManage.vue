@@ -54,7 +54,7 @@
                   </div>
 
                   <v-chip size="small" :color="getCategoryColor(incident.category)">
-                    {{ incident.category }}
+                    {{ getCategoryLabel(incident.category) }}
                   </v-chip>
                 </div>
               </v-card-item>
@@ -68,7 +68,7 @@
                 <div v-if="incident.staffNote || incident.handledBy" class="note-box">
                   <strong>Xử lý:</strong>
                   <p>{{ incident.staffNote || 'Đã cập nhật trạng thái' }}</p>
-                  <small v-if="incident.handledBy">Nguoi xu ly: {{ incident.handledBy }}</small>
+                  <small v-if="incident.handledBy">Người xử lý: {{ incident.handledBy }}</small>
                 </div>
               </v-card-text>
 
@@ -80,7 +80,7 @@
                   prepend-icon="mdi-wrench"
                   @click="updateStatus(incident.id, 'processing')"
                 >
-                  Tiep nhan
+                  Tiếp nhận
                 </v-btn>
 
                 <v-btn
@@ -90,7 +90,7 @@
                   prepend-icon="mdi-close-circle-outline"
                   @click="updateStatus(incident.id, 'rejected')"
                 >
-                  Tu choi
+                  Từ chối
                 </v-btn>
 
                 <v-btn
@@ -100,17 +100,17 @@
                   prepend-icon="mdi-check-circle-outline"
                   @click="updateStatus(incident.id, 'done')"
                 >
-                  Hoan thanh
+                  Hoàn thành
                 </v-btn>
 
                 <span v-if="tab.value === 'done'" class="status-done">
                   <span class="mdi mdi-check-all"></span>
-                  Da sua xong
+                  Đã sửa xong
                 </span>
 
                 <span v-if="tab.value === 'rejected'" class="status-rejected">
                   <span class="mdi mdi-close-circle-outline"></span>
-                  Da tu choi
+                  Đã từ chối
                 </span>
               </v-card-actions>
             </v-card>
@@ -132,10 +132,10 @@ const success = ref('')
 const incidents = ref([])
 
 const statusTabs = [
-  { value: 'new', label: 'Moi tiep nhan' },
-  { value: 'processing', label: 'Dang xu ly' },
-  { value: 'done', label: 'Hoan thanh' },
-  { value: 'rejected', label: 'Tu choi' },
+  { value: 'new', label: 'Mới tiếp nhận' },
+  { value: 'processing', label: 'Đang xử lý' },
+  { value: 'done', label: 'Hoàn thành' },
+  { value: 'rejected', label: 'Từ chối' },
 ]
 
 const normalizeList = (data) => {
@@ -174,6 +174,14 @@ const getCategoryColor = (category) => {
   if (category === 'Internet') return 'indigo'
   if (category === 'Furniture') return 'brown'
   return 'grey-darken-1'
+}
+
+const getCategoryLabel = (category) => {
+  if (category === 'Electric') return 'Điện'
+  if (category === 'Water') return 'Nước'
+  if (category === 'Internet') return 'Internet'
+  if (category === 'Furniture') return 'Nội thất'
+  return 'Khác'
 }
 
 const updateStatus = async (id, status) => {

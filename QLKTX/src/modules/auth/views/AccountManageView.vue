@@ -4,7 +4,7 @@
       <div>
         <span class="page-kicker">AuthService</span>
         <h2>Quản lý tài khoản</h2>
-        <p>Admin quản lý tài khoản đăng nhập của nhân viên và sinh viên.</p>
+        <p>Admin xem và cập nhật tên đăng nhập, mật khẩu của nhân viên và sinh viên.</p>
       </div>
 
       <v-btn color="success" prepend-icon="mdi-refresh" :loading="loading" @click="loadAccounts">
@@ -114,7 +114,7 @@
           <v-form class="edit-form" @submit.prevent="saveAccount">
             <v-text-field
               v-model="form.username"
-              label="Tài khoản"
+              label="Tên đăng nhập"
               density="comfortable"
             />
 
@@ -141,7 +141,7 @@
             />
 
             <v-alert v-if="editing.role === 'Student'" type="info" variant="tonal" density="compact">
-              Đổi username sinh viên sẽ đổi tài khoản đăng nhập; hồ sơ N2 vẫn được map bằng studentId.
+              Đổi tên đăng nhập sinh viên sẽ không làm thay đổi mã sinh viên; hồ sơ N2 vẫn được liên kết bằng studentId.
             </v-alert>
           </v-form>
         </v-card-text>
@@ -302,7 +302,7 @@ const saveAccount = async () => {
   if (!editing.value) return
 
   if (!form.username.trim() || !form.password.trim()) {
-    error.value = 'Tài khoản và mật khẩu không được để trống.'
+    error.value = 'Tên đăng nhập và mật khẩu không được để trống.'
     return
   }
 
@@ -322,7 +322,7 @@ const saveAccount = async () => {
     await loadAccounts()
   } catch (err) {
     if (err.response?.status === 409) {
-      error.value = 'Tài khoản mới đã tồn tại.'
+      error.value = 'Tên đăng nhập mới đã tồn tại.'
     } else {
       error.value = 'Không cập nhật được tài khoản.'
     }
