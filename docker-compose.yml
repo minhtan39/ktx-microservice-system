@@ -23,6 +23,9 @@ services:
     restart: unless-stopped
     environment:
       ASPNETCORE_ENVIRONMENT: Production
+      Accounts__DataFile: "/app/data/accounts.json"
+    volumes:
+      - auth-data:/app/data
 
   room-service:
     build:
@@ -89,3 +92,4 @@ services:
 
 volumes:
   sqlserver-data:
+  auth-data:
