@@ -20,6 +20,11 @@ const defaultHomeForRole = (role = localStorage.getItem('user_role')) => {
 
 const routes = [
   {
+    path: '/',
+    name: 'Landing',
+    component: () => import('../modules/landing/views/LandingView.vue'),
+  },
+  {
     path: '/login',
     name: 'Login',
     component: () => import('../modules/auth/views/LoginView.vue'),
@@ -29,10 +34,6 @@ const routes = [
     meta: { requiresAuth: true },
     component: () => import('../components/MainLayout.vue'),
     children: [
-      {
-        path: '',
-        redirect: () => defaultHomeForRole(),
-      },
       {
         path: 'student/portal',
         name: 'StudentPortal',
@@ -122,7 +123,7 @@ const routes = [
   },
   {
     path: '/:pathMatch(.*)*',
-    redirect: () => defaultHomeForRole(),
+    redirect: () => (localStorage.getItem('user_token') ? defaultHomeForRole() : '/'),
   },
 ]
 

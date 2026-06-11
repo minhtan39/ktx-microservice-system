@@ -4,7 +4,7 @@
       <div class="brand-row">
         <span class="mdi mdi-home-city-outline"></span>
         <div>
-          <strong>KTX Living</strong>
+          <strong>DormManager</strong>
           <small>Residence Portal</small>
         </div>
       </div>
@@ -35,7 +35,7 @@
 
     <section class="login-panel">
       <div class="panel-card">
-        <span class="page-kicker">KTX Management</span>
+        <span class="page-kicker">DormManager</span>
         <h2>Chào mừng bạn quay lại</h2>
         <p class="panel-copy">Sinh viên dùng mã sinh viên để đăng nhập. Admin và nhân viên dùng tài khoản được cấp.</p>
 

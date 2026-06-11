@@ -6,7 +6,7 @@
           <span class="mdi mdi-home-city-outline"></span>
         </div>
         <div>
-          <div class="brand-name">KTX Living</div>
+          <div class="brand-name">DormManager</div>
           <span class="brand-subtitle">Residence Portal</span>
         </div>
       </div>
