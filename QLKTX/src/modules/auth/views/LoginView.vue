@@ -66,13 +66,6 @@
             Đăng nhập
           </v-btn>
         </v-form>
-
-        <div class="demo-box">
-          <strong>Tài khoản demo</strong>
-          <button type="button" @click="useDemo('admin', 'admin123')">Quản trị: admin / admin123</button>
-          <button type="button" @click="useDemo('nhanvien', 'staff123')">Nhân viên: nhanvien / staff123</button>
-          <button type="button" @click="useDemo('SV20260001', 'SV20260001')">Sinh viên: SV20260001 / SV20260001</button>
-        </div>
       </div>
     </section>
   </main>
@@ -89,21 +82,13 @@ const error = ref('')
 const showPassword = ref(false)
 
 const form = reactive({
-  username: 'admin',
-  password: 'admin123',
+  username: '',
+  password: '',
 })
 
-const useDemo = (username, password) => {
-  form.username = username
-  form.password = password
-  error.value = ''
-}
-
-const homePathByRole = (role) => {
-  return String(role || '').toLowerCase() === 'student'
-    ? '/student/portal'
-    : '/student-service/dashboard'
-}
+const homePathByRole = (role) => String(role || '').toLowerCase() === 'student'
+  ? '/student/portal'
+  : '/student-service/dashboard'
 
 const login = async () => {
   try {
@@ -145,7 +130,7 @@ const login = async () => {
 
     await router.push(homePath)
   } catch (err) {
-    error.value = 'Không đăng nhập được. Kiểm tra AuthService hoặc tài khoản demo.'
+    error.value = 'Không đăng nhập được. Kiểm tra tên đăng nhập, mật khẩu hoặc AuthService.'
     console.error(err)
   } finally {
     loading.value = false
@@ -283,36 +268,6 @@ const login = async () => {
   margin: 8px 0 24px;
   color: var(--muted);
   line-height: 1.5;
-}
-
-.demo-box {
-  display: grid;
-  gap: 8px;
-  margin-top: 22px;
-  padding-top: 18px;
-  border-top: 1px solid var(--line);
-}
-
-.demo-box strong {
-  color: var(--ink);
-  font-size: 13px;
-}
-
-.demo-box button {
-  min-height: 36px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #f8fafc;
-  color: #334155;
-  cursor: pointer;
-  font-weight: 800;
-  text-align: left;
-  padding: 0 12px;
-}
-
-.demo-box button:hover {
-  border-color: rgba(22, 155, 99, 0.42);
-  background: #f0fdf4;
 }
 
 @media (max-width: 920px) {
