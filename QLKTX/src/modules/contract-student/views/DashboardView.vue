@@ -1,55 +1,31 @@
 <template>
   <section class="dashboard-page">
-    <div class="page-heading dashboard-heading">
+    <section class="dashboard-hero">
       <div>
-        <span class="page-kicker">End-to-End Monitor</span>
-        <h2>Bảng tin kết nối 3 nhóm</h2>
-        <p>
-          Theo dõi Gateway, RoomService, Contract & Student và Billing trong một
-          luồng duyệt nội trú hoàn chỉnh.
-        </p>
+        <span class="page-kicker">Tổng quan ký túc xá</span>
+        <h2>Hôm nay ở KTX</h2>
+        <p>Dữ liệu quan trọng được gom lại để nhân viên nhìn một lần là biết cần xử lý gì trước.</p>
+        <div class="hero-actions">
+          <router-link class="primary-action" to="/student-service/registrations/approval">
+            <span class="mdi mdi-clipboard-check-outline"></span>
+            Duyệt đơn chờ
+          </router-link>
+          <router-link class="secondary-action" to="/facility/rooms">
+            Xem sơ đồ phòng
+          </router-link>
+        </div>
       </div>
-      <v-btn color="success" variant="flat" prepend-icon="mdi-refresh" :loading="loading" @click="loadDashboard">
-        Làm mới
-      </v-btn>
-    </div>
-
-    <section class="connection-grid">
-      <article v-for="service in serviceCards" :key="service.key" class="connection-card">
-        <div class="connection-icon">
-          <span :class="['mdi', service.icon]"></span>
-        </div>
-        <div class="connection-main">
-          <div class="connection-topline">
-            <span>{{ service.owner }}</span>
-            <strong :class="['state-pill', service.state]">{{ service.stateLabel }}</strong>
-          </div>
-          <h3>{{ service.name }}</h3>
-          <p>{{ service.note }}</p>
-          <code>{{ service.endpoint }}</code>
-        </div>
-      </article>
-    </section>
-
-    <section class="flow-panel">
-      <header>
+      <div class="hero-summary">
         <div>
-          <span class="panel-kicker">Luồng chấm điểm tích hợp</span>
-          <h3>Sinh viên -> Đăng ký -> Xếp phòng -> Hợp đồng -> Khoản thu</h3>
+          <span>Giường trống</span>
+          <strong>{{ roomTotals.available }}</strong>
+          <small>{{ roomTotals.capacity }} tổng giường</small>
         </div>
-        <strong :class="['system-state', integrationReady ? 'online' : 'warning']">
-          {{ integrationReady ? 'Đã sẵn sàng demo' : 'Đang chờ đủ dịch vụ' }}
-        </strong>
-      </header>
-
-      <div class="flow-steps">
-        <article v-for="step in flowSteps" :key="step.title" :class="['flow-step', step.state]">
-          <span :class="['mdi', step.icon]"></span>
-          <div>
-            <strong>{{ step.title }}</strong>
-            <p>{{ step.detail }}</p>
-          </div>
-        </article>
+        <div>
+          <span>Đơn chờ duyệt</span>
+          <strong>{{ stats.pendingRegistrations }}</strong>
+          <small>Cần xếp phòng</small>
+        </div>
       </div>
     </section>
 
@@ -62,14 +38,50 @@
       </article>
     </div>
 
-    <div class="operations-grid">
-      <section class="report-panel">
+    <div class="focus-grid">
+      <section class="report-panel task-panel">
         <header>
           <div>
-            <span class="panel-kicker">Nhóm 1</span>
-            <h3>Tình trạng phòng</h3>
+            <span class="panel-kicker">Việc cần xử lý</span>
+            <h3>Ưu tiên trong ca trực</h3>
           </div>
-          <router-link to="/student-service/registrations/approval">Duyệt xếp phòng</router-link>
+          <v-btn color="success" variant="tonal" prepend-icon="mdi-refresh" :loading="loading" @click="loadDashboard">
+            Làm mới
+          </v-btn>
+        </header>
+
+        <div class="task-list">
+          <router-link to="/student-service/registrations/approval" class="task-card">
+            <span class="mdi mdi-clipboard-clock-outline"></span>
+            <div>
+              <strong>{{ stats.pendingRegistrations }} đơn chờ duyệt</strong>
+              <small>Kiểm tra nguyện vọng, chọn tòa/phòng còn giường</small>
+            </div>
+          </router-link>
+          <router-link to="/student-service/contracts/manage" class="task-card">
+            <span class="mdi mdi-file-sign"></span>
+            <div>
+              <strong>{{ stats.expiredContracts }} hợp đồng cần xem</strong>
+              <small>Theo dõi hợp đồng hết hạn hoặc cần gia hạn</small>
+            </div>
+          </router-link>
+          <router-link to="/finance/incidents" class="task-card">
+            <span class="mdi mdi-tools"></span>
+            <div>
+              <strong>Theo dõi yêu cầu sửa chữa</strong>
+              <small>Giữ trải nghiệm phòng ở ổn định cho sinh viên</small>
+            </div>
+          </router-link>
+        </div>
+      </section>
+
+      <section class="report-panel room-panel">
+        <header>
+          <div>
+            <span class="panel-kicker">Phòng ở</span>
+            <h3>Tình trạng giường trống</h3>
+          </div>
+          <router-link to="/facility/rooms">Chi tiết phòng</router-link>
         </header>
         <div class="room-summary">
           <div>
@@ -93,11 +105,13 @@
           <div v-if="roomPreview.length === 0" class="empty-row">Chưa nhận được dữ liệu phòng từ RoomService.</div>
         </div>
       </section>
+    </div>
 
+    <div class="operations-grid">
       <section class="report-panel">
         <header>
           <div>
-            <span class="panel-kicker">Nhóm 2</span>
+            <span class="panel-kicker">Sinh viên</span>
             <h3>Hồ sơ và hợp đồng</h3>
           </div>
           <router-link to="/student-service/contracts">Xem hợp đồng</router-link>
@@ -125,7 +139,7 @@
       <section class="report-panel">
         <header>
           <div>
-            <span class="panel-kicker">Nhóm 3</span>
+            <span class="panel-kicker">Tài chính</span>
             <h3>Khoản thu phát sinh</h3>
           </div>
           <span class="panel-total">{{ formatMoney(billingTotal) }}</span>
@@ -144,6 +158,28 @@
         </div>
       </section>
     </div>
+
+    <section class="connection-strip">
+      <header>
+        <div>
+          <span class="panel-kicker">Trạng thái hệ thống</span>
+          <h3>{{ integrationReady ? 'Các điểm kết nối đang sẵn sàng' : 'Một vài điểm kết nối cần kiểm tra' }}</h3>
+        </div>
+        <strong :class="['system-state', integrationReady ? 'online' : 'warning']">
+          {{ integrationReady ? 'Ổn định' : 'Cần xem' }}
+        </strong>
+      </header>
+      <div class="connection-list">
+        <article v-for="service in serviceCards" :key="service.key" class="connection-card">
+          <span :class="['mdi', service.icon]"></span>
+          <div>
+            <strong>{{ service.name }}</strong>
+            <small>{{ service.note }}</small>
+          </div>
+          <b :class="['state-pill', service.state]">{{ service.stateLabel }}</b>
+        </article>
+      </div>
+    </section>
 
     <v-alert v-if="error" type="error" variant="tonal" class="mt-4">
       {{ error }}
@@ -268,7 +304,7 @@ const metrics = computed(() => [
     icon: 'mdi-account-multiple-outline',
     label: 'Sinh viên',
     value: stats.value.totalStudents,
-    hint: 'Hồ sơ do N2 quản lý',
+    hint: 'Hồ sơ đang quản lý',
   },
   {
     icon: 'mdi-clipboard-clock-outline',
@@ -280,7 +316,7 @@ const metrics = computed(() => [
     icon: 'mdi-bed-outline',
     label: 'Giường trống',
     value: roomTotals.value.available,
-    hint: 'Lấy từ RoomService nhóm 1',
+    hint: 'Có thể xếp ngay',
   },
   {
     icon: 'mdi-file-sign',
@@ -292,7 +328,7 @@ const metrics = computed(() => [
     icon: 'mdi-receipt-text-check-outline',
     label: 'Khoản thu',
     value: billingItems.value.length,
-    hint: 'Từ BillingService nhóm 3',
+    hint: 'Phát sinh từ hợp đồng',
   },
 ])
 
@@ -442,67 +478,7 @@ onMounted(loadDashboard)
 .dashboard-page {
   display: flex;
   flex-direction: column;
-  gap: 22px;
-}
-
-.dashboard-heading {
-  align-items: flex-end;
-  margin-bottom: 0;
-}
-
-.dashboard-heading p {
-  max-width: 760px;
-  margin: 8px 0 0;
-  color: var(--muted);
-  font-size: 15px;
-  line-height: 1.5;
-}
-
-.connection-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 14px;
-}
-
-.connection-card {
-  display: grid;
-  grid-template-columns: 48px minmax(0, 1fr);
-  gap: 14px;
-  min-height: 152px;
-  padding: 18px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #ffffff;
-}
-
-.connection-icon {
-  display: grid;
-  place-items: center;
-  width: 48px;
-  height: 48px;
-  border-radius: 8px;
-  background: #ecfdf5;
-  color: var(--brand-dark);
-  font-size: 25px;
-}
-
-.connection-main {
-  min-width: 0;
-}
-
-.connection-topline {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  min-height: 24px;
-}
-
-.connection-topline span {
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 800;
-  text-transform: uppercase;
+  gap: 18px;
 }
 
 .state-pill,
@@ -515,6 +491,10 @@ onMounted(loadDashboard)
   font-size: 12px;
   font-weight: 900;
   white-space: nowrap;
+}
+
+.system-state {
+  min-height: 32px;
 }
 
 .state-pill.online,
@@ -539,40 +519,167 @@ onMounted(loadDashboard)
   color: #0369a1;
 }
 
-.connection-card h3 {
-  margin: 12px 0 6px;
-  color: var(--ink);
-  font-size: 16px;
-}
-
-.connection-card p {
-  min-height: 38px;
-  margin: 0;
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 1.45;
-}
-
-.connection-card code {
-  display: block;
-  margin-top: 10px;
-  color: #334155;
-  font-size: 12px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.flow-panel,
+.dashboard-hero,
 .report-panel,
-.metric-card {
+.metric-card,
+.connection-strip {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #ffffff;
 }
 
-.flow-panel header,
+.dashboard-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+  gap: 28px;
+  align-items: end;
+  min-height: 280px;
+  padding: 30px;
+  overflow: hidden;
+  background:
+    linear-gradient(135deg, rgba(22, 155, 99, 0.10), transparent 44%),
+    linear-gradient(120deg, #ffffff, #f4fbf7);
+}
+
+.dashboard-hero h2 {
+  max-width: 640px;
+  margin: 0;
+  color: #0b2f28;
+  font-size: 44px;
+  line-height: 1.05;
+}
+
+.dashboard-hero p {
+  max-width: 590px;
+  margin: 12px 0 0;
+  color: #50665f;
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 24px;
+}
+
+.primary-action,
+.secondary-action,
+.task-card,
+.report-panel a {
+  text-decoration: none;
+}
+
+.primary-action,
+.secondary-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 0 16px;
+  border-radius: 8px;
+  font-weight: 900;
+}
+
+.primary-action {
+  gap: 8px;
+  background: var(--brand);
+  color: #ffffff;
+}
+
+.secondary-action {
+  border: 1px solid #cfe7da;
+  background: #ffffff;
+  color: var(--brand-dark);
+}
+
+.hero-summary {
+  display: grid;
+  gap: 12px;
+}
+
+.hero-summary div {
+  min-height: 116px;
+  padding: 18px;
+  border: 1px solid #dceee6;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.hero-summary span,
+.hero-summary small {
+  display: block;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.hero-summary strong {
+  display: block;
+  margin: 7px 0;
+  color: #0f513f;
+  font-size: 40px;
+  line-height: 1;
+}
+
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.metric-card {
+  min-height: 142px;
+  padding: 18px;
+}
+
+.metric-card .mdi {
+  color: var(--brand-dark);
+  font-size: 28px;
+}
+
+.metric-card p {
+  margin: 14px 0 8px;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.metric-card strong {
+  display: block;
+  color: var(--ink);
+  font-size: 32px;
+  line-height: 1;
+}
+
+.metric-card small {
+  display: block;
+  margin-top: 9px;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.focus-grid {
+  display: grid;
+  grid-template-columns: minmax(420px, 0.9fr) minmax(520px, 1.1fr);
+  gap: 16px;
+}
+
+.operations-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
 .report-panel header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--line);
+}
+
+.connection-strip header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -591,107 +698,66 @@ onMounted(loadDashboard)
   text-transform: uppercase;
 }
 
-.flow-panel h3,
-.report-panel h3 {
+.report-panel h3,
+.connection-strip h3 {
   margin: 0;
   color: var(--ink);
   font-size: 18px;
 }
 
-.flow-steps {
+.task-list {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  padding: 18px;
 }
 
-.flow-step {
+.task-card {
   display: grid;
-  grid-template-columns: 36px minmax(0, 1fr);
+  grid-template-columns: 42px minmax(0, 1fr);
+  align-items: center;
   gap: 12px;
-  min-height: 138px;
-  padding: 20px;
-  border-right: 1px solid var(--line);
-}
-
-.flow-step:last-child {
-  border-right: 0;
-}
-
-.flow-step > .mdi {
-  color: var(--slate);
-  font-size: 28px;
-}
-
-.flow-step.online > .mdi {
-  color: var(--brand-dark);
-}
-
-.flow-step.warning > .mdi,
-.flow-step.checking > .mdi {
-  color: var(--amber);
-}
-
-.flow-step.offline > .mdi {
-  color: var(--rose);
-}
-
-.flow-step strong {
-  display: block;
+  min-height: 76px;
+  padding: 14px;
+  border: 1px solid #eef2f5;
+  border-radius: 8px;
+  background: #fbfdfc;
   color: var(--ink);
-  font-size: 14px;
 }
 
-.flow-step p {
-  margin: 8px 0 0;
+.task-card .mdi {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 8px;
+  background: #eaf8f0;
+  color: var(--brand-dark);
+  font-size: 23px;
+}
+
+.task-card strong,
+.task-card small {
+  display: block;
+}
+
+.task-card strong {
+  color: var(--ink);
+}
+
+.task-card small {
+  margin-top: 4px;
   color: var(--muted);
   font-size: 13px;
-  line-height: 1.45;
-}
-
-.metric-grid {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 14px;
-}
-
-.metric-card {
-  min-height: 150px;
-  padding: 20px;
-}
-
-.metric-card .mdi {
-  color: var(--brand-dark);
-  font-size: 28px;
-}
-
-.metric-card p {
-  margin: 16px 0 8px;
-  color: var(--muted);
-  font-weight: 800;
-}
-
-.metric-card strong {
-  display: block;
-  color: var(--ink);
-  font-size: 34px;
-  line-height: 1;
-}
-
-.metric-card small {
-  display: block;
-  margin-top: 10px;
-  color: var(--muted);
   line-height: 1.35;
 }
 
-.operations-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
+.report-panel {
+  min-height: 300px;
+  overflow: hidden;
 }
 
-.report-panel {
-  min-height: 320px;
-  overflow: hidden;
+.room-panel {
+  min-height: 100%;
 }
 
 .report-panel a,
@@ -699,7 +765,6 @@ onMounted(loadDashboard)
   color: var(--brand-dark);
   font-size: 13px;
   font-weight: 900;
-  text-decoration: none;
   white-space: nowrap;
 }
 
@@ -814,40 +879,83 @@ onMounted(loadDashboard)
   color: #2563eb !important;
 }
 
+ .connection-list {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0;
+}
+
+.connection-card {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 98px;
+  padding: 18px;
+  border-right: 1px solid var(--line);
+}
+
+.connection-card:last-child {
+  border-right: 0;
+}
+
+.connection-card > .mdi {
+  color: var(--brand-dark);
+  font-size: 26px;
+}
+
+.connection-card strong,
+.connection-card small {
+  display: block;
+}
+
+.connection-card strong {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.connection-card small {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 @media (max-width: 1320px) {
-  .connection-grid,
+  .dashboard-hero,
+  .focus-grid,
+  .operations-grid,
   .metric-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .flow-steps,
-  .operations-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .flow-step,
-  .flow-step:last-child {
-    border-right: 0;
-    border-bottom: 1px solid var(--line);
-  }
-
-  .flow-step:last-child {
-    border-bottom: 0;
+  .connection-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 760px) {
-  .dashboard-heading,
-  .flow-panel header,
-  .report-panel header {
-    align-items: flex-start;
-    flex-direction: column;
+  .dashboard-hero,
+  .focus-grid,
+  .operations-grid,
+  .metric-grid,
+  .room-summary,
+  .connection-list {
+    grid-template-columns: 1fr;
   }
 
-  .connection-grid,
-  .metric-grid,
-  .room-summary {
-    grid-template-columns: 1fr;
+  .dashboard-hero {
+    padding: 20px;
+  }
+
+  .dashboard-hero h2 {
+    font-size: 32px;
+  }
+
+  .report-panel header,
+  .connection-strip header {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .room-summary div {
@@ -856,6 +964,15 @@ onMounted(loadDashboard)
   }
 
   .room-summary div:last-child {
+    border-bottom: 0;
+  }
+
+  .connection-card {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .connection-card:last-child {
     border-bottom: 0;
   }
 }

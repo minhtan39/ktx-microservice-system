@@ -6,8 +6,8 @@
           <span class="mdi mdi-home-city-outline"></span>
         </div>
         <div>
-          <div class="brand-name">KTX</div>
-          <span class="brand-subtitle">Smart Dormitory</span>
+          <div class="brand-name">KTX Living</div>
+          <span class="brand-subtitle">Residence Portal</span>
         </div>
       </div>
 
@@ -25,7 +25,7 @@
           <span>{{ item.label }}</span>
         </router-link>
 
-        <p v-if="rubricItems.length" class="nav-section">Theo yêu cầu N2</p>
+        <p v-if="rubricItems.length" class="nav-section">Nội trú sinh viên</p>
 
         <router-link
           v-for="item in rubricItems"
@@ -39,7 +39,7 @@
           <span>{{ item.label }}</span>
         </router-link>
 
-        <p v-if="serviceItems.length" class="nav-section">Dịch vụ nhóm khác</p>
+        <p v-if="serviceItems.length" class="nav-section">Vận hành liên thông</p>
 
         <router-link
           v-for="item in serviceItems"
@@ -53,19 +53,11 @@
         </router-link>
       </nav>
 
-      <div v-if="!isStudent" class="scope-box">
-        <span class="mdi mdi-transit-connection-variant"></span>
+      <div v-if="!isStudent" class="sidebar-note">
+        <span class="mdi mdi-clipboard-check-outline"></span>
         <div>
-          <strong>Luồng liên thông</strong>
-          <p>N2 nhận đăng ký, gọi RoomService để xếp phòng, tạo hợp đồng rồi gửi Billing.</p>
-        </div>
-      </div>
-
-      <div v-if="!isStudent" class="deploy-box">
-        <span class="mdi mdi-cloud-check-outline"></span>
-        <div>
-          <strong>VPS Gateway</strong>
-          <p>Frontend gọi qua API Gateway, các service nói chuyện bằng Docker internal URL.</p>
+          <strong>Ưu tiên hôm nay</strong>
+          <p>Duyệt đơn chờ, xếp phòng còn giường và theo dõi hợp đồng mới.</p>
         </div>
       </div>
 
@@ -87,11 +79,11 @@
         </div>
 
         <div class="topbar-actions">
-          <div class="gateway-chip">
-            <span class="mdi mdi-lan-connect"></span>
+          <div class="term-chip">
+            <span class="mdi mdi-calendar-check-outline"></span>
             <div>
-              <strong>Gateway</strong>
-              <small>{{ gatewayLabel }}</small>
+              <strong>Kỳ nội trú</strong>
+              <small>2026 - 2027</small>
             </div>
           </div>
           <div class="user-chip">
@@ -115,7 +107,6 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import api from '@/services/api'
 
 const route = useRoute()
 const router = useRouter()
@@ -135,14 +126,14 @@ const isStudent = computed(() => roleKey.value === 'Student')
 
 const titleByRoute = {
   StudentPortal: 'Theo dõi hồ sơ, đăng ký nội trú và hợp đồng của bạn',
-  StudentServiceDashboard: 'Theo dõi kết nối 3 nhóm và luồng end-to-end',
+  StudentServiceDashboard: 'Nắm nhanh tình hình phòng ở, đơn đăng ký và hợp đồng',
   StudentManage: 'Quản lý hồ sơ sinh viên, lớp, khoa và lịch sử lưu trú',
   RoomRegistrationCreate: 'Tiếp nhận đăng ký nội trú trực tuyến',
-  RoomRegistrationApproval: 'Duyệt đơn và tự động xếp sinh viên vào phòng phù hợp',
+  RoomRegistrationApproval: 'Chọn tòa, chọn phòng và duyệt đơn nội trú',
   ContractList: 'Tra cứu hợp đồng đã tạo từ đơn được duyệt',
   ContractManage: 'Theo dõi hiệu lực và xử lý trạng thái hợp đồng',
-  RoomDashboard: 'Sơ đồ phòng và dữ liệu Room & Building Service',
-  IncidentManage: 'Quản lý sự cố, bảo trì và nghiệp vụ Billing/Maintenance',
+  RoomDashboard: 'Sơ đồ phòng, số giường và trạng thái vận hành',
+  IncidentManage: 'Tiếp nhận sự cố phòng ở và theo dõi xử lý',
   AccountManage: 'Quản lý tài khoản đăng nhập của nhân viên và sinh viên',
   SystemLogs: 'Nhật ký hệ thống và kiểm tra vận hành',
 }
@@ -246,25 +237,18 @@ const overviewSectionTitle = computed(() =>
   isStudent.value ? 'Tài khoản sinh viên' : 'Tổng quan hệ thống')
 
 const serviceLabel = computed(() =>
-  isStudent.value ? 'Student Portal' : 'Contract & Student Service')
+  isStudent.value ? 'Student Portal' : 'Residence Operations')
 
 const appTitle = computed(() =>
   isStudent.value
-    ? 'KTX Management - Cổng sinh viên'
-    : 'KTX Management - Quản lý ký túc xá thông minh')
+    ? 'Cổng sinh viên ký túc xá'
+    : 'Quản lý ký túc xá')
 
 const pageTitle = computed(() =>
   titleByRoute[route.name] || 'Nghiệp vụ Contract & Student Service')
 
 const userInitial = computed(() => {
   return (fullName.value || 'U').trim().charAt(0).toUpperCase()
-})
-
-const gatewayLabel = computed(() => {
-  const baseUrl = api.defaults.baseURL || '/api'
-
-  if (baseUrl === '/api') return 'VPS /api'
-  return baseUrl.replace(/^https?:\/\//, '')
 })
 
 const logout = async () => {
@@ -318,7 +302,7 @@ const logout = async () => {
 
 .brand-name {
   color: var(--brand);
-  font-size: 28px;
+  font-size: 22px;
   font-weight: 900;
   line-height: 1;
 }
@@ -414,35 +398,31 @@ const logout = async () => {
   color: #052e1c;
 }
 
-.scope-box,
-.deploy-box {
+.sidebar-note {
   display: grid;
   grid-template-columns: 32px minmax(0, 1fr);
   gap: 10px;
   margin: 10px 0 0;
-  padding: 14px;
-  border: 1px solid #24282c;
+  padding: 15px;
+  border: 1px solid rgba(22, 155, 99, 0.18);
   border-radius: 8px;
-  background: #111416;
+  background: linear-gradient(135deg, rgba(22, 155, 99, 0.18), rgba(255, 255, 255, 0.04));
 }
 
-.scope-box .mdi,
-.deploy-box .mdi {
+.sidebar-note .mdi {
   color: var(--brand);
   font-size: 24px;
 }
 
-.scope-box strong,
-.deploy-box strong {
+.sidebar-note strong {
   display: block;
   color: #ffffff;
   font-size: 13px;
 }
 
-.scope-box p,
-.deploy-box p {
+.sidebar-note p {
   margin: 4px 0 0;
-  color: #9aa1a8;
+  color: #c7d5cf;
   font-size: 12px;
   line-height: 1.45;
 }
@@ -545,7 +525,7 @@ const logout = async () => {
   flex: 0 0 auto;
 }
 
-.gateway-chip {
+.term-chip {
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr);
   gap: 10px;
@@ -558,22 +538,22 @@ const logout = async () => {
   background: #ffffff;
 }
 
-.gateway-chip .mdi {
+.term-chip .mdi {
   color: var(--brand-dark);
   font-size: 24px;
 }
 
-.gateway-chip strong,
-.gateway-chip small {
+.term-chip strong,
+.term-chip small {
   display: block;
 }
 
-.gateway-chip strong {
+.term-chip strong {
   color: var(--ink);
   font-size: 13px;
 }
 
-.gateway-chip small {
+.term-chip small {
   margin-top: 2px;
   color: var(--muted);
   font-size: 12px;
@@ -638,8 +618,7 @@ const logout = async () => {
   }
 
   .nav-section,
-  .scope-box,
-  .deploy-box,
+  .sidebar-note,
   .account-box {
     display: none;
   }
