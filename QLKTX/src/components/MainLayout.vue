@@ -216,7 +216,7 @@ const adminServiceItems = [
     to: '/finance/incidents',
     names: ['IncidentManage'],
     icon: 'mdi-tools',
-    label: 'Billing & Maintenance',
+    label: 'Sửa chữa & bảo trì',
   },
   {
     to: '/auth/accounts',

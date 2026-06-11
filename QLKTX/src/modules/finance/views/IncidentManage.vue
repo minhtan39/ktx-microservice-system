@@ -2,7 +2,7 @@
   <section class="incident-page">
     <div class="page-head">
       <div>
-        <span class="page-kicker">Billing & Maintenance</span>
+        <span class="page-kicker">Sửa chữa & bảo trì</span>
         <h2>Quản lý yêu cầu sửa chữa</h2>
         <p>Sinh viên gửi yêu cầu từ cổng sinh viên, nhân viên/admin tiếp nhận và cập nhật tiến độ xử lý.</p>
       </div>
