@@ -175,10 +175,20 @@
                 >
                   <v-select
                     v-model="approvalDraft(registration).buildingName"
-                    :items="buildingOptions"
+                    :items="manualBuildingOptions"
                     item-title="title"
                     item-value="value"
                     label="Tòa xếp"
+                    density="compact"
+                    hide-details
+                    @update:model-value="clearDraftRoom(registration.id)"
+                  />
+                  <v-select
+                    v-model="approvalDraft(registration).roomType"
+                    :items="manualRoomTypeOptions"
+                    item-title="title"
+                    item-value="value"
+                    label="Loại phòng xếp"
                     density="compact"
                     hide-details
                     @update:model-value="clearDraftRoom(registration.id)"
@@ -337,6 +347,16 @@ const roomTypeOptions = computed(() => {
     }))
 })
 
+const manualBuildingOptions = computed(() => [
+  { title: 'Tất cả tòa còn giường', value: '' },
+  ...buildingOptions.value,
+])
+
+const manualRoomTypeOptions = computed(() => [
+  { title: 'Tất cả loại phòng còn giường', value: '' },
+  ...roomTypeOptions.value,
+])
+
 const filteredRegistrations = computed(() => {
   if (statusFilter.value === 'All') return registrations.value
   return registrations.value.filter((registration) => registration.status === statusFilter.value)
@@ -442,6 +462,7 @@ const syncApprovalDrafts = () => {
   registrations.value.forEach((registration) => {
     nextDrafts[registration.id] = approvalDrafts.value[registration.id] || {
       buildingName: registration.buildingName || '',
+      roomType: registration.roomType || '',
       roomId: null,
     }
   })
@@ -453,6 +474,7 @@ const approvalDraft = (registration) => {
   if (!approvalDrafts.value[registration.id]) {
     approvalDrafts.value[registration.id] = {
       buildingName: registration.buildingName || '',
+      roomType: registration.roomType || '',
       roomId: null,
     }
   }
@@ -473,8 +495,8 @@ const roomOptionsForRegistration = (registration) => {
   return rooms.value
     .filter((room) => isRoomAvailable(room))
     .filter((room) => !student || room.gender === student.gender)
-    .filter((room) => isSameCode(room.buildingName, draft.buildingName || registration.buildingName))
-    .filter((room) => isSameCode(room.roomType, registration.roomType))
+    .filter((room) => isSameCode(room.buildingName, draft.buildingName))
+    .filter((room) => isSameCode(room.roomType, draft.roomType))
     .sort((first, second) =>
       first.buildingName.localeCompare(second.buildingName) ||
       Number(first.floor || 0) - Number(second.floor || 0) ||
@@ -687,10 +709,10 @@ onMounted(loadAll)
 
 .manual-room-picker {
   display: grid;
-  grid-template-columns: minmax(150px, 0.6fr) minmax(320px, 1fr) auto;
+  grid-template-columns: minmax(140px, 0.55fr) minmax(170px, 0.65fr) minmax(320px, 1fr) auto;
   align-items: center;
   gap: 8px;
-  min-width: 620px;
+  min-width: 820px;
 }
 
 .status-pill {
