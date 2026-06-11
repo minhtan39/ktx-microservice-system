@@ -80,15 +80,26 @@
               <td>{{ account.fullName }}</td>
               <td>{{ account.studentCode || '-' }}</td>
               <td>
-                <v-btn
-                  color="success"
-                  variant="tonal"
-                  size="small"
-                  prepend-icon="mdi-pencil-outline"
-                  @click="openEdit(account)"
-                >
-                  Sửa
-                </v-btn>
+                <div class="action-row">
+                  <v-btn
+                    color="success"
+                    variant="tonal"
+                    size="small"
+                    prepend-icon="mdi-pencil-outline"
+                    @click="openEdit(account)"
+                  >
+                    Sửa
+                  </v-btn>
+                  <v-btn
+                    color="error"
+                    variant="tonal"
+                    size="small"
+                    prepend-icon="mdi-delete-outline"
+                    @click="openDelete(account)"
+                  >
+                    Xóa
+                  </v-btn>
+                </div>
               </td>
             </tr>
           </tbody>
@@ -141,6 +152,35 @@
         </v-card-actions>
       </v-card>
     </v-dialog>
+
+    <v-dialog v-model="deleteDialog" max-width="480">
+      <v-card v-if="deleteTarget">
+        <v-card-title>Xác nhận xóa tài khoản</v-card-title>
+        <v-card-text>
+          <p>
+            Bạn sắp xóa tài khoản <strong>{{ deleteTarget.username }}</strong>.
+          </p>
+          <v-alert
+            v-if="deleteTarget.role === 'Student'"
+            type="warning"
+            variant="tonal"
+            density="comfortable"
+          >
+            Tài khoản này thuộc sinh viên. Hồ sơ sinh viên tương ứng cũng sẽ bị xóa.
+          </v-alert>
+          <v-alert v-else type="info" variant="tonal" density="comfortable">
+            Tài khoản nhân viên sẽ bị xóa khỏi AuthService.
+          </v-alert>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" @click="deleteDialog = false">Hủy</v-btn>
+          <v-btn color="error" :loading="deleting" @click="deleteAccount">
+            Xóa tài khoản
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
   </section>
 </template>
 
@@ -150,6 +190,7 @@ import api from '@/services/api'
 
 const loading = ref(false)
 const saving = ref(false)
+const deleting = ref(false)
 const error = ref('')
 const success = ref('')
 const accounts = ref([])
@@ -157,6 +198,8 @@ const search = ref('')
 const roleFilter = ref('All')
 const dialog = ref(false)
 const editing = ref(null)
+const deleteDialog = ref(false)
+const deleteTarget = ref(null)
 const showPassword = ref(false)
 
 const roleOptions = [
@@ -248,6 +291,13 @@ const openEdit = (account) => {
   dialog.value = true
 }
 
+const openDelete = (account) => {
+  deleteTarget.value = account
+  error.value = ''
+  success.value = ''
+  deleteDialog.value = true
+}
+
 const saveAccount = async () => {
   if (!editing.value) return
 
@@ -279,6 +329,31 @@ const saveAccount = async () => {
     console.error(err)
   } finally {
     saving.value = false
+  }
+}
+
+const deleteAccount = async () => {
+  if (!deleteTarget.value) return
+
+  try {
+    deleting.value = true
+    error.value = ''
+    success.value = ''
+
+    const account = deleteTarget.value
+    await api.delete(`/auth/accounts/${encodeURIComponent(account.username)}`)
+
+    deleteDialog.value = false
+    deleteTarget.value = null
+    success.value = account.role === 'Student'
+      ? 'Đã xóa tài khoản và hồ sơ sinh viên.'
+      : 'Đã xóa tài khoản nhân viên.'
+    await loadAccounts()
+  } catch (err) {
+    error.value = err.response?.data?.detail || 'Không xóa được tài khoản.'
+    console.error(err)
+  } finally {
+    deleting.value = false
   }
 }
 
@@ -457,6 +532,12 @@ code {
   padding: 24px 12px;
   color: var(--muted);
   text-align: center;
+}
+
+.action-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
 }
 
 .edit-form {

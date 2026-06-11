@@ -225,6 +225,48 @@ app.MapPut("/api/auth/accounts/{username}", (string username, UpdateAccountReque
     return Results.Ok(new { data = ToAccountResponse(updated) });
 });
 
+app.MapDelete("/api/auth/accounts/{username}", async (
+    string username,
+    HttpRequest request,
+    IHttpClientFactory httpClientFactory) =>
+{
+    if (!IsAdminRequest(request))
+        return Results.Unauthorized();
+
+    if (!users.TryGetValue(username, out var account) ||
+        account.Role.Equals("Admin", StringComparison.OrdinalIgnoreCase))
+    {
+        return Results.NotFound(new { message = "Account not found." });
+    }
+
+    if (account.Role.Equals("Student", StringComparison.OrdinalIgnoreCase) &&
+        account.StudentId.HasValue)
+    {
+        var deleteProfileResult = await DeleteStudentProfileAsync(
+            account.StudentId.Value,
+            request,
+            httpClientFactory);
+
+        if (!deleteProfileResult.Success)
+        {
+            return Results.Problem(
+                title: "Student profile could not be deleted",
+                detail: deleteProfileResult.Message,
+                statusCode: StatusCodes.Status502BadGateway);
+        }
+    }
+
+    accountStore.Remove(username);
+
+    return Results.Ok(new
+    {
+        message = "Account deleted successfully.",
+        studentProfileDeleted = account.Role.Equals(
+            "Student",
+            StringComparison.OrdinalIgnoreCase)
+    });
+});
+
 app.Run();
 
 static string CreateDemoToken(DemoUser user)
@@ -287,6 +329,46 @@ static object ToAccountResponse(DemoUser user)
         user.StudentId,
         user.StudentCode
     };
+}
+
+static async Task<(bool Success, string Message)> DeleteStudentProfileAsync(
+    long studentId,
+    HttpRequest incomingRequest,
+    IHttpClientFactory httpClientFactory)
+{
+    try
+    {
+        var client = httpClientFactory.CreateClient("Gateway");
+        using var deleteRequest = new HttpRequestMessage(
+            HttpMethod.Delete,
+            $"/api/students/{studentId}");
+
+        var authorization = incomingRequest.Headers.Authorization.ToString();
+
+        if (!string.IsNullOrWhiteSpace(authorization))
+        {
+            deleteRequest.Headers.TryAddWithoutValidation("Authorization", authorization);
+        }
+
+        using var response = await client.SendAsync(deleteRequest);
+
+        if (response.IsSuccessStatusCode ||
+            response.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            return (true, string.Empty);
+        }
+
+        var responseBody = await response.Content.ReadAsStringAsync();
+        return (false, $"ContractStudentService returned {(int)response.StatusCode}: {responseBody}");
+    }
+    catch (HttpRequestException exception)
+    {
+        return (false, exception.Message);
+    }
+    catch (TaskCanceledException exception)
+    {
+        return (false, exception.Message);
+    }
 }
 
 static async Task SynchronizeStudentAccountsAsync(

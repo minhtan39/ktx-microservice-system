@@ -67,6 +67,18 @@ public sealed class AccountStore
         }
     }
 
+    public bool Remove(string username)
+    {
+        lock (_writeLock)
+        {
+            if (!Users.TryRemove(username, out _))
+                return false;
+
+            PersistUnsafe();
+            return true;
+        }
+    }
+
     public void AddMissingStudents(IEnumerable<DemoUser> students)
     {
         lock (_writeLock)
