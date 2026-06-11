@@ -396,7 +396,7 @@ app.MapPost("/api/rooms", (RoomRequest request) =>
             request.Capacity ?? roomType.Capacity,
             0,
             request.MonthlyFee ?? roomType.MonthlyFee,
-            InitialRoomStatus(request.Status),
+            "Available",
             CleanOrDefault(request.Amenities, roomType.Amenities));
 
         room.RefreshStatus();
@@ -443,48 +443,7 @@ app.MapPut("/api/rooms/{roomId:long}", (
         room.Gender = request.Gender;
         room.Capacity = newCapacity;
         room.MonthlyFee = request.MonthlyFee ?? roomType.MonthlyFee;
-        room.Status = string.IsNullOrWhiteSpace(request.Status)
-            ? room.Status
-            : InitialRoomStatus(request.Status);
         room.Amenities = CleanOrDefault(request.Amenities, roomType.Amenities);
-        room.RefreshStatus();
-
-        return Results.Ok(RoomResponse.FromRoom(room, buildings));
-    }
-});
-
-app.MapPatch("/api/rooms/{roomId:long}/status", (
-    long roomId,
-    RoomStatusRequest request) =>
-{
-    lock (roomLock)
-    {
-        var room = rooms.FirstOrDefault(item => item.RoomId == roomId);
-
-        if (room == null)
-            return Results.NotFound(new { message = "Room not found." });
-
-        if (request.OccupiedBeds.HasValue)
-        {
-            return Results.BadRequest(new
-            {
-                message = "OccupiedBeds is managed automatically by the N2 room approval flow. Use /occupy or /release."
-            });
-        }
-
-        var normalizedStatus = NormalizeStatus(request.Status);
-
-        if (normalizedStatus == "Full")
-        {
-            return Results.BadRequest(new
-            {
-                message = "Full status is calculated automatically from occupied beds and capacity."
-            });
-        }
-
-        room.Status = normalizedStatus == "Maintenance"
-            ? "Maintenance"
-            : "Available";
         room.RefreshStatus();
 
         return Results.Ok(RoomResponse.FromRoom(room, buildings));
@@ -700,15 +659,6 @@ static IResult? ValidateRoomRequest(
     if (request.MonthlyFee.HasValue && request.MonthlyFee.Value < 0)
         return Results.BadRequest(new { message = "MonthlyFee cannot be negative." });
 
-    try
-    {
-        NormalizeStatus(request.Status);
-    }
-    catch (ArgumentException ex)
-    {
-        return Results.BadRequest(new { message = ex.Message });
-    }
-
     return null;
 }
 
@@ -775,13 +725,6 @@ static string NormalizeStatus(string? status)
         "maintenance" or "repair" or "sua chua" or "sửa chữa" or "dang sua chua" or "đang sửa chữa" => "Maintenance",
         _ => throw new ArgumentException("Status must be Available, Full, or Maintenance.")
     };
-}
-
-static string InitialRoomStatus(string? status)
-{
-    return NormalizeStatus(status) == "Maintenance"
-        ? "Maintenance"
-        : "Available";
 }
 
 public sealed class DormBuilding
@@ -924,12 +867,7 @@ public sealed record RoomRequest(
     bool Gender,
     int? Capacity,
     decimal? MonthlyFee,
-    string? Status,
     string? Amenities);
-
-public sealed record RoomStatusRequest(
-    string? Status,
-    int? OccupiedBeds);
 
 public sealed record OccupyRoomRequest(
     long StudentId,
