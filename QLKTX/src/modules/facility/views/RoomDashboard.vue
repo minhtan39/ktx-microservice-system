@@ -49,15 +49,15 @@
 
     <v-sheet class="tab-shell">
       <v-tabs v-model="activeTab" color="primary">
-        <v-tab value="map">Sơ đồ tầng</v-tab>
+        <v-tab value="rooms">Phòng & trạng thái</v-tab>
         <v-tab value="buildings">Tòa nhà</v-tab>
         <v-tab value="roomTypes">Loại phòng</v-tab>
-        <v-tab value="rooms">Phòng & trạng thái</v-tab>
+        <v-tab value="map">Sơ đồ tầng</v-tab>
       </v-tabs>
     </v-sheet>
 
-    <v-window v-model="activeTab">
-      <v-window-item value="map">
+    <div class="tab-content">
+      <section v-if="activeTab === 'map'">
         <v-sheet class="panel">
           <div class="panel-toolbar">
             <v-row>
@@ -157,9 +157,9 @@
             </v-col>
           </v-row>
         </v-sheet>
-      </v-window-item>
+      </section>
 
-      <v-window-item value="buildings">
+      <section v-else-if="activeTab === 'buildings'">
         <v-sheet class="panel">
           <div class="panel-head">
             <h3>Tòa nhà</h3>
@@ -196,9 +196,9 @@
             </tbody>
           </table>
         </v-sheet>
-      </v-window-item>
+      </section>
 
-      <v-window-item value="roomTypes">
+      <section v-else-if="activeTab === 'roomTypes'">
         <v-sheet class="panel">
           <div class="panel-head">
             <h3>Loại phòng</h3>
@@ -235,15 +235,25 @@
             </tbody>
           </table>
         </v-sheet>
-      </v-window-item>
+      </section>
 
-      <v-window-item value="rooms">
+      <section v-else>
         <v-sheet class="panel">
           <div class="panel-head">
             <h3>Phòng & trạng thái</h3>
-            <v-btn color="primary" prepend-icon="mdi-plus" @click="openCreateRoom">
-              Thêm phòng
-            </v-btn>
+            <div class="room-tools">
+              <v-text-field
+                v-model="roomSearch"
+                prepend-inner-icon="mdi-magnify"
+                label="Tìm phòng, tòa, loại, trạng thái"
+                density="compact"
+                variant="outlined"
+                hide-details
+              />
+              <v-btn color="primary" prepend-icon="mdi-plus" @click="openCreateRoom">
+                Thêm phòng
+              </v-btn>
+            </div>
           </div>
 
           <table class="data-table">
@@ -260,7 +270,7 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="room in rooms" :key="room.roomId">
+              <tr v-for="room in searchedRooms" :key="room.roomId">
                 <td>{{ room.roomNumber }}</td>
                 <td>{{ room.buildingDisplayName }} / {{ room.floorName }}</td>
                 <td>{{ room.roomType }}</td>
@@ -288,11 +298,14 @@
                   </div>
                 </td>
               </tr>
+              <tr v-if="!loading && searchedRooms.length === 0">
+                <td colspan="8" class="table-empty">Không có phòng phù hợp.</td>
+              </tr>
             </tbody>
           </table>
         </v-sheet>
-      </v-window-item>
-    </v-window>
+      </section>
+    </div>
 
     <v-dialog v-model="buildingDialog" max-width="560px">
       <v-card>
@@ -490,11 +503,12 @@ import api from '@/services/api'
 
 const ALL_VALUE = 'all'
 
-const activeTab = ref('map')
+const activeTab = ref('rooms')
 const loading = ref(false)
 const saving = ref(false)
 const message = ref('')
 const messageType = ref('success')
+const roomSearch = ref('')
 
 const rooms = ref([])
 const buildings = ref([])
@@ -625,6 +639,29 @@ const filteredRooms = computed(() => {
       room.status === selectedStatus.value
 
     return matchBuilding && matchFloor && matchStatus
+  })
+})
+
+const searchedRooms = computed(() => {
+  const keyword = roomSearch.value.trim().toLowerCase()
+  if (!keyword) return rooms.value
+
+  return rooms.value.filter((room) => {
+    const searchableText = [
+      room.roomNumber,
+      room.buildingName,
+      room.buildingDisplayName,
+      room.floorName,
+      room.roomType,
+      room.genderText,
+      room.status,
+      getStatusText(room.status),
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase()
+
+    return searchableText.includes(keyword)
   })
 })
 
@@ -1011,6 +1048,10 @@ onMounted(loadAll)
   overflow: hidden;
 }
 
+.tab-content {
+  min-height: 360px;
+}
+
 .panel {
   display: flex;
   flex-direction: column;
@@ -1021,6 +1062,13 @@ onMounted(loadAll)
 
 .panel-toolbar {
   margin-bottom: 2px;
+}
+
+.room-tools {
+  display: grid;
+  grid-template-columns: minmax(240px, 360px) auto;
+  align-items: center;
+  gap: 12px;
 }
 
 .room-card {
@@ -1095,6 +1143,12 @@ onMounted(loadAll)
   text-transform: uppercase;
 }
 
+.table-empty {
+  color: #607085;
+  padding: 24px 10px;
+  text-align: center;
+}
+
 .row-actions {
   display: flex;
   align-items: center;
@@ -1130,6 +1184,10 @@ onMounted(loadAll)
   .panel-head {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .room-tools {
+    grid-template-columns: 1fr;
   }
 
   .data-table {
