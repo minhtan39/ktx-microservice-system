@@ -1038,12 +1038,7 @@ public sealed record RoomResponse(
             room.AvailableBeds,
             room.MonthlyFee,
             room.Status,
-            room.Status switch
-            {
-                "Full" => "Đầy phòng",
-                "Maintenance" => "Đang sửa chữa",
-                _ => "Trống"
-            },
+            GetStatusText(room),
             room.Amenities,
             room.OccupancyReferences
                 .Select(reference => reference.StudentId)
@@ -1051,6 +1046,19 @@ public sealed record RoomResponse(
             room.OccupancyReferences
                 .Select(RoomOccupancyResponse.FromReference)
                 .ToList());
+    }
+
+    private static string GetStatusText(DormRoom room)
+    {
+        if (room.IsMaintenance)
+            return "Đang sửa chữa";
+
+        if (room.AvailableBeds == 0)
+            return "Đầy phòng";
+
+        return room.OccupiedBeds == 0
+            ? "Trống"
+            : "Còn giường";
     }
 }
 

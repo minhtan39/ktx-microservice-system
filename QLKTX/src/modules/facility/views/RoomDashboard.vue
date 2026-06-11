@@ -126,7 +126,7 @@
                       <small>{{ room.buildingDisplayName }} - {{ room.floorName }}</small>
                     </div>
                     <v-chip size="small" :color="getStatusColor(room.status)">
-                      {{ getStatusText(room.status) }}
+                      {{ getRoomStatusText(room) }}
                     </v-chip>
                   </div>
 
@@ -285,7 +285,7 @@
                 <td>
                   <div class="auto-status">
                     <v-chip size="small" variant="tonal" :color="getStatusColor(room.status)">
-                      {{ getStatusText(room.status) }}
+                      {{ getRoomStatusText(room) }}
                     </v-chip>
                     <small>Theo duyệt xếp phòng N2</small>
                   </div>
@@ -466,7 +466,7 @@
           <p><strong>Tầng:</strong> {{ selectedRoom.floorName }}</p>
           <p><strong>Loại phòng:</strong> {{ selectedRoom.roomType }}</p>
           <p><strong>Giới tính:</strong> {{ selectedRoom.genderText }}</p>
-          <p><strong>Trạng thái:</strong> {{ getStatusText(selectedRoom.status) }}</p>
+          <p><strong>Trạng thái:</strong> {{ getRoomStatusText(selectedRoom) }}</p>
           <p><strong>Sức chứa:</strong> {{ selectedRoom.occupiedBeds }}/{{ selectedRoom.capacity }} sinh viên</p>
           <p><strong>Giá phòng:</strong> {{ formatPrice(selectedRoom.monthlyFee) }}/tháng</p>
           <p><strong>Tiện nghi:</strong> {{ selectedRoom.amenities }}</p>
@@ -572,7 +572,7 @@ const roomTypeForm = ref(emptyRoomTypeForm())
 const roomForm = ref(emptyRoomForm())
 
 const statusOptions = [
-  { title: 'Trống', value: 'Available' },
+  { title: 'Còn giường', value: 'Available' },
   { title: 'Đầy', value: 'Full' },
   { title: 'Đang sửa chữa', value: 'Maintenance' },
 ]
@@ -657,7 +657,7 @@ const searchedRooms = computed(() => {
       room.roomType,
       room.genderText,
       room.status,
-      getStatusText(room.status),
+      getRoomStatusText(room),
     ]
       .filter(Boolean)
       .join(' ')
@@ -959,9 +959,15 @@ const getStatusColor = (status) => {
 }
 
 const getStatusText = (status) => {
-  if (status === 'Available') return 'Trống'
+  if (status === 'Available') return 'Còn giường'
   if (status === 'Full') return 'Đầy'
   return 'Đang sửa chữa'
+}
+
+const getRoomStatusText = (room) => {
+  if (room.status === 'Maintenance') return 'Đang sửa chữa'
+  if (room.status === 'Full' || Number(room.availableBeds) <= 0) return 'Đầy'
+  return Number(room.occupiedBeds) > 0 ? 'Còn giường' : 'Trống'
 }
 
 const formatPrice = (value) => {
