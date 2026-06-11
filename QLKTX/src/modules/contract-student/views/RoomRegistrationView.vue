@@ -65,10 +65,24 @@
             />
           </v-col>
           <v-col cols="12" md="2">
-            <v-select v-model="form.buildingName" :items="buildings" label="Tòa mong muốn" density="compact" />
+            <v-select
+              v-model="form.buildingName"
+              :items="buildingOptions"
+              item-title="title"
+              item-value="value"
+              label="Tòa mong muốn"
+              density="compact"
+            />
           </v-col>
           <v-col cols="12" md="2">
-            <v-select v-model="form.roomType" :items="roomTypes" label="Loại phòng" density="compact" />
+            <v-select
+              v-model="form.roomType"
+              :items="roomTypeOptions"
+              item-title="title"
+              item-value="value"
+              label="Loại phòng"
+              density="compact"
+            />
           </v-col>
           <v-col cols="12" md="4">
             <v-select
@@ -155,13 +169,46 @@
             <td>{{ registration.assignedRoomId ? `Phòng ${registration.assignedRoomId}` : 'Chưa xếp' }}</td>
             <td v-if="isApprovalView">
               <div class="action-row">
+                <div
+                  v-if="registration.status === 'Pending'"
+                  class="manual-room-picker"
+                >
+                  <v-select
+                    v-model="approvalDraft(registration).buildingName"
+                    :items="buildingOptions"
+                    item-title="title"
+                    item-value="value"
+                    label="Tòa xếp"
+                    density="compact"
+                    hide-details
+                    @update:model-value="clearDraftRoom(registration.id)"
+                  />
+                  <v-select
+                    v-model="approvalDraft(registration).roomId"
+                    :items="roomOptionsForRegistration(registration)"
+                    item-title="title"
+                    item-value="value"
+                    label="Phòng còn giường"
+                    density="compact"
+                    hide-details
+                    no-data-text="Không có phòng phù hợp"
+                  />
+                  <v-btn
+                    color="primary"
+                    size="small"
+                    :disabled="!approvalDraft(registration).roomId"
+                    @click="approveRegistration(registration.id, approvalDraft(registration).roomId)"
+                  >
+                    Duyệt phòng đã chọn
+                  </v-btn>
+                </div>
                 <v-btn
                   color="success"
                   size="small"
                   :disabled="registration.status !== 'Pending'"
                   @click="approveRegistration(registration.id)"
                 >
-                  Tự xếp phòng
+                  Tự xếp
                 </v-btn>
                 <v-btn
                   color="error"
@@ -198,6 +245,10 @@ const message = ref('')
 const messageType = ref('success')
 const students = ref([])
 const registrations = ref([])
+const buildings = ref([])
+const roomTypes = ref([])
+const rooms = ref([])
+const approvalDrafts = ref({})
 const statusFilter = ref('Pending')
 
 const isApprovalView = computed(() => route.name === 'RoomRegistrationApproval')
@@ -221,8 +272,6 @@ const statusOptions = [
   { title: 'Tất cả lịch sử', value: 'All' },
 ]
 
-const buildings = ['A', 'B', 'C']
-const roomTypes = ['4-bed', '6-bed', '8-bed']
 const priorityTypes = [
   { title: 'Không ưu tiên', value: '' },
   { title: 'Khuyết tật', value: 'disabled' },
@@ -249,6 +298,44 @@ const emptyForm = () => ({
 const form = ref(emptyForm())
 
 const studentMap = computed(() => buildStudentNameMap(students.value))
+const studentById = computed(() =>
+  new Map(students.value.map((student) => [Number(student.id), student])))
+
+const buildingOptions = computed(() => {
+  const options = buildings.value
+    .map((building) => ({
+      title: building.displayName
+        ? `${building.displayName} (${building.buildingName})`
+        : `Tòa ${building.buildingName}`,
+      value: building.buildingName,
+    }))
+    .filter((building) => building.value)
+
+  return options.length > 0
+    ? options
+    : ['A', 'B', 'C'].map((buildingName) => ({
+      title: `Tòa ${buildingName}`,
+      value: buildingName,
+    }))
+})
+
+const roomTypeOptions = computed(() => {
+  const options = roomTypes.value
+    .map((roomType) => ({
+      title: roomType.description
+        ? `${roomType.description} (${roomType.roomType})`
+        : roomType.roomType,
+      value: roomType.roomType,
+    }))
+    .filter((roomType) => roomType.value)
+
+  return options.length > 0
+    ? options
+    : ['4-bed', '6-bed', '8-bed'].map((roomType) => ({
+      title: roomType,
+      value: roomType,
+    }))
+})
 
 const filteredRegistrations = computed(() => {
   if (statusFilter.value === 'All') return registrations.value
@@ -279,10 +366,23 @@ const loadRegistrations = async () => {
   registrations.value = normalizeList(res.data)
 }
 
+const loadRoomCatalog = async () => {
+  const [buildingRes, roomTypeRes, roomRes] = await Promise.all([
+    api.get('/buildings'),
+    api.get('/roomtypes'),
+    api.get('/rooms'),
+  ])
+
+  buildings.value = normalizeList(buildingRes.data)
+  roomTypes.value = normalizeList(roomTypeRes.data)
+  rooms.value = normalizeList(roomRes.data)
+}
+
 const loadAll = async () => {
   try {
     loading.value = true
-    await Promise.all([loadStudents(), loadRegistrations()])
+    await Promise.all([loadStudents(), loadRegistrations(), loadRoomCatalog()])
+    syncApprovalDrafts()
   } catch (err) {
     showMessage('Không tải được dữ liệu đăng ký phòng.', 'error')
     console.error(err)
@@ -306,13 +406,19 @@ const createRegistration = async () => {
   }
 }
 
-const approveRegistration = async (id) => {
+const approveRegistration = async (id, roomId = null) => {
   try {
-    await api.put(`/registrations/${id}/approve`)
-    showMessage('Đã duyệt đơn, tự xếp phòng, cập nhật RoomService và tạo hợp đồng.')
+    await api.put(
+      `/registrations/${id}/approve`,
+      null,
+      roomId ? { params: { roomId } } : undefined,
+    )
+    showMessage(roomId
+      ? 'Đã duyệt đơn theo phòng đã chọn, cập nhật RoomService và tạo hợp đồng.'
+      : 'Đã duyệt đơn, tự xếp phòng, cập nhật RoomService và tạo hợp đồng.')
     await loadAll()
   } catch (err) {
-    showMessage('Không duyệt được đơn. Có thể RoomService chưa nối hoặc phòng phù hợp đã hết giường.', 'error')
+    showMessage('Không duyệt được đơn. Có thể phòng đã chọn không phù hợp giới tính, đã hết giường hoặc RoomService chưa nối.', 'error')
     console.error(err)
   }
 }
@@ -329,6 +435,79 @@ const rejectRegistration = async (id) => {
 }
 
 const studentName = (id) => studentMap.value.get(id) || `Sinh viên #${id}`
+
+const syncApprovalDrafts = () => {
+  const nextDrafts = {}
+
+  registrations.value.forEach((registration) => {
+    nextDrafts[registration.id] = approvalDrafts.value[registration.id] || {
+      buildingName: registration.buildingName || '',
+      roomId: null,
+    }
+  })
+
+  approvalDrafts.value = nextDrafts
+}
+
+const approvalDraft = (registration) => {
+  if (!approvalDrafts.value[registration.id]) {
+    approvalDrafts.value[registration.id] = {
+      buildingName: registration.buildingName || '',
+      roomId: null,
+    }
+  }
+
+  return approvalDrafts.value[registration.id]
+}
+
+const clearDraftRoom = (registrationId) => {
+  if (approvalDrafts.value[registrationId]) {
+    approvalDrafts.value[registrationId].roomId = null
+  }
+}
+
+const roomOptionsForRegistration = (registration) => {
+  const draft = approvalDraft(registration)
+  const student = studentById.value.get(Number(registration.studentId))
+
+  return rooms.value
+    .filter((room) => isRoomAvailable(room))
+    .filter((room) => !student || room.gender === student.gender)
+    .filter((room) => isSameCode(room.buildingName, draft.buildingName || registration.buildingName))
+    .filter((room) => isSameCode(room.roomType, registration.roomType))
+    .sort((first, second) =>
+      first.buildingName.localeCompare(second.buildingName) ||
+      Number(first.floor || 0) - Number(second.floor || 0) ||
+      Number(first.roomId || 0) - Number(second.roomId || 0))
+    .map((room) => ({
+      title: roomOptionLabel(room),
+      value: room.roomId,
+    }))
+}
+
+const isRoomAvailable = (room) => {
+  const status = String(room.status || '').toLowerCase()
+  const availableBeds = Number(room.availableBeds ?? 0)
+
+  return status !== 'maintenance' &&
+    status !== 'full' &&
+    availableBeds > 0
+}
+
+const isSameCode = (first, second) => {
+  if (!second) return true
+  return String(first || '').trim().toLowerCase() ===
+    String(second || '').trim().toLowerCase()
+}
+
+const roomOptionLabel = (room) => {
+  const genderText = room.genderText || (room.gender ? 'Nam' : 'Nữ')
+  const floorText = room.floorName || `Tầng ${room.floor || '-'}`
+  const availableBeds = Number(room.availableBeds ?? 0)
+  const fee = Number(room.monthlyFee || 0).toLocaleString('vi-VN')
+
+  return `Tòa ${room.buildingName} - Phòng ${room.roomNumber || room.roomId} - ${floorText} - ${genderText} - còn ${availableBeds}/${room.capacity} giường - ${fee}đ`
+}
 
 const priorityLabel = (value) => {
   return priorityTypes.find((item) => item.value === value)?.title || 'Không ưu tiên'
@@ -501,8 +680,17 @@ onMounted(loadAll)
 
 .action-row {
   display: flex;
+  align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.manual-room-picker {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.6fr) minmax(320px, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 620px;
 }
 
 .status-pill {
@@ -546,6 +734,12 @@ onMounted(loadAll)
     align-items: flex-start;
     flex-direction: column;
     gap: 8px;
+  }
+
+  .manual-room-picker {
+    grid-template-columns: 1fr;
+    min-width: 0;
+    width: 100%;
   }
 }
 </style>

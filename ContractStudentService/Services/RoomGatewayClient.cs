@@ -26,13 +26,18 @@ public class RoomGatewayClient : IRoomGatewayClient
     {
         var query = new List<string>
         {
-            $"buildingName={Uri.EscapeDataString(registration.BuildingName)}",
-            $"roomType={Uri.EscapeDataString(registration.RoomType)}",
             $"gender={student.Gender.ToString().ToLowerInvariant()}"
         };
 
         if (requestedRoomId.HasValue)
+        {
             query.Add($"roomId={requestedRoomId.Value}");
+        }
+        else
+        {
+            query.Add($"buildingName={Uri.EscapeDataString(registration.BuildingName)}");
+            query.Add($"roomType={Uri.EscapeDataString(registration.RoomType)}");
+        }
 
         var response = await _httpClient.GetAsync(
             $"/api/rooms/available?{string.Join("&", query)}");
@@ -97,8 +102,10 @@ public class RoomGatewayClient : IRoomGatewayClient
         return rooms
             .Where(room => !requestedRoomId.HasValue || room.RoomId == requestedRoomId.Value)
             .Where(room => room.Gender == student.Gender)
-            .Where(room => IsBuildingMatch(registration.BuildingName, room.BuildingName))
-            .Where(room => IsRoomTypeMatch(registration.RoomType, room.RoomType))
+            .Where(room => requestedRoomId.HasValue ||
+                IsBuildingMatch(registration.BuildingName, room.BuildingName))
+            .Where(room => requestedRoomId.HasValue ||
+                IsRoomTypeMatch(registration.RoomType, room.RoomType))
             .Where(room => IsAvailable(room))
             .OrderBy(room => room.MonthlyFee <= 0 ? decimal.MaxValue : room.MonthlyFee)
             .ThenByDescending(room => room.AvailableBeds)
