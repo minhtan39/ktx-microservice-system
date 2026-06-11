@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Text;
 using System.Text.Json;
 
@@ -15,6 +14,7 @@ builder.Services.AddCors(options =>
 });
 
 builder.Services.AddOpenApi();
+builder.Services.AddSingleton<AccountStore>();
 builder.Services.AddHttpClient("Gateway", client =>
 {
     var gatewayBaseUrl = builder.Configuration["Integration:GatewayBaseUrl"]
@@ -32,27 +32,33 @@ if (app.Environment.IsDevelopment())
 
 app.UseCors("AllowGateway");
 
-var users = new ConcurrentDictionary<string, DemoUser>(StringComparer.OrdinalIgnoreCase);
+var accountStore = app.Services.GetRequiredService<AccountStore>();
+var users = accountStore.Users;
 
-users["admin"] = new(
-    "admin",
-    "admin123",
-    "Admin",
-    "Quản trị hệ thống");
+if (users.IsEmpty)
+{
+    users["admin"] = new(
+        "admin",
+        "admin123",
+        "Admin",
+        "Quản trị hệ thống");
 
-users["nhanvien"] = new(
-    "nhanvien",
-    "staff123",
-    "Staff",
-    "Nhân viên ký túc xá");
+    users["nhanvien"] = new(
+        "nhanvien",
+        "staff123",
+        "Staff",
+        "Nhân viên ký túc xá");
 
-users["SV20260001"] = new(
-    "SV20260001",
-    "SV20260001",
-    "Student",
-    "Nguyễn Văn A",
-    2,
-    "SV20260001");
+    users["SV20260001"] = new(
+        "SV20260001",
+        "SV20260001",
+        "Student",
+        "Nguyễn Văn A",
+        2,
+        "SV20260001");
+
+    accountStore.Persist();
+}
 
 app.MapGet("/health", () => Results.Ok(new
 {
@@ -69,12 +75,18 @@ app.MapPost("/api/auth/login", async (
 
     users.TryGetValue(username, out var user);
 
-    if (user == null && username.Equals(password, StringComparison.OrdinalIgnoreCase))
+    var studentAccountAlreadyExists = users.Values.Any(existing =>
+        existing.Role.Equals("Student", StringComparison.OrdinalIgnoreCase) &&
+        existing.StudentCode?.Equals(username, StringComparison.OrdinalIgnoreCase) == true);
+
+    if (user == null &&
+        !studentAccountAlreadyExists &&
+        username.Equals(password, StringComparison.OrdinalIgnoreCase))
     {
         user = await TryResolveStudentAccountAsync(username, httpClientFactory);
 
         if (user != null)
-            users[username] = user;
+            accountStore.Upsert(user);
     }
 
     if (user == null || user.Password != password)
@@ -85,8 +97,10 @@ app.MapPost("/api/auth/login", async (
     return Results.Ok(ToAuthResponse(user));
 });
 
-app.MapGet("/api/auth/student-accounts", () =>
+app.MapGet("/api/auth/student-accounts", async (IHttpClientFactory httpClientFactory) =>
 {
+    await SynchronizeStudentAccountsAsync(accountStore, httpClientFactory);
+
     var accounts = users.Values
         .Where(user => user.Role.Equals("Student", StringComparison.OrdinalIgnoreCase))
         .OrderBy(user => user.StudentCode)
@@ -117,7 +131,7 @@ app.MapPost("/api/auth/student-accounts", (StudentAccountRequest request) =>
         request.StudentId,
         studentCode);
 
-    users[studentCode] = user;
+    accountStore.Upsert(user);
 
     return Results.Ok(new
     {
@@ -134,10 +148,14 @@ app.MapPost("/api/auth/student-accounts", (StudentAccountRequest request) =>
     });
 });
 
-app.MapGet("/api/auth/accounts", (HttpRequest request) =>
+app.MapGet("/api/auth/accounts", async (
+    HttpRequest request,
+    IHttpClientFactory httpClientFactory) =>
 {
     if (!IsAdminRequest(request))
         return Results.Unauthorized();
+
+    await SynchronizeStudentAccountsAsync(accountStore, httpClientFactory);
 
     var accounts = users.Values
         .Where(user => !user.Role.Equals("Admin", StringComparison.OrdinalIgnoreCase))
@@ -199,17 +217,10 @@ app.MapPut("/api/auth/accounts/{username}", (string username, UpdateAccountReque
         Username = nextUsername,
         Password = nextPassword,
         FullName = nextFullName,
-        StudentCode = current.Role.Equals("Student", StringComparison.OrdinalIgnoreCase)
-            ? nextUsername
-            : current.StudentCode
+        StudentCode = current.StudentCode
     };
 
-    if (!nextUsername.Equals(username, StringComparison.OrdinalIgnoreCase))
-    {
-        users.TryRemove(username, out _);
-    }
-
-    users[nextUsername] = updated;
+    accountStore.Replace(username, updated);
 
     return Results.Ok(new { data = ToAccountResponse(updated) });
 });
@@ -276,6 +287,61 @@ static object ToAccountResponse(DemoUser user)
         user.StudentId,
         user.StudentCode
     };
+}
+
+static async Task SynchronizeStudentAccountsAsync(
+    AccountStore accountStore,
+    IHttpClientFactory httpClientFactory)
+{
+    try
+    {
+        var client = httpClientFactory.CreateClient("Gateway");
+        var response = await client.GetAsync("/api/students");
+
+        if (!response.IsSuccessStatusCode)
+            return;
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+        var students = TryGetStudentArray(document.RootElement);
+
+        if (students.ValueKind != JsonValueKind.Array)
+            return;
+
+        var missingAccounts = new List<DemoUser>();
+
+        foreach (var student in students.EnumerateArray())
+        {
+            var studentCode = GetString(student, "studentCode");
+
+            if (string.IsNullOrWhiteSpace(studentCode))
+                continue;
+
+            var fullName = GetString(student, "fullName");
+
+            missingAccounts.Add(new DemoUser(
+                studentCode,
+                studentCode,
+                "Student",
+                string.IsNullOrWhiteSpace(fullName) ? studentCode : fullName,
+                GetInt64(student, "id"),
+                studentCode));
+        }
+
+        accountStore.AddMissingStudents(missingAccounts);
+    }
+    catch (HttpRequestException)
+    {
+        // Persisted accounts remain available while ContractStudentService is offline.
+    }
+    catch (TaskCanceledException)
+    {
+        // A synchronization timeout must not block access to persisted accounts.
+    }
+    catch (JsonException)
+    {
+        // Ignore malformed downstream responses and keep the persisted account file.
+    }
 }
 
 static async Task<DemoUser?> TryResolveStudentAccountAsync(
