@@ -66,7 +66,8 @@ body,
 }
 
 body {
-  background: var(--app-bg);
+  background:
+    linear-gradient(180deg, #f8faf7 0%, #f3f6f4 42%, #eef3f0 100%);
   font-family: var(--font-body);
 }
 
@@ -84,7 +85,7 @@ a {
 .v-card {
   border: 1px solid var(--line) !important;
   border-radius: 8px !important;
-  box-shadow: none !important;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.04) !important;
 }
 
 .v-field {
@@ -109,7 +110,7 @@ a {
 
 .page-heading {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 18px;
@@ -120,15 +121,22 @@ a {
   margin-bottom: 5px;
   color: var(--brand);
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 900;
+  letter-spacing: 0;
   text-transform: uppercase;
 }
 
 .page-heading h2 {
   margin: 0;
   color: var(--ink);
-  font-size: 28px;
-  line-height: 1.2;
+  font-family: var(--font-heading);
+  font-size: clamp(25px, 2.3vw, 34px);
+  line-height: 1.15;
+}
+
+.page-heading p,
+.page-head p {
+  color: var(--muted);
 }
 
 .data-table {
@@ -139,19 +147,21 @@ a {
 
 .data-table th,
 .data-table td {
-  padding: 14px 16px;
+  padding: 16px 18px;
   border-bottom: 1px solid var(--line);
   text-align: left;
   vertical-align: top;
 }
 
 .data-table th {
-  background: #f8fafc;
-  color: #1f2937;
-  font-size: 13px;
-  font-weight: 800;
+  background: #f7faf8;
+  color: #304236;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
 }
 
 .data-table tbody tr:hover {
-  background: #fbfcfd;
+  background: #fbfdfb;
 }

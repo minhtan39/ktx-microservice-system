@@ -61,6 +61,13 @@
     </v-card>
 
     <v-card class="table-card desktop-table">
+      <div class="table-toolbar">
+        <div>
+          <span class="hero-kicker">Contract Registry</span>
+          <h3>Sổ hợp đồng đã phát hành</h3>
+        </div>
+        <p>Chỉ hiển thị hợp đồng được tạo sau bước duyệt xếp phòng; trạng thái từ chối không đi vào sổ hợp đồng.</p>
+      </div>
       <table class="data-table">
         <thead>
           <tr>
@@ -75,10 +82,10 @@
           </tr>
         </thead>
         <tbody>
-          <tr v-if="loading">
+          <tr v-if="loading" class="table-empty">
             <td colspan="8">Đang tải dữ liệu...</td>
           </tr>
-          <tr v-else-if="filteredContracts.length === 0">
+          <tr v-else-if="filteredContracts.length === 0" class="table-empty">
             <td colspan="8">Chưa có hợp đồng phù hợp.</td>
           </tr>
           <tr v-for="contract in filteredContracts" :key="contract.id">
@@ -257,7 +264,8 @@ onMounted(loadAll)
   border: 1px solid var(--line);
   border-radius: 8px;
   background:
-    linear-gradient(135deg, rgba(22, 155, 99, 0.12), transparent 42%),
+    linear-gradient(135deg, rgba(22, 155, 99, 0.13), transparent 42%),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.92), rgba(247, 250, 248, 0.78)),
     #ffffff;
 }
 
@@ -297,7 +305,8 @@ onMounted(loadAll)
   padding: 18px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #ffffff;
+  background:
+    linear-gradient(180deg, #ffffff, #fbfdfb);
 }
 
 .metric-chip span,
@@ -333,7 +342,9 @@ onMounted(loadAll)
 
 .filter-card {
   padding: 18px;
-  background: #ffffff;
+  background:
+    linear-gradient(135deg, rgba(37, 99, 235, 0.05), transparent 44%),
+    #ffffff;
 }
 
 .filter-grid {
@@ -345,6 +356,42 @@ onMounted(loadAll)
 
 .table-card {
   overflow: hidden;
+}
+
+.table-toolbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 20px 22px;
+  border-bottom: 1px solid var(--line);
+  background: #ffffff;
+}
+
+.table-toolbar h3,
+.table-toolbar p {
+  margin: 0;
+}
+
+.table-toolbar h3 {
+  color: var(--ink);
+  font-family: var(--font-heading);
+  font-size: 20px;
+}
+
+.table-toolbar p {
+  max-width: 520px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+  text-align: right;
+}
+
+.table-empty td {
+  padding: 30px 18px;
+  color: var(--muted);
+  font-weight: 800;
+  text-align: center;
 }
 
 .contract-code {
@@ -463,6 +510,15 @@ onMounted(loadAll)
   .contract-cards {
     display: grid;
     gap: 14px;
+  }
+
+  .table-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .table-toolbar p {
+    text-align: left;
   }
 }
 </style>

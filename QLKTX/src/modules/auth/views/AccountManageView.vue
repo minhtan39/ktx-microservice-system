@@ -3,13 +3,23 @@
     <div class="page-head">
       <div>
         <span class="page-kicker">AuthService</span>
-        <h2>Quan ly tai khoan</h2>
-        <p>Admin xem va cap nhat username, mat khau cua nhan vien va sinh vien.</p>
+        <h2>Quản lý tài khoản</h2>
+        <p>Admin quản lý tài khoản đăng nhập của nhân viên và sinh viên.</p>
       </div>
 
       <v-btn color="success" prepend-icon="mdi-refresh" :loading="loading" @click="loadAccounts">
-        Lam moi
+        Làm mới
       </v-btn>
+    </div>
+
+    <div class="account-metrics">
+      <article v-for="metric in accountMetrics" :key="metric.label" class="account-metric" :class="metric.tone">
+        <span :class="['mdi', metric.icon]"></span>
+        <div>
+          <strong>{{ metric.value }}</strong>
+          <small>{{ metric.label }}</small>
+        </div>
+      </article>
     </div>
 
     <v-alert v-if="error" type="error" variant="tonal" class="mb-4">
@@ -26,7 +36,7 @@
       <div class="toolbar-row">
         <v-text-field
           v-model="search"
-          label="Tim tai khoan"
+          label="Tìm tài khoản"
           prepend-inner-icon="mdi-magnify"
           density="comfortable"
           hide-details
@@ -35,7 +45,9 @@
         <v-select
           v-model="roleFilter"
           :items="roleOptions"
-          label="Vai tro"
+          item-title="title"
+          item-value="value"
+          label="Vai trò"
           density="comfortable"
           hide-details
         />
@@ -45,24 +57,24 @@
         <table>
           <thead>
             <tr>
-              <th>Tai khoan</th>
-              <th>Mat khau</th>
-              <th>Vai tro</th>
-              <th>Ho ten</th>
-              <th>Ma sinh vien</th>
-              <th>Thao tac</th>
+              <th>Tài khoản</th>
+              <th>Mật khẩu</th>
+              <th>Vai trò</th>
+              <th>Họ tên</th>
+              <th>Mã sinh viên</th>
+              <th>Thao tác</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="filteredAccounts.length === 0">
-              <td colspan="6" class="empty-cell">Khong co tai khoan phu hop.</td>
+              <td colspan="6" class="empty-cell">Không có tài khoản phù hợp.</td>
             </tr>
             <tr v-for="account in filteredAccounts" :key="`${account.role}-${account.username}`">
               <td><strong>{{ account.username }}</strong></td>
               <td><code>{{ account.password }}</code></td>
               <td>
                 <span class="role-pill" :class="roleClass(account.role)">
-                  {{ account.role }}
+                  {{ roleLabel(account.role) }}
                 </span>
               </td>
               <td>{{ account.fullName }}</td>
@@ -75,7 +87,7 @@
                   prepend-icon="mdi-pencil-outline"
                   @click="openEdit(account)"
                 >
-                  Sua
+                  Sửa
                 </v-btn>
               </td>
             </tr>
@@ -86,18 +98,18 @@
 
     <v-dialog v-model="dialog" max-width="520">
       <v-card v-if="editing">
-        <v-card-title>Cap nhat tai khoan</v-card-title>
+        <v-card-title>Cập nhật tài khoản</v-card-title>
         <v-card-text>
           <v-form class="edit-form" @submit.prevent="saveAccount">
             <v-text-field
               v-model="form.username"
-              label="Tai khoan"
+              label="Tài khoản"
               density="comfortable"
             />
 
             <v-text-field
               v-model="form.password"
-              label="Mat khau"
+              label="Mật khẩu"
               density="comfortable"
               :type="showPassword ? 'text' : 'password'"
               :append-inner-icon="showPassword ? 'mdi-eye-off-outline' : 'mdi-eye-outline'"
@@ -106,26 +118,26 @@
 
             <v-text-field
               v-model="form.fullName"
-              label="Ho ten"
+              label="Họ tên"
               density="comfortable"
             />
 
             <v-text-field
               :model-value="editing.role"
-              label="Vai tro"
+              label="Vai trò"
               readonly
               density="comfortable"
             />
 
             <v-alert v-if="editing.role === 'Student'" type="info" variant="tonal" density="compact">
-              Doi username sinh vien se doi tai khoan dang nhap; ho so N2 van duoc map bang studentId.
+              Đổi username sinh viên sẽ đổi tài khoản đăng nhập; hồ sơ N2 vẫn được map bằng studentId.
             </v-alert>
           </v-form>
         </v-card-text>
         <v-card-actions>
           <v-spacer />
-          <v-btn variant="text" @click="dialog = false">Huy</v-btn>
-          <v-btn color="success" :loading="saving" @click="saveAccount">Luu</v-btn>
+          <v-btn variant="text" @click="dialog = false">Hủy</v-btn>
+          <v-btn color="success" :loading="saving" @click="saveAccount">Lưu</v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>
@@ -147,7 +159,11 @@ const dialog = ref(false)
 const editing = ref(null)
 const showPassword = ref(false)
 
-const roleOptions = ['All', 'Staff', 'Student']
+const roleOptions = [
+  { title: 'Tất cả', value: 'All' },
+  { title: 'Nhân viên', value: 'Staff' },
+  { title: 'Sinh viên', value: 'Student' },
+]
 
 const form = reactive({
   username: '',
@@ -170,7 +186,7 @@ const loadAccounts = async () => {
     const response = await api.get('/auth/accounts')
     accounts.value = normalizeList(response.data)
   } catch (err) {
-    error.value = 'Khong tai duoc danh sach tai khoan tu AuthService.'
+    error.value = 'Không tải được danh sách tài khoản từ AuthService.'
     console.error(err)
   } finally {
     loading.value = false
@@ -194,6 +210,33 @@ const filteredAccounts = computed(() => {
   })
 })
 
+const accountMetrics = computed(() => [
+  {
+    icon: 'mdi-account-group-outline',
+    value: accounts.value.length,
+    label: 'Tổng tài khoản',
+    tone: 'all',
+  },
+  {
+    icon: 'mdi-shield-account-outline',
+    value: accounts.value.filter((account) => account.role === 'Staff').length,
+    label: 'Nhân viên vận hành',
+    tone: 'staff',
+  },
+  {
+    icon: 'mdi-school-outline',
+    value: accounts.value.filter((account) => account.role === 'Student').length,
+    label: 'Sinh viên',
+    tone: 'student',
+  },
+  {
+    icon: 'mdi-account-key-outline',
+    value: accounts.value.filter((account) => account.role === 'Student' && account.studentCode).length,
+    label: 'Map theo MSSV',
+    tone: 'mapped',
+  },
+])
+
 const openEdit = (account) => {
   editing.value = account
   form.username = account.username
@@ -209,7 +252,7 @@ const saveAccount = async () => {
   if (!editing.value) return
 
   if (!form.username.trim() || !form.password.trim()) {
-    error.value = 'Tai khoan va mat khau khong duoc de trong.'
+    error.value = 'Tài khoản và mật khẩu không được để trống.'
     return
   }
 
@@ -225,13 +268,13 @@ const saveAccount = async () => {
     })
 
     dialog.value = false
-    success.value = 'Da cap nhat tai khoan.'
+    success.value = 'Đã cập nhật tài khoản.'
     await loadAccounts()
   } catch (err) {
     if (err.response?.status === 409) {
-      error.value = 'Tai khoan moi da ton tai.'
+      error.value = 'Tài khoản mới đã tồn tại.'
     } else {
-      error.value = 'Khong cap nhat duoc tai khoan.'
+      error.value = 'Không cập nhật được tài khoản.'
     }
     console.error(err)
   } finally {
@@ -243,6 +286,12 @@ const roleClass = (role) => ({
   'role-staff': role === 'Staff',
   'role-student': role === 'Student',
 })
+
+const roleLabel = (role) => {
+  if (role === 'Staff') return 'Nhân viên'
+  if (role === 'Student') return 'Sinh viên'
+  return role
+}
 
 onMounted(loadAccounts)
 </script>
@@ -262,13 +311,68 @@ onMounted(loadAccounts)
 
 .page-head h2 {
   margin: 4px 0 6px;
-  color: var(--brand-dark);
+  color: var(--ink);
+  font-family: var(--font-heading);
   font-size: 28px;
 }
 
 .page-head p {
   margin: 0;
   color: var(--muted);
+}
+
+.account-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.account-metric {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  min-height: 92px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.account-metric .mdi {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 8px;
+  background: #eef2ff;
+  color: #3730a3;
+  font-size: 24px;
+}
+
+.account-metric.student .mdi,
+.account-metric.mapped .mdi {
+  background: #eaf8f0;
+  color: #0f7a44;
+}
+
+.account-metric strong,
+.account-metric small {
+  display: block;
+}
+
+.account-metric strong {
+  color: var(--ink);
+  font-family: var(--font-heading);
+  font-size: 28px;
+  line-height: 1;
+}
+
+.account-metric small {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
 }
 
 .panel {
@@ -364,6 +468,16 @@ code {
   .page-head,
   .toolbar-row {
     display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .account-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .account-metrics {
     grid-template-columns: 1fr;
   }
 }

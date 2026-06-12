@@ -172,7 +172,7 @@
           <span class="mdi mdi-tools"></span>
           <div>
             <strong>Yeu cau sua chua</strong>
-            <small>Sinh vien gui su co phong o, nhan vien/admin tiep nhan va cap nhat trang thai</small>
+            <small>Sinh viên gửi sự cố phòng ở, nhân viên/admin tiếp nhận và cập nhật trạng thái</small>
           </div>
         </div>
 
@@ -197,14 +197,14 @@
               <v-select
                 v-model="incidentForm.category"
                 :items="incidentCategories"
-                label="Loai su co"
+                label="Loại sự cố"
                 density="comfortable"
               />
             </v-col>
             <v-col cols="12">
               <v-textarea
                 v-model="incidentForm.description"
-                label="Mo ta chi tiet"
+                label="Mô tả chi tiết"
                 rows="3"
                 density="comfortable"
               />
@@ -219,7 +219,7 @@
               :disabled="!student"
               prepend-icon="mdi-send-outline"
             >
-              Gui yeu cau sua chua
+              Gửi yêu cầu sửa chữa
             </v-btn>
           </div>
         </v-form>
@@ -230,15 +230,15 @@
               <tr>
                 <th>Ngay gui</th>
                 <th>Phong</th>
-                <th>Loai su co</th>
-                <th>Mo ta</th>
+                <th>Loại sự cố</th>
+                <th>Mô tả</th>
                 <th>Trang thai</th>
                 <th>Phan hoi</th>
               </tr>
             </thead>
             <tbody>
               <tr v-if="ownIncidents.length === 0">
-                <td colspan="6" class="empty-cell">Ban chua co yeu cau sua chua nao.</td>
+                <td colspan="6" class="empty-cell">Bạn chưa có yêu cầu sửa chữa nào.</td>
               </tr>
               <tr v-for="incident in ownIncidents" :key="incident.id">
                 <td>{{ formatDate(incident.createdAt) }}</td>
@@ -500,7 +500,7 @@ const loadAll = async () => {
 
 const submitIncident = async () => {
   if (!student.value) {
-    error.value = 'Chua tim thay ho so sinh vien de gui yeu cau sua chua.'
+    error.value = 'Chưa tìm thấy hồ sơ sinh viên để gửi yêu cầu sửa chữa.'
     return
   }
 
@@ -524,11 +524,11 @@ const submitIncident = async () => {
       description: incidentForm.description,
     })
 
-    success.value = 'Da gui yeu cau sua chua. Nhan vien/admin se tiep nhan va cap nhat trang thai.'
+    success.value = 'Đã gửi yêu cầu sửa chữa. Nhân viên/admin sẽ tiếp nhận và cập nhật trạng thái.'
     incidentForm.description = ''
     await loadIncidents()
   } catch (err) {
-    error.value = 'Khong gui duoc yeu cau sua chua. Kiem tra Gateway va BillingService.'
+    error.value = 'Không gửi được yêu cầu sửa chữa. Kiểm tra Gateway và BillingService.'
     console.error(err)
   } finally {
     incidentSubmitting.value = false

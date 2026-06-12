@@ -37,6 +37,21 @@
       </router-link>
     </div>
 
+    <div class="registration-metrics">
+      <article
+        v-for="metric in registrationMetrics"
+        :key="metric.label"
+        class="registration-metric"
+        :class="metric.tone"
+      >
+        <span :class="['mdi', metric.icon]"></span>
+        <div>
+          <strong>{{ metric.value }}</strong>
+          <small>{{ metric.label }}</small>
+        </div>
+      </article>
+    </div>
+
     <v-alert v-if="message" :type="messageType" variant="tonal" class="mb-4">{{ message }}</v-alert>
 
     <v-card v-if="!isApprovalView" class="pa-5 mb-4 form-panel">
@@ -129,6 +144,18 @@
     </v-card>
 
     <v-card class="table-card">
+      <div class="table-toolbar">
+        <div>
+          <span class="page-kicker">{{ isApprovalView ? 'Room Assignment' : 'Registration Queue' }}</span>
+          <h3>{{ isApprovalView ? 'Hàng chờ duyệt xếp phòng' : 'Danh sách đơn đăng ký' }}</h3>
+        </div>
+        <p>
+          {{ isApprovalView
+            ? 'Nguyện vọng của sinh viên là tham khảo; cán bộ có thể chọn phòng khác còn giường và phù hợp giới tính.'
+            : 'Đơn sau khi gửi sẽ đi vào hàng chờ để N2 kiểm tra ưu tiên và xếp phòng.'
+          }}
+        </p>
+      </div>
       <table class="data-table">
         <thead>
           <tr>
@@ -143,10 +170,10 @@
           </tr>
         </thead>
         <tbody>
-          <tr v-if="loading">
+          <tr v-if="loading" class="table-empty">
             <td :colspan="isApprovalView ? 8 : 7">Đang tải dữ liệu...</td>
           </tr>
-          <tr v-else-if="filteredRegistrations.length === 0">
+          <tr v-else-if="filteredRegistrations.length === 0" class="table-empty">
             <td :colspan="isApprovalView ? 8 : 7">{{ emptyText }}</td>
           </tr>
           <tr v-for="registration in filteredRegistrations" :key="registration.id">
@@ -361,6 +388,34 @@ const filteredRegistrations = computed(() => {
   if (statusFilter.value === 'All') return registrations.value
   return registrations.value.filter((registration) => registration.status === statusFilter.value)
 })
+
+const availableRoomCount = computed(() => rooms.value.filter((room) => isRoomAvailable(room)).length)
+const registrationMetrics = computed(() => [
+  {
+    icon: 'mdi-clipboard-clock-outline',
+    value: countByStatus('Pending'),
+    label: 'Đơn chờ duyệt',
+    tone: 'warning',
+  },
+  {
+    icon: 'mdi-check-decagram-outline',
+    value: countByStatus('Approved'),
+    label: 'Đã xếp phòng',
+    tone: 'success',
+  },
+  {
+    icon: 'mdi-bed-outline',
+    value: availableRoomCount.value,
+    label: 'Phòng còn giường',
+    tone: 'info',
+  },
+  {
+    icon: 'mdi-file-sign-outline',
+    value: countByStatus('Rejected'),
+    label: 'Đơn đã từ chối',
+    tone: 'danger',
+  },
+])
 
 watch(
   () => route.name,
@@ -590,6 +645,69 @@ onMounted(loadAll)
   gap: 14px;
 }
 
+.registration-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.registration-metric {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  min-height: 92px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.registration-metric .mdi {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: var(--blue);
+  font-size: 24px;
+}
+
+.registration-metric strong,
+.registration-metric small {
+  display: block;
+}
+
+.registration-metric strong {
+  color: var(--ink);
+  font-family: var(--font-heading);
+  font-size: 28px;
+  line-height: 1;
+}
+
+.registration-metric small {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.registration-metric.success .mdi {
+  background: #ecfdf5;
+  color: var(--brand-dark);
+}
+
+.registration-metric.warning .mdi {
+  background: #fff7ed;
+  color: #b45309;
+}
+
+.registration-metric.danger .mdi {
+  background: #fff1f2;
+  color: #be123c;
+}
+
 .mode-card {
   display: grid;
   grid-template-columns: 42px minmax(0, 1fr);
@@ -605,7 +723,10 @@ onMounted(loadAll)
 
 .mode-card.active {
   border-color: rgba(22, 155, 99, 0.32);
-  background: #f0fdf4;
+  background:
+    linear-gradient(135deg, rgba(22, 155, 99, 0.1), transparent 58%),
+    #ffffff;
+  box-shadow: 0 12px 26px rgba(15, 127, 81, 0.08);
 }
 
 .mode-card > span {
@@ -689,6 +810,42 @@ onMounted(loadAll)
   overflow: hidden;
 }
 
+.table-toolbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 20px 22px;
+  border-bottom: 1px solid var(--line);
+  background: #ffffff;
+}
+
+.table-toolbar h3,
+.table-toolbar p {
+  margin: 0;
+}
+
+.table-toolbar h3 {
+  color: var(--ink);
+  font-family: var(--font-heading);
+  font-size: 20px;
+}
+
+.table-toolbar p {
+  max-width: 560px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+  text-align: right;
+}
+
+.table-empty td {
+  padding: 30px 18px;
+  color: var(--muted);
+  font-weight: 800;
+  text-align: center;
+}
+
 .data-table td strong,
 .data-table td span {
   display: block;
@@ -713,6 +870,10 @@ onMounted(loadAll)
   align-items: center;
   gap: 8px;
   min-width: 820px;
+  padding: 10px;
+  border: 1px solid rgba(37, 99, 235, 0.15);
+  border-radius: 8px;
+  background: #f8fbff;
 }
 
 .status-pill {
@@ -752,6 +913,10 @@ onMounted(loadAll)
     grid-template-columns: 1fr;
   }
 
+  .registration-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .summary-row {
     align-items: flex-start;
     flex-direction: column;
@@ -762,6 +927,21 @@ onMounted(loadAll)
     grid-template-columns: 1fr;
     min-width: 0;
     width: 100%;
+  }
+
+  .table-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .table-toolbar p {
+    text-align: left;
+  }
+}
+
+@media (max-width: 560px) {
+  .registration-metrics {
+    grid-template-columns: 1fr;
   }
 }
 </style>

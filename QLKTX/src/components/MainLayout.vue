@@ -1,13 +1,20 @@
 <template>
   <div class="app-shell">
     <aside class="sidebar">
-      <div class="brand">
-        <div class="brand-mark">
-          <span class="mdi mdi-home-city-outline"></span>
-        </div>
-        <div>
-          <div class="brand-name">DormManager</div>
-          <span class="brand-subtitle">Residence Portal</span>
+      <div class="sidebar-top">
+        <router-link to="/" class="brand">
+          <div class="brand-mark">
+            <span class="mdi mdi-home-city-outline"></span>
+          </div>
+          <div>
+            <div class="brand-name">DormManager</div>
+            <span class="brand-subtitle">Smart Residence</span>
+          </div>
+        </router-link>
+
+        <div class="system-pill">
+          <span class="live-dot"></span>
+          <span>{{ roleKey === 'Student' ? 'Không gian sinh viên' : 'Bảng điều hành' }}</span>
         </div>
       </div>
 
@@ -67,13 +74,18 @@
           <strong>{{ fullName }}</strong>
           <span>{{ userRole }}</span>
         </div>
+        <v-btn icon="mdi-logout" variant="text" color="error" density="comfortable" @click="logout" />
       </div>
     </aside>
 
     <main class="main-panel">
       <header class="topbar">
-        <div>
-          <span class="service-label">{{ serviceLabel }}</span>
+        <div class="topbar-title">
+          <div class="breadcrumb-line">
+            <span>{{ serviceLabel }}</span>
+            <i></i>
+            <strong>{{ routeBadge }}</strong>
+          </div>
           <h1>{{ appTitle }}</h1>
           <p>{{ pageTitle }}</p>
         </div>
@@ -93,7 +105,6 @@
             </div>
             <div class="user-avatar">{{ userInitial }}</div>
           </div>
-          <v-btn icon="mdi-logout" variant="tonal" color="error" @click="logout" />
         </div>
       </header>
 
@@ -247,6 +258,13 @@ const appTitle = computed(() =>
 const pageTitle = computed(() =>
   titleByRoute[route.name] || 'Nghiệp vụ Contract & Student Service')
 
+const routeBadge = computed(() => {
+  if (isStudent.value) return 'Sinh viên'
+  if (['RoomDashboard'].includes(route.name)) return 'Nhóm 1'
+  if (['IncidentManage', 'SystemLogs', 'AccountManage'].includes(route.name)) return 'Nhóm 3'
+  return 'Nhóm 2'
+})
+
 const userInitial = computed(() => {
   return (fullName.value || 'U').trim().charAt(0).toUpperCase()
 })
@@ -266,9 +284,11 @@ const logout = async () => {
 <style scoped>
 .app-shell {
   display: grid;
-  grid-template-columns: 300px minmax(0, 1fr);
+  grid-template-columns: 292px minmax(0, 1fr);
   min-height: 100vh;
-  background: var(--app-bg);
+  background:
+    radial-gradient(circle at top left, rgba(20, 157, 113, 0.08), transparent 32%),
+    linear-gradient(180deg, #f8faf7 0%, #f3f6f4 100%);
   color: var(--ink);
 }
 
@@ -278,31 +298,45 @@ const logout = async () => {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  padding: 28px 20px 20px;
-  background: var(--sidebar);
+  padding: 22px 18px 18px;
+  background:
+    linear-gradient(180deg, rgba(20, 157, 113, 0.12), transparent 34%),
+    var(--sidebar);
   color: #f5f7f8;
+  box-shadow: 12px 0 34px rgba(15, 23, 42, 0.12);
+}
+
+.sidebar-top {
+  display: grid;
+  gap: 14px;
+  margin-bottom: 18px;
 }
 
 .brand {
   display: flex;
   align-items: center;
   gap: 12px;
-  min-height: 62px;
-  margin-bottom: 24px;
+  min-height: 54px;
+  color: inherit;
+  text-decoration: none;
 }
 
 .brand-mark {
   display: grid;
   place-items: center;
-  width: 42px;
-  height: 42px;
+  width: 44px;
+  height: 44px;
+  border: 1px solid rgba(120, 242, 189, 0.24);
+  border-radius: 14px;
+  background: rgba(20, 157, 113, 0.12);
   color: var(--brand);
-  font-size: 34px;
+  font-size: 30px;
 }
 
 .brand-name {
-  color: var(--brand);
-  font-size: 22px;
+  color: #ffffff;
+  font-family: var(--font-heading);
+  font-size: 21px;
   font-weight: 900;
   line-height: 1;
 }
@@ -317,19 +351,42 @@ const logout = async () => {
   text-transform: uppercase;
 }
 
+.system-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  min-height: 30px;
+  padding: 0 11px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #cbd5d1;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #35bb84;
+  box-shadow: 0 0 0 4px rgba(53, 187, 132, 0.16);
+}
+
 .nav {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding-right: 2px;
+  padding: 4px 2px 8px 0;
 }
 
 .nav-section {
-  margin: 18px 10px 12px;
-  color: #7b8288;
-  font-size: 12px;
+  margin: 18px 10px 10px;
+  color: #7f8b85;
+  font-size: 11px;
   font-weight: 900;
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
   text-transform: uppercase;
 }
 
@@ -338,20 +395,21 @@ const logout = async () => {
   grid-template-columns: 26px minmax(0, 1fr);
   gap: 12px;
   align-items: center;
-  min-height: 46px;
+  min-height: 48px;
   width: 100%;
-  margin: 6px 0;
-  padding: 10px 13px;
+  margin: 5px 0;
+  padding: 11px 12px;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: 12px;
   background: transparent;
-  color: #f2f5f6;
+  color: #dfe6e2;
   cursor: pointer;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 800;
   line-height: 1.25;
   text-align: left;
   text-decoration: none;
+  transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
 }
 
 .nav-item.rubric-item {
@@ -363,15 +421,15 @@ const logout = async () => {
   place-items: center;
   width: 24px;
   height: 24px;
-  border-radius: 6px;
-  background: #24282c;
+  border-radius: 999px;
+  background: #202624;
   color: #c8f4df;
   font-size: 12px;
   font-weight: 900;
 }
 
 .nav-item .mdi {
-  color: #b8bdc2;
+  color: #a9b5af;
   font-size: 21px;
 }
 
@@ -384,8 +442,8 @@ const logout = async () => {
 
 .nav-item:hover,
 .nav-item.active {
-  border-color: #2c3033;
-  background: var(--sidebar-soft);
+  border-color: rgba(120, 242, 189, 0.22);
+  background: rgba(255, 255, 255, 0.09);
 }
 
 .nav-item.active .mdi,
@@ -402,11 +460,11 @@ const logout = async () => {
   display: grid;
   grid-template-columns: 32px minmax(0, 1fr);
   gap: 10px;
-  margin: 10px 0 0;
-  padding: 15px;
-  border: 1px solid rgba(22, 155, 99, 0.18);
-  border-radius: 8px;
-  background: linear-gradient(135deg, rgba(22, 155, 99, 0.18), rgba(255, 255, 255, 0.04));
+  margin: 12px 0 0;
+  padding: 14px;
+  border: 1px solid rgba(120, 242, 189, 0.18);
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(22, 155, 99, 0.18), rgba(255, 255, 255, 0.05));
 }
 
 .sidebar-note .mdi {
@@ -429,7 +487,7 @@ const logout = async () => {
 
 .account-box {
   display: grid;
-  grid-template-columns: 42px minmax(0, 1fr);
+  grid-template-columns: 42px minmax(0, 1fr) 38px;
   gap: 12px;
   align-items: center;
   margin-top: 16px;
@@ -446,7 +504,7 @@ const logout = async () => {
   border-radius: 50%;
   background: #f4f5f6;
   color: #111827;
-  font-weight: 800;
+  font-weight: 900;
 }
 
 .account-meta {
@@ -475,7 +533,7 @@ const logout = async () => {
 .main-panel {
   min-width: 0;
   min-height: 100vh;
-  background: var(--app-bg);
+  background: transparent;
 }
 
 .topbar {
@@ -486,36 +544,55 @@ const logout = async () => {
   align-items: center;
   justify-content: space-between;
   gap: 24px;
-  min-height: 88px;
-  padding: 18px 30px;
-  border-bottom: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.96);
-  backdrop-filter: blur(12px);
+  min-height: 92px;
+  padding: 18px 34px;
+  border-bottom: 1px solid rgba(221, 232, 223, 0.78);
+  background: rgba(248, 250, 247, 0.88);
+  backdrop-filter: blur(18px);
 }
 
-.service-label {
-  display: block;
-  margin-bottom: 4px;
-  color: var(--brand);
+.topbar-title {
+  min-width: 0;
+}
+
+.breadcrumb-line {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 6px;
+  color: var(--foreground-500);
   font-size: 12px;
   font-weight: 900;
-  letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.breadcrumb-line i {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--primary-400);
+}
+
+.breadcrumb-line strong {
+  color: var(--primary-700);
 }
 
 .topbar h1 {
   margin: 0;
-  color: var(--brand-dark);
-  font-size: 20px;
+  color: var(--foreground-950);
+  font-family: var(--font-heading);
+  font-size: 24px;
   font-weight: 900;
   line-height: 1.25;
 }
 
 .topbar p {
   margin: 6px 0 0;
-  color: #111827;
-  font-size: 15px;
+  max-width: 760px;
+  color: var(--foreground-600);
+  font-size: 14px;
   font-weight: 700;
+  line-height: 1.45;
 }
 
 .topbar-actions {
@@ -531,10 +608,10 @@ const logout = async () => {
   gap: 10px;
   align-items: center;
   min-width: 154px;
-  min-height: 48px;
-  padding: 8px 12px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  min-height: 50px;
+  padding: 9px 12px;
+  border: 1px solid var(--background-200);
+  border-radius: 14px;
   background: #ffffff;
 }
 
@@ -563,6 +640,11 @@ const logout = async () => {
   display: flex;
   align-items: center;
   gap: 12px;
+  min-height: 50px;
+  padding: 5px 5px 5px 12px;
+  border: 1px solid var(--background-200);
+  border-radius: 999px;
+  background: #ffffff;
 }
 
 .user-chip strong,
@@ -572,18 +654,20 @@ const logout = async () => {
 }
 
 .user-chip strong {
-  color: var(--brand-dark);
+  color: var(--foreground-950);
   font-size: 15px;
 }
 
 .user-chip span {
   margin-top: 2px;
-  color: #111827;
+  color: var(--foreground-500);
   font-size: 13px;
 }
 
 .page-body {
-  padding: 28px 30px 48px;
+  width: min(100%, 1500px);
+  margin: 0 auto;
+  padding: 30px 34px 54px;
 }
 
 @media (max-width: 1100px) {
@@ -610,6 +694,10 @@ const logout = async () => {
     margin-bottom: 12px;
   }
 
+  .sidebar-top {
+    margin-bottom: 12px;
+  }
+
   .nav {
     display: flex;
     gap: 8px;
@@ -619,7 +707,8 @@ const logout = async () => {
 
   .nav-section,
   .sidebar-note,
-  .account-box {
+  .account-box,
+  .system-pill {
     display: none;
   }
 

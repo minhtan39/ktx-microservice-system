@@ -11,6 +11,16 @@
       </v-btn>
     </div>
 
+    <div class="student-metrics">
+      <article v-for="metric in profileMetrics" :key="metric.label" class="student-metric">
+        <span :class="['mdi', metric.icon]"></span>
+        <div>
+          <strong>{{ metric.value }}</strong>
+          <small>{{ metric.label }}</small>
+        </div>
+      </article>
+    </div>
+
     <v-card class="pa-5 mb-4 form-panel">
       <div class="panel-head">
         <div class="panel-icon">
@@ -68,6 +78,13 @@
     <v-alert v-if="success" type="success" variant="tonal" class="mb-4">{{ success }}</v-alert>
 
     <v-card class="table-card">
+      <div class="table-toolbar">
+        <div>
+          <span class="page-kicker">Student Directory</span>
+          <h3>Danh sách hồ sơ</h3>
+        </div>
+        <p>Tài khoản sinh viên được tạo theo MSSV để liên thông AuthService.</p>
+      </div>
       <table class="data-table">
         <thead>
           <tr>
@@ -82,10 +99,10 @@
           </tr>
         </thead>
         <tbody>
-          <tr v-if="loading">
+          <tr v-if="loading" class="table-empty">
             <td colspan="8">Đang tải dữ liệu...</td>
           </tr>
-          <tr v-else-if="students.length === 0">
+          <tr v-else-if="students.length === 0" class="table-empty">
             <td colspan="8">Chưa có hồ sơ sinh viên hợp lệ.</td>
           </tr>
           <tr v-for="student in students" :key="student.id">
@@ -115,7 +132,7 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import api from '@/services/api'
 import { cleanStudents } from '../utils/studentDisplay'
 
@@ -143,6 +160,32 @@ const emptyForm = () => ({
 })
 
 const form = ref(emptyForm())
+
+const activeStudents = computed(() => students.value.filter((student) => student.status === 'Active').length)
+const pendingStudents = computed(() => students.value.filter((student) => student.status !== 'Active').length)
+const accountReady = computed(() => students.value.filter((student) => student.studentCode).length)
+const profileMetrics = computed(() => [
+  {
+    icon: 'mdi-account-multiple-outline',
+    value: students.value.length,
+    label: 'Hồ sơ đang quản lý',
+  },
+  {
+    icon: 'mdi-bed-outline',
+    value: activeStudents.value,
+    label: 'Đang lưu trú',
+  },
+  {
+    icon: 'mdi-clipboard-clock-outline',
+    value: pendingStudents.value,
+    label: 'Chờ đăng ký nội trú',
+  },
+  {
+    icon: 'mdi-account-key-outline',
+    value: accountReady.value,
+    label: 'Tài khoản MSSV sẵn sàng',
+  },
+])
 
 const loadStudents = async () => {
   try {
@@ -231,6 +274,56 @@ onMounted(loadStudents)
   line-height: 1.5;
 }
 
+.student-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.student-metric {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  min-height: 92px;
+  padding: 18px;
+  border: 1px solid rgba(15, 127, 81, 0.14);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(22, 155, 99, 0.08), transparent 50%),
+    #ffffff;
+}
+
+.student-metric .mdi {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 8px;
+  background: #ecfdf5;
+  color: var(--brand-dark);
+  font-size: 24px;
+}
+
+.student-metric strong,
+.student-metric small {
+  display: block;
+}
+
+.student-metric strong {
+  color: var(--ink);
+  font-family: var(--font-heading);
+  font-size: 28px;
+  line-height: 1;
+}
+
+.student-metric small {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
 .section-title {
   margin: 0;
   color: #14532d;
@@ -270,6 +363,42 @@ onMounted(loadStudents)
   overflow: hidden;
 }
 
+.table-toolbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 20px 22px;
+  border-bottom: 1px solid var(--line);
+  background: #ffffff;
+}
+
+.table-toolbar h3,
+.table-toolbar p {
+  margin: 0;
+}
+
+.table-toolbar h3 {
+  color: var(--ink);
+  font-family: var(--font-heading);
+  font-size: 20px;
+}
+
+.table-toolbar p {
+  max-width: 420px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+  text-align: right;
+}
+
+.table-empty td {
+  padding: 30px 18px;
+  color: var(--muted);
+  font-weight: 800;
+  text-align: center;
+}
+
 .data-table td strong,
 .data-table td span {
   display: block;
@@ -302,6 +431,25 @@ onMounted(loadStudents)
   .page-heading {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .student-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .table-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .table-toolbar p {
+    text-align: left;
+  }
+}
+
+@media (max-width: 560px) {
+  .student-metrics {
+    grid-template-columns: 1fr;
   }
 }
 </style>

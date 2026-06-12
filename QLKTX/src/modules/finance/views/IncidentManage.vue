@@ -3,12 +3,12 @@
     <div class="page-head">
       <div>
         <span class="page-kicker">Billing & Maintenance</span>
-        <h2>Quan ly yeu cau sua chua</h2>
-        <p>Sinh vien gui yeu cau tu cong sinh vien, nhan vien/admin tiep nhan va cap nhat tien do xu ly.</p>
+        <h2>Quản lý yêu cầu sửa chữa</h2>
+        <p>Sinh viên gửi yêu cầu từ cổng sinh viên, nhân viên/admin tiếp nhận và cập nhật tiến độ xử lý.</p>
       </div>
 
       <v-btn color="success" prepend-icon="mdi-refresh" :loading="loading" @click="loadIncidents">
-        Lam moi
+        Làm mới
       </v-btn>
     </div>
 
@@ -33,7 +33,7 @@
         <v-row>
           <v-col v-if="getIncidentsByStatus(tab.value).length === 0" cols="12">
             <v-alert type="info" variant="tonal">
-              Khong co yeu cau sua chua nao o trang thai nay.
+              Không có yêu cầu sửa chữa nào ở trạng thái này.
             </v-alert>
           </v-col>
 
@@ -47,7 +47,7 @@
               <v-card-item>
                 <div class="card-title-row">
                   <div>
-                    <v-card-title>Phong {{ incident.roomName }} - Toa {{ incident.building }}</v-card-title>
+                    <v-card-title>Phòng {{ incident.roomName }} - Tòa {{ incident.building }}</v-card-title>
                     <v-card-subtitle>
                       {{ incident.studentName }} · {{ incident.studentCode }} · {{ formatDateTime(incident.createdAt) }}
                     </v-card-subtitle>
@@ -61,13 +61,13 @@
 
               <v-card-text>
                 <div class="description-box">
-                  <strong>Mo ta:</strong>
+                  <strong>Mô tả:</strong>
                   <p>{{ incident.description }}</p>
                 </div>
 
                 <div v-if="incident.staffNote || incident.handledBy" class="note-box">
-                  <strong>Xu ly:</strong>
-                  <p>{{ incident.staffNote || 'Da cap nhat trang thai' }}</p>
+                  <strong>Xử lý:</strong>
+                  <p>{{ incident.staffNote || 'Đã cập nhật trạng thái' }}</p>
                   <small v-if="incident.handledBy">Nguoi xu ly: {{ incident.handledBy }}</small>
                 </div>
               </v-card-text>
@@ -153,7 +153,7 @@ const loadIncidents = async () => {
     const response = await api.get('/incidents')
     incidents.value = normalizeList(response.data)
   } catch (err) {
-    error.value = 'Khong tai duoc danh sach yeu cau sua chua tu BillingService.'
+    error.value = 'Không tải được danh sách yêu cầu sửa chữa từ BillingService.'
     console.error(err)
   } finally {
     loading.value = false
@@ -177,7 +177,7 @@ const getCategoryColor = (category) => {
 }
 
 const updateStatus = async (id, status) => {
-  const staffNote = window.prompt('Ghi chu xu ly', '')
+  const staffNote = window.prompt('Ghi chú xử lý', '')
 
   try {
     error.value = ''
@@ -189,10 +189,10 @@ const updateStatus = async (id, status) => {
       staffNote,
     })
 
-    success.value = 'Da cap nhat trang thai yeu cau sua chua.'
+    success.value = 'Đã cập nhật trạng thái yêu cầu sửa chữa.'
     await loadIncidents()
   } catch (err) {
-    error.value = 'Khong cap nhat duoc trang thai yeu cau sua chua.'
+    error.value = 'Không cập nhật được trạng thái yêu cầu sửa chữa.'
     console.error(err)
   }
 }

@@ -37,6 +37,13 @@
     </v-alert>
 
     <v-card class="pa-4 mb-4 filter-panel">
+      <div class="filter-heading">
+        <div>
+          <span class="page-kicker">Contract Control</span>
+          <h3>Kiểm soát trạng thái hợp đồng</h3>
+        </div>
+        <p>Trang này dành cho xử lý sau khi hợp đồng đã được phát hành.</p>
+      </div>
       <v-row>
         <v-col cols="12" md="4">
           <v-text-field
@@ -66,6 +73,13 @@
     </v-card>
 
     <v-card class="table-card">
+      <div class="table-toolbar">
+        <div>
+          <span class="page-kicker">Operations Queue</span>
+          <h3>Hợp đồng cần theo dõi</h3>
+        </div>
+        <p>Hợp đồng đang hiệu lực có thể hủy hoặc kết thúc; hợp đồng đã hết hạn chỉ dùng để đối soát.</p>
+      </div>
       <table class="data-table">
         <thead>
           <tr>
@@ -79,10 +93,10 @@
           </tr>
         </thead>
         <tbody>
-          <tr v-if="loading">
+          <tr v-if="loading" class="table-empty">
             <td colspan="7">Đang tải dữ liệu...</td>
           </tr>
-          <tr v-else-if="filteredContracts.length === 0">
+          <tr v-else-if="filteredContracts.length === 0" class="table-empty">
             <td colspan="7">Chưa có hợp đồng phù hợp.</td>
           </tr>
           <tr v-for="contract in filteredContracts" :key="contract.id">
@@ -284,7 +298,9 @@ onMounted(loadAll)
   padding: 18px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #ffffff;
+  background:
+    linear-gradient(135deg, rgba(22, 155, 99, 0.06), transparent 60%),
+    #ffffff;
 }
 
 .ops-explainer .mdi {
@@ -314,6 +330,41 @@ onMounted(loadAll)
   background: #ffffff;
 }
 
+.filter-heading,
+.table-toolbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.filter-heading {
+  padding-bottom: 16px;
+}
+
+.filter-heading h3,
+.filter-heading p,
+.table-toolbar h3,
+.table-toolbar p {
+  margin: 0;
+}
+
+.filter-heading h3,
+.table-toolbar h3 {
+  color: var(--ink);
+  font-family: var(--font-heading);
+  font-size: 20px;
+}
+
+.filter-heading p,
+.table-toolbar p {
+  max-width: 520px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+  text-align: right;
+}
+
 .summary-row {
   display: flex;
   align-items: center;
@@ -325,6 +376,19 @@ onMounted(loadAll)
 
 .table-card {
   overflow: hidden;
+}
+
+.table-toolbar {
+  padding: 20px 22px;
+  border-bottom: 1px solid var(--line);
+  background: #ffffff;
+}
+
+.table-empty td {
+  padding: 30px 18px;
+  color: var(--muted);
+  font-weight: 800;
+  text-align: center;
 }
 
 .contract-code {
@@ -372,6 +436,17 @@ onMounted(loadAll)
 
   .ops-explainer {
     grid-template-columns: 1fr;
+  }
+
+  .filter-heading,
+  .table-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .filter-heading p,
+  .table-toolbar p {
+    text-align: left;
   }
 
   .summary-row {
