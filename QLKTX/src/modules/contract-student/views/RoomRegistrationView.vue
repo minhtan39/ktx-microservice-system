@@ -52,6 +52,20 @@
       </article>
     </div>
 
+    <div v-if="!isApprovalView" class="status-tabs">
+      <button
+        v-for="tab in registrationTabs"
+        :key="tab.value"
+        type="button"
+        :class="{ active: statusFilter === tab.value }"
+        @click="statusFilter = tab.value"
+      >
+        <span :class="['mdi', tab.icon]"></span>
+        {{ tab.label }}
+        <strong>{{ tab.count }}</strong>
+      </button>
+    </div>
+
     <v-alert v-if="message" :type="messageType" variant="tonal" class="mb-4">{{ message }}</v-alert>
 
     <v-card v-if="!isApprovalView" class="pa-5 mb-4 form-panel">
@@ -128,6 +142,35 @@
     <v-card class="pa-4 mb-4 filter-panel">
       <v-row>
         <v-col cols="12" md="4">
+          <v-text-field
+            v-model="registrationSearch"
+            label="Tìm theo sinh viên, mã đơn hoặc phòng"
+            prepend-inner-icon="mdi-magnify"
+            density="compact"
+            clearable
+          />
+        </v-col>
+        <v-col cols="12" md="2">
+          <v-select
+            v-model="buildingFilter"
+            :items="filterBuildingOptions"
+            item-title="title"
+            item-value="value"
+            label="Tòa"
+            density="compact"
+          />
+        </v-col>
+        <v-col cols="12" md="2">
+          <v-select
+            v-model="roomTypeFilter"
+            :items="filterRoomTypeOptions"
+            item-title="title"
+            item-value="value"
+            label="Loại phòng"
+            density="compact"
+          />
+        </v-col>
+        <v-col v-if="isApprovalView" cols="12" md="2">
           <v-select
             v-model="statusFilter"
             :items="statusOptions"
@@ -135,7 +178,7 @@
             density="compact"
           />
         </v-col>
-        <v-col cols="12" md="8" class="summary-row">
+        <v-col cols="12" :md="isApprovalView ? 2 : 4" class="summary-row">
           <span>Chờ duyệt: {{ countByStatus('Pending') }}</span>
           <span>Đã duyệt: {{ countByStatus('Approved') }}</span>
           <span>Từ chối: {{ countByStatus('Rejected') }}</span>
@@ -196,52 +239,19 @@
             <td>{{ registration.assignedRoomId ? `Phòng ${registration.assignedRoomId}` : 'Chưa xếp' }}</td>
             <td v-if="isApprovalView">
               <div class="action-row">
-                <div
-                  v-if="registration.status === 'Pending'"
-                  class="manual-room-picker"
+                <v-btn
+                  color="primary"
+                  size="small"
+                  :disabled="registration.status !== 'Pending'"
+                  prepend-icon="mdi-bed-outline"
+                  @click="openApprovalDialog(registration)"
                 >
-                  <v-select
-                    v-model="approvalDraft(registration).buildingName"
-                    :items="manualBuildingOptions"
-                    item-title="title"
-                    item-value="value"
-                    label="Tòa xếp"
-                    density="compact"
-                    hide-details
-                    @update:model-value="clearDraftRoom(registration.id)"
-                  />
-                  <v-select
-                    v-model="approvalDraft(registration).roomType"
-                    :items="manualRoomTypeOptions"
-                    item-title="title"
-                    item-value="value"
-                    label="Loại phòng xếp"
-                    density="compact"
-                    hide-details
-                    @update:model-value="clearDraftRoom(registration.id)"
-                  />
-                  <v-select
-                    v-model="approvalDraft(registration).roomId"
-                    :items="roomOptionsForRegistration(registration)"
-                    item-title="title"
-                    item-value="value"
-                    label="Phòng còn giường"
-                    density="compact"
-                    hide-details
-                    no-data-text="Không có phòng phù hợp"
-                  />
-                  <v-btn
-                    color="primary"
-                    size="small"
-                    :disabled="!approvalDraft(registration).roomId"
-                    @click="approveRegistration(registration.id, approvalDraft(registration).roomId)"
-                  >
-                    Duyệt phòng đã chọn
-                  </v-btn>
-                </div>
+                  Chọn phòng
+                </v-btn>
                 <v-btn
                   color="success"
                   size="small"
+                  variant="tonal"
                   :disabled="registration.status !== 'Pending'"
                   @click="approveRegistration(registration.id)"
                 >
@@ -262,6 +272,89 @@
         </tbody>
       </table>
     </v-card>
+
+    <v-dialog v-model="approvalDialog" max-width="980">
+      <v-card v-if="selectedRegistration" class="approval-dialog">
+        <v-card-title class="dialog-title">
+          <div>
+            <span class="page-kicker">Room Assignment</span>
+            <strong>Xếp phòng cho đơn #{{ selectedRegistration.id }}</strong>
+          </div>
+          <v-btn icon="mdi-close" variant="text" @click="approvalDialog = false" />
+        </v-card-title>
+
+        <v-card-text>
+          <div class="assignment-summary">
+            <div>
+              <span>Sinh viên</span>
+              <strong>{{ studentName(selectedRegistration.studentId) }}</strong>
+            </div>
+            <div>
+              <span>Nguyện vọng</span>
+              <strong>Tòa {{ selectedRegistration.buildingName || 'bất kỳ' }} - {{ selectedRegistration.roomType || 'bất kỳ loại phòng' }}</strong>
+            </div>
+            <div>
+              <span>Ưu tiên</span>
+              <strong>{{ priorityLabel(selectedRegistration.priorityType) }} · {{ selectedRegistration.priorityScore || 0 }} điểm</strong>
+            </div>
+          </div>
+
+          <div class="assignment-filters">
+            <v-select
+              v-model="approvalDraft(selectedRegistration).buildingName"
+              :items="manualBuildingOptions"
+              item-title="title"
+              item-value="value"
+              label="Tòa xếp thực tế"
+              density="compact"
+              hide-details
+              @update:model-value="clearDraftRoom(selectedRegistration.id)"
+            />
+            <v-select
+              v-model="approvalDraft(selectedRegistration).roomType"
+              :items="manualRoomTypeOptions"
+              item-title="title"
+              item-value="value"
+              label="Loại phòng xếp thực tế"
+              density="compact"
+              hide-details
+              @update:model-value="clearDraftRoom(selectedRegistration.id)"
+            />
+          </div>
+
+          <div class="room-choice-grid">
+            <button
+              v-for="room in availableRoomsForRegistration(selectedRegistration)"
+              :key="room.roomId"
+              type="button"
+              class="room-choice"
+              :class="{ active: approvalDraft(selectedRegistration).roomId === room.roomId }"
+              @click="approvalDraft(selectedRegistration).roomId = room.roomId"
+            >
+              <strong>{{ room.roomNumber || room.roomId }}</strong>
+              <span>Tòa {{ room.buildingName }} · {{ room.roomType }}</span>
+              <small>Còn {{ Number(room.availableBeds ?? 0) }}/{{ room.capacity }} giường · {{ room.gender ? 'Nam' : 'Nữ' }}</small>
+            </button>
+          </div>
+
+          <v-alert v-if="availableRoomsForRegistration(selectedRegistration).length === 0" type="warning" variant="tonal" class="mt-4">
+            Không có phòng còn giường phù hợp với bộ lọc hiện tại. Có thể đổi tòa/loại phòng xếp thực tế để tìm phòng khác.
+          </v-alert>
+        </v-card-text>
+
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" @click="approvalDialog = false">Hủy</v-btn>
+          <v-btn
+            color="primary"
+            :disabled="!approvalDraft(selectedRegistration).roomId"
+            @click="approveSelectedRoom"
+          >
+            Xác nhận xếp phòng
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
   </section>
 </template>
 
@@ -287,6 +380,11 @@ const roomTypes = ref([])
 const rooms = ref([])
 const approvalDrafts = ref({})
 const statusFilter = ref('Pending')
+const registrationSearch = ref('')
+const buildingFilter = ref('All')
+const roomTypeFilter = ref('All')
+const approvalDialog = ref(false)
+const selectedRegistration = ref(null)
 
 const isApprovalView = computed(() => route.name === 'RoomRegistrationApproval')
 const pageKicker = computed(() => isApprovalView.value ? 'Rubric 7 - Approval' : 'Rubric 6 - Online Registration')
@@ -384,9 +482,35 @@ const manualRoomTypeOptions = computed(() => [
   ...roomTypeOptions.value,
 ])
 
+const filterBuildingOptions = computed(() => [
+  { title: 'Tất cả tòa', value: 'All' },
+  ...buildingOptions.value,
+])
+
+const filterRoomTypeOptions = computed(() => [
+  { title: 'Tất cả loại phòng', value: 'All' },
+  ...roomTypeOptions.value,
+])
+
 const filteredRegistrations = computed(() => {
-  if (statusFilter.value === 'All') return registrations.value
-  return registrations.value.filter((registration) => registration.status === statusFilter.value)
+  const keyword = registrationSearch.value.trim().toLowerCase()
+
+  return registrations.value.filter((registration) => {
+    const matchesStatus = statusFilter.value === 'All' || registration.status === statusFilter.value
+    const matchesBuilding = buildingFilter.value === 'All' || registration.buildingName === buildingFilter.value
+    const matchesRoomType = roomTypeFilter.value === 'All' || registration.roomType === roomTypeFilter.value
+    const haystack = [
+      registration.id,
+      studentName(registration.studentId),
+      registration.buildingName,
+      registration.roomType,
+      registration.assignedRoomId,
+      priorityLabel(registration.priorityType),
+    ].join(' ').toLowerCase()
+    const matchesKeyword = !keyword || haystack.includes(keyword)
+
+    return matchesStatus && matchesBuilding && matchesRoomType && matchesKeyword
+  })
 })
 
 const availableRoomCount = computed(() => rooms.value.filter((room) => isRoomAvailable(room)).length)
@@ -417,10 +541,40 @@ const registrationMetrics = computed(() => [
   },
 ])
 
+const registrationTabs = computed(() => [
+  {
+    label: 'Tất cả',
+    value: 'All',
+    icon: 'mdi-file-document-multiple-outline',
+    count: registrations.value.length,
+  },
+  {
+    label: 'Chờ duyệt',
+    value: 'Pending',
+    icon: 'mdi-clock-outline',
+    count: countByStatus('Pending'),
+  },
+  {
+    label: 'Đã duyệt',
+    value: 'Approved',
+    icon: 'mdi-check-decagram-outline',
+    count: countByStatus('Approved'),
+  },
+  {
+    label: 'Từ chối',
+    value: 'Rejected',
+    icon: 'mdi-close-circle-outline',
+    count: countByStatus('Rejected'),
+  },
+])
+
 watch(
   () => route.name,
   () => {
     statusFilter.value = isApprovalView.value ? 'Pending' : 'All'
+    buildingFilter.value = 'All'
+    roomTypeFilter.value = 'All'
+    registrationSearch.value = ''
     message.value = ''
   },
   { immediate: true },
@@ -511,6 +665,22 @@ const rejectRegistration = async (id) => {
 
 const studentName = (id) => studentMap.value.get(id) || `Sinh viên #${id}`
 
+const openApprovalDialog = (registration) => {
+  selectedRegistration.value = registration
+  approvalDraft(registration)
+  approvalDialog.value = true
+}
+
+const approveSelectedRoom = async () => {
+  if (!selectedRegistration.value) return
+
+  const draft = approvalDraft(selectedRegistration.value)
+  if (!draft.roomId) return
+
+  await approveRegistration(selectedRegistration.value.id, draft.roomId)
+  approvalDialog.value = false
+}
+
 const syncApprovalDrafts = () => {
   const nextDrafts = {}
 
@@ -543,7 +713,7 @@ const clearDraftRoom = (registrationId) => {
   }
 }
 
-const roomOptionsForRegistration = (registration) => {
+const availableRoomsForRegistration = (registration) => {
   const draft = approvalDraft(registration)
   const student = studentById.value.get(Number(registration.studentId))
 
@@ -556,6 +726,10 @@ const roomOptionsForRegistration = (registration) => {
       first.buildingName.localeCompare(second.buildingName) ||
       Number(first.floor || 0) - Number(second.floor || 0) ||
       Number(first.roomId || 0) - Number(second.roomId || 0))
+}
+
+const roomOptionsForRegistration = (registration) => {
+  return availableRoomsForRegistration(registration)
     .map((room) => ({
       title: roomOptionLabel(room),
       value: room.roomId,
@@ -706,6 +880,53 @@ onMounted(loadAll)
 .registration-metric.danger .mdi {
   background: #fff1f2;
   color: #be123c;
+}
+
+.status-tabs {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.status-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 13px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: #f7faf8;
+  color: var(--muted-strong);
+  cursor: pointer;
+  font-weight: 900;
+}
+
+.status-tabs button.active {
+  border-color: rgba(15, 127, 81, 0.2);
+  background: var(--brand);
+  color: #ffffff;
+}
+
+.status-tabs strong {
+  display: inline-grid;
+  place-items: center;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--brand-dark);
+  font-size: 12px;
+}
+
+.status-tabs button:not(.active) strong {
+  background: #eaf8f0;
 }
 
 .mode-card {
@@ -876,6 +1097,110 @@ onMounted(loadAll)
   background: #f8fbff;
 }
 
+.approval-dialog {
+  background: #ffffff;
+}
+
+.dialog-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.dialog-title strong {
+  display: block;
+  color: var(--ink);
+  font-family: var(--font-heading);
+  font-size: 21px;
+}
+
+.assignment-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.assignment-summary div {
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfdfb;
+}
+
+.assignment-summary span,
+.assignment-summary strong {
+  display: block;
+}
+
+.assignment-summary span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.assignment-summary strong {
+  margin-top: 5px;
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.assignment-filters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.room-choice-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.room-choice {
+  min-height: 108px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+}
+
+.room-choice.active {
+  border-color: var(--brand);
+  background: #ecfdf5;
+}
+
+.room-choice strong,
+.room-choice span,
+.room-choice small {
+  display: block;
+}
+
+.room-choice strong {
+  color: var(--brand-dark);
+  font-family: var(--font-heading);
+  font-size: 22px;
+}
+
+.room-choice span {
+  margin-top: 8px;
+  color: var(--ink);
+  font-weight: 900;
+}
+
+.room-choice small {
+  margin-top: 6px;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
 .status-pill {
   display: inline-flex !important;
   align-items: center;
@@ -927,6 +1252,12 @@ onMounted(loadAll)
     grid-template-columns: 1fr;
     min-width: 0;
     width: 100%;
+  }
+
+  .assignment-summary,
+  .assignment-filters,
+  .room-choice-grid {
+    grid-template-columns: 1fr;
   }
 
   .table-toolbar {

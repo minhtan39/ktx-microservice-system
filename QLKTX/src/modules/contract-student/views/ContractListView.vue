@@ -57,6 +57,15 @@
           label="Trạng thái"
           density="compact"
         />
+
+        <v-select
+          v-model="buildingFilter"
+          :items="buildingOptions"
+          item-title="title"
+          item-value="value"
+          label="Tòa"
+          density="compact"
+        />
       </div>
     </v-card>
 
@@ -79,21 +88,22 @@
             <th>Tiền phòng</th>
             <th>Điều khoản</th>
             <th>Trạng thái</th>
+            <th>Xem</th>
           </tr>
         </thead>
         <tbody>
           <tr v-if="loading" class="table-empty">
-            <td colspan="8">Đang tải dữ liệu...</td>
+            <td colspan="9">Đang tải dữ liệu...</td>
           </tr>
           <tr v-else-if="filteredContracts.length === 0" class="table-empty">
-            <td colspan="8">Chưa có hợp đồng phù hợp.</td>
+            <td colspan="9">Chưa có hợp đồng phù hợp.</td>
           </tr>
           <tr v-for="contract in filteredContracts" :key="contract.id">
             <td>
               <strong class="contract-code">{{ contract.contractCode }}</strong>
             </td>
             <td>{{ studentName(contract.studentId) }}</td>
-            <td>Phòng {{ contract.roomId }}</td>
+            <td>{{ roomLabel(contract.roomId) }}</td>
             <td>{{ formatDate(contract.startDate) }} - {{ formatDate(contract.endDate) }}</td>
             <td>{{ formatMoney(contract.depositAmount) }}</td>
             <td>{{ formatMoney(contract.monthlyFee) }}</td>
@@ -102,6 +112,15 @@
               <span class="status-pill" :class="statusClass(contract.status)">
                 {{ statusText(contract.status) }}
               </span>
+            </td>
+            <td>
+              <v-btn
+                color="primary"
+                variant="tonal"
+                size="small"
+                icon="mdi-arrow-right"
+                @click="openContractDetails(contract)"
+              />
             </td>
           </tr>
         </tbody>
@@ -133,7 +152,7 @@
           </div>
           <div>
             <span>Phòng</span>
-            <strong>{{ contract.roomId }}</strong>
+            <strong>{{ roomLabel(contract.roomId) }}</strong>
           </div>
           <div>
             <span>Thời hạn</span>
@@ -146,8 +165,48 @@
         </div>
 
         <p>{{ contract.terms || 'Điều khoản mặc định' }}</p>
+        <v-btn class="mt-4" color="primary" variant="tonal" size="small" @click="openContractDetails(contract)">
+          Xem chi tiết
+        </v-btn>
       </article>
     </div>
+
+    <v-dialog v-model="detailDialog" max-width="900">
+      <v-card v-if="selectedContract" class="dialog-card">
+        <v-card-title class="dialog-title">
+          <div>
+            <span class="hero-kicker">Contract Details</span>
+            <strong>{{ selectedContract.contractCode }}</strong>
+          </div>
+          <v-btn icon="mdi-close" variant="text" @click="detailDialog = false" />
+        </v-card-title>
+        <v-card-text>
+          <div class="detail-strip">
+            <span class="status-pill" :class="statusClass(selectedContract.status)">
+              {{ statusText(selectedContract.status) }}
+            </span>
+            <span>{{ studentName(selectedContract.studentId) }}</span>
+            <span>{{ roomLabel(selectedContract.roomId) }}</span>
+          </div>
+
+          <div class="contract-detail-grid">
+            <div v-for="field in selectedContractFields" :key="field.label">
+              <span>{{ field.label }}</span>
+              <strong>{{ field.value }}</strong>
+            </div>
+          </div>
+
+          <section class="terms-box">
+            <span>Điều khoản</span>
+            <p>{{ selectedContract.terms || 'Điều khoản mặc định về thời hạn ở, tiền cọc, tiền phòng và trách nhiệm sinh viên.' }}</p>
+          </section>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn color="primary" variant="tonal" @click="detailDialog = false">Đóng</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
   </section>
 </template>
 
@@ -165,8 +224,12 @@ const message = ref('')
 const messageType = ref('success')
 const contracts = ref([])
 const students = ref([])
+const rooms = ref([])
 const keyword = ref('')
 const statusFilter = ref('All')
+const buildingFilter = ref('All')
+const detailDialog = ref(false)
+const selectedContract = ref(null)
 
 const statusOptions = [
   { title: 'Tất cả', value: 'All' },
@@ -176,6 +239,16 @@ const statusOptions = [
 ]
 
 const studentMap = computed(() => buildStudentNameMap(students.value))
+const roomMap = computed(() => new Map(rooms.value.map((room) => [Number(room.roomId), room])))
+const buildingOptions = computed(() => {
+  const buildings = [...new Set(rooms.value.map((room) => room.buildingName).filter(Boolean))]
+    .sort((first, second) => first.localeCompare(second, 'vi'))
+
+  return [
+    { title: 'Tất cả tòa', value: 'All' },
+    ...buildings.map((building) => ({ title: `Tòa ${building}`, value: building })),
+  ]
+})
 
 const filteredContracts = computed(() => {
   const search = (keyword.value || '').trim().toLowerCase()
@@ -183,14 +256,32 @@ const filteredContracts = computed(() => {
   return contracts.value.filter((contract) => {
     const matchesStatus = statusFilter.value === 'All' || contract.status === statusFilter.value
     const student = studentName(contract.studentId).toLowerCase()
+    const room = roomMap.value.get(Number(contract.roomId))
+    const matchesBuilding = buildingFilter.value === 'All' || room?.buildingName === buildingFilter.value
     const matchesKeyword =
       !search ||
       contract.contractCode?.toLowerCase().includes(search) ||
       student.includes(search) ||
-      String(contract.roomId).includes(search)
+      String(contract.roomId).includes(search) ||
+      roomLabel(contract.roomId).toLowerCase().includes(search)
 
-    return matchesStatus && matchesKeyword
+    return matchesStatus && matchesBuilding && matchesKeyword
   })
+})
+
+const selectedContractFields = computed(() => {
+  if (!selectedContract.value) return []
+
+  return [
+    { label: 'Sinh viên', value: studentName(selectedContract.value.studentId) },
+    { label: 'Phòng', value: roomLabel(selectedContract.value.roomId) },
+    { label: 'Ngày bắt đầu', value: formatDate(selectedContract.value.startDate) },
+    { label: 'Ngày kết thúc', value: formatDate(selectedContract.value.endDate) },
+    { label: 'Tiền cọc', value: formatMoney(selectedContract.value.depositAmount) },
+    { label: 'Tiền phòng tháng', value: formatMoney(selectedContract.value.monthlyFee) },
+    { label: 'Trạng thái', value: statusText(selectedContract.value.status) },
+    { label: 'Mã tham chiếu phòng', value: selectedContract.value.roomId || '-' },
+  ]
 })
 
 const showMessage = (text, type = 'success') => {
@@ -208,11 +299,16 @@ const loadContracts = async () => {
   contracts.value = normalizeList(res.data)
 }
 
+const loadRooms = async () => {
+  const res = await api.get('/rooms')
+  rooms.value = normalizeList(res.data)
+}
+
 const loadAll = async () => {
   try {
     loading.value = true
     message.value = ''
-    await Promise.all([loadStudents(), loadContracts()])
+    await Promise.all([loadStudents(), loadContracts(), loadRooms()])
   } catch (err) {
     showMessage('Không tải được danh sách hợp đồng.', 'error')
     console.error(err)
@@ -222,6 +318,18 @@ const loadAll = async () => {
 }
 
 const studentName = (id) => studentMap.value.get(id) || `Sinh viên #${id}`
+const roomLabel = (id) => {
+  const room = roomMap.value.get(Number(id))
+  if (!room) return `Phòng ${id}`
+
+  return `Phòng ${room.roomNumber || room.roomId} - Tòa ${room.buildingName}`
+}
+
+const openContractDetails = (contract) => {
+  selectedContract.value = contract
+  detailDialog.value = true
+}
+
 const countByStatus = (status) => contracts.value.filter((contract) => contract.status === status).length
 const statusClass = (status) => String(status || '').toLowerCase()
 
@@ -349,7 +457,7 @@ onMounted(loadAll)
 
 .filter-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 220px;
+  grid-template-columns: minmax(0, 1fr) 220px 180px;
   gap: 14px;
   align-items: start;
 }
@@ -481,6 +589,89 @@ onMounted(loadAll)
   line-height: 1.5;
 }
 
+.dialog-card {
+  background: #ffffff;
+}
+
+.dialog-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.dialog-title strong {
+  display: block;
+  color: var(--ink);
+  font-family: var(--font-heading);
+  font-size: 22px;
+}
+
+.detail-strip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.detail-strip > span:not(.status-pill) {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: #f7faf8;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.contract-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.contract-detail-grid div,
+.terms-box {
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfdfb;
+}
+
+.contract-detail-grid span,
+.contract-detail-grid strong,
+.terms-box span {
+  display: block;
+}
+
+.contract-detail-grid span,
+.terms-box span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.contract-detail-grid strong {
+  margin-top: 5px;
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.terms-box {
+  margin-top: 12px;
+}
+
+.terms-box p {
+  margin: 6px 0 0;
+  color: var(--ink);
+  line-height: 1.5;
+}
+
 @media (max-width: 1120px) {
   .metric-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -519,6 +710,10 @@ onMounted(loadAll)
 
   .table-toolbar p {
     text-align: left;
+  }
+
+  .contract-detail-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>

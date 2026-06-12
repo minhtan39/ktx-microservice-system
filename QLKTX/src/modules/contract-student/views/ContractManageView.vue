@@ -32,6 +32,23 @@
       </article>
     </section>
 
+    <section class="contract-alerts">
+      <article class="warning">
+        <span class="mdi mdi-alert-outline"></span>
+        <div>
+          <strong>{{ expiringSoonCount }} hợp đồng sắp hết hạn</strong>
+          <p>Những hợp đồng có ngày kết thúc trong 30 ngày tới cần được kiểm tra.</p>
+        </div>
+      </article>
+      <article class="success">
+        <span class="mdi mdi-file-check-outline"></span>
+        <div>
+          <strong>{{ activeCount }} hợp đồng đang hiệu lực</strong>
+          <p>Các hợp đồng này có thể hủy hoặc kết thúc khi phát sinh nghiệp vụ.</p>
+        </div>
+      </article>
+    </section>
+
     <v-alert v-if="message" :type="messageType" variant="tonal" class="mb-4">
       {{ message }}
     </v-alert>
@@ -64,7 +81,17 @@
             density="compact"
           />
         </v-col>
-        <v-col cols="12" md="5" class="summary-row">
+        <v-col cols="12" md="2">
+          <v-select
+            v-model="buildingFilter"
+            :items="buildingOptions"
+            item-title="title"
+            item-value="value"
+            label="Tòa"
+            density="compact"
+          />
+        </v-col>
+        <v-col cols="12" md="3" class="summary-row">
           <span>Tổng: {{ contracts.length }}</span>
           <span>Hiệu lực: {{ countByStatus('Active') }}</span>
           <span>Hết hạn: {{ countByStatus('Expired') }}</span>
@@ -104,7 +131,7 @@
               <strong class="contract-code">{{ contract.contractCode }}</strong>
             </td>
             <td>{{ studentName(contract.studentId) }}</td>
-            <td>Phòng {{ contract.roomId }}</td>
+            <td>{{ roomLabel(contract.roomId) }}</td>
             <td>{{ formatDate(contract.startDate) }} - {{ formatDate(contract.endDate) }}</td>
             <td>
               Cọc: {{ formatMoney(contract.depositAmount) }}<br />
@@ -157,8 +184,10 @@ const message = ref('')
 const messageType = ref('success')
 const contracts = ref([])
 const students = ref([])
+const rooms = ref([])
 const keyword = ref('')
 const statusFilter = ref('All')
+const buildingFilter = ref('All')
 
 const statusOptions = [
   { title: 'Tất cả', value: 'All' },
@@ -168,6 +197,28 @@ const statusOptions = [
 ]
 
 const studentMap = computed(() => buildStudentNameMap(students.value))
+const roomMap = computed(() => new Map(rooms.value.map((room) => [Number(room.roomId), room])))
+const activeCount = computed(() => countByStatus('Active'))
+const expiringSoonCount = computed(() => {
+  const now = new Date()
+  const next30Days = new Date()
+  next30Days.setDate(now.getDate() + 30)
+
+  return contracts.value.filter((contract) => {
+    if (contract.status !== 'Active' || !contract.endDate) return false
+    const endDate = new Date(contract.endDate)
+    return endDate >= now && endDate <= next30Days
+  }).length
+})
+const buildingOptions = computed(() => {
+  const buildings = [...new Set(rooms.value.map((room) => room.buildingName).filter(Boolean))]
+    .sort((first, second) => first.localeCompare(second, 'vi'))
+
+  return [
+    { title: 'Tất cả tòa', value: 'All' },
+    ...buildings.map((building) => ({ title: `Tòa ${building}`, value: building })),
+  ]
+})
 
 const filteredContracts = computed(() => {
   const search = (keyword.value || '').trim().toLowerCase()
@@ -175,13 +226,16 @@ const filteredContracts = computed(() => {
   return contracts.value.filter((contract) => {
     const matchesStatus = statusFilter.value === 'All' || contract.status === statusFilter.value
     const student = studentName(contract.studentId).toLowerCase()
+    const room = roomMap.value.get(Number(contract.roomId))
+    const matchesBuilding = buildingFilter.value === 'All' || room?.buildingName === buildingFilter.value
     const matchesKeyword =
       !search ||
       contract.contractCode?.toLowerCase().includes(search) ||
       student.includes(search) ||
-      String(contract.roomId).includes(search)
+      String(contract.roomId).includes(search) ||
+      roomLabel(contract.roomId).toLowerCase().includes(search)
 
-    return matchesStatus && matchesKeyword
+    return matchesStatus && matchesBuilding && matchesKeyword
   })
 })
 
@@ -200,11 +254,16 @@ const loadContracts = async () => {
   contracts.value = normalizeList(res.data)
 }
 
+const loadRooms = async () => {
+  const res = await api.get('/rooms')
+  rooms.value = normalizeList(res.data)
+}
+
 const loadAll = async () => {
   try {
     loading.value = true
     message.value = ''
-    await Promise.all([loadStudents(), loadContracts()])
+    await Promise.all([loadStudents(), loadContracts(), loadRooms()])
   } catch (err) {
     showMessage('Không tải được dữ liệu hợp đồng.', 'error')
     console.error(err)
@@ -236,6 +295,13 @@ const expireContract = async (id) => {
 }
 
 const studentName = (id) => studentMap.value.get(id) || `Sinh viên #${id}`
+const roomLabel = (id) => {
+  const room = roomMap.value.get(Number(id))
+  if (!room) return `Phòng ${id}`
+
+  return `Phòng ${room.roomNumber || room.roomId} - Tòa ${room.buildingName}`
+}
+
 const countByStatus = (status) => contracts.value.filter((contract) => contract.status === status).length
 const statusClass = (status) => String(status || '').toLowerCase()
 
@@ -320,6 +386,67 @@ onMounted(loadAll)
 }
 
 .ops-explainer p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.contract-alerts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.contract-alerts article {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+  min-height: 104px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.contract-alerts .mdi {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 8px;
+  font-size: 24px;
+}
+
+.contract-alerts .warning {
+  border-color: #fed7aa;
+  background: #fffbeb;
+}
+
+.contract-alerts .warning .mdi {
+  background: #fff7ed;
+  color: #b45309;
+}
+
+.contract-alerts .success {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.contract-alerts .success .mdi {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.contract-alerts strong {
+  display: block;
+  color: var(--ink);
+  font-family: var(--font-heading);
+  font-size: 18px;
+}
+
+.contract-alerts p {
   margin: 6px 0 0;
   color: var(--muted);
   font-size: 13px;
@@ -435,6 +562,10 @@ onMounted(loadAll)
   }
 
   .ops-explainer {
+    grid-template-columns: 1fr;
+  }
+
+  .contract-alerts {
     grid-template-columns: 1fr;
   }
 
