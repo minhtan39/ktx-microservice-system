@@ -1,0 +1,547 @@
+<template>
+  <section class="billing-page">
+    <div class="page-heading">
+      <div>
+        <span class="eyebrow">BILLING SERVICE</span>
+        <h2>Thanh toán điện, nước hàng tháng</h2>
+        <p>Nhập chỉ số, phát hành phiếu, gửi email và theo dõi giao dịch tự động.</p>
+      </div>
+      <v-btn prepend-icon="mdi-refresh" variant="outlined" :loading="loading" @click="loadAll">
+        Làm mới
+      </v-btn>
+    </div>
+
+    <v-alert v-if="error" type="error" variant="tonal" closable class="mb-4" @click:close="error = ''">
+      {{ error }}
+    </v-alert>
+    <v-alert v-if="success" type="success" variant="tonal" closable class="mb-4" @click:close="success = ''">
+      {{ success }}
+    </v-alert>
+
+    <div class="metric-grid">
+      <article>
+        <span>Chưa thanh toán</span>
+        <strong>{{ unpaidInvoices.length }}</strong>
+        <small>{{ formatMoney(unpaidTotal) }}</small>
+      </article>
+      <article>
+        <span>Đã thanh toán</span>
+        <strong>{{ paidInvoices.length }}</strong>
+        <small>{{ formatMoney(paidTotal) }}</small>
+      </article>
+      <article>
+        <span>Đơn giá điện</span>
+        <strong>4.000đ</strong>
+        <small>Mỗi số điện</small>
+      </article>
+      <article>
+        <span>Đơn giá nước</span>
+        <strong>20.000đ</strong>
+        <small>Mỗi số nước</small>
+      </article>
+    </div>
+
+    <section class="issue-panel">
+      <div class="section-title">
+        <div>
+          <span class="mdi mdi-receipt-text-plus-outline"></span>
+          <div>
+            <h3>Phát hành phiếu tháng</h3>
+            <p>Chỉ số mới phải lớn hơn hoặc bằng chỉ số tháng trước.</p>
+          </div>
+        </div>
+        <span class="rate-note">Điện 4.000đ/số · Nước 20.000đ/số</span>
+      </div>
+
+      <div class="form-grid">
+        <v-select
+          v-model="form.studentId"
+          :items="studentOptions"
+          item-title="title"
+          item-value="value"
+          label="Sinh viên"
+          variant="outlined"
+          density="comfortable"
+          @update:model-value="onStudentChanged"
+        />
+        <v-select
+          v-model="form.contractId"
+          :items="contractOptions"
+          item-title="title"
+          item-value="value"
+          label="Hợp đồng"
+          variant="outlined"
+          density="comfortable"
+          @update:model-value="onContractChanged"
+        />
+        <v-text-field
+          v-model="form.billingPeriod"
+          type="month"
+          label="Tháng thanh toán"
+          variant="outlined"
+          density="comfortable"
+        />
+        <v-text-field
+          v-model="form.dueDate"
+          type="date"
+          label="Hạn thanh toán"
+          variant="outlined"
+          density="comfortable"
+        />
+        <v-text-field
+          v-model.number="form.roomFee"
+          type="number"
+          min="0"
+          label="Tiền phòng"
+          suffix="đ"
+          variant="outlined"
+          density="comfortable"
+        />
+        <v-text-field
+          v-model="form.roomName"
+          label="Phòng"
+          variant="outlined"
+          density="comfortable"
+        />
+      </div>
+
+      <div class="meter-grid">
+        <div class="meter-box electric">
+          <div class="meter-title">
+            <span class="mdi mdi-flash-outline"></span>
+            <strong>Chỉ số điện</strong>
+          </div>
+          <div class="meter-inputs">
+            <v-text-field v-model.number="form.previousElectricityReading" type="number" min="0" label="Chỉ số cũ" variant="outlined" density="compact" />
+            <span class="mdi mdi-arrow-right"></span>
+            <v-text-field v-model.number="form.currentElectricityReading" type="number" min="0" label="Chỉ số mới" variant="outlined" density="compact" />
+          </div>
+          <p>{{ electricityUsage }} số × 4.000đ = <b>{{ formatMoney(electricityAmount) }}</b></p>
+        </div>
+
+        <div class="meter-box water">
+          <div class="meter-title">
+            <span class="mdi mdi-water-outline"></span>
+            <strong>Chỉ số nước</strong>
+          </div>
+          <div class="meter-inputs">
+            <v-text-field v-model.number="form.previousWaterReading" type="number" min="0" label="Chỉ số cũ" variant="outlined" density="compact" />
+            <span class="mdi mdi-arrow-right"></span>
+            <v-text-field v-model.number="form.currentWaterReading" type="number" min="0" label="Chỉ số mới" variant="outlined" density="compact" />
+          </div>
+          <p>{{ waterUsage }} số × 20.000đ = <b>{{ formatMoney(waterAmount) }}</b></p>
+        </div>
+      </div>
+
+      <div class="issue-footer">
+        <div>
+          <span>Tổng phiếu dự kiến</span>
+          <strong>{{ formatMoney(previewTotal) }}</strong>
+        </div>
+        <v-btn
+          color="success"
+          prepend-icon="mdi-printer-outline"
+          size="large"
+          :loading="issuing"
+          :disabled="!canIssue"
+          @click="issueAndPrint"
+        >
+          Phát hành, gửi email & in
+        </v-btn>
+      </div>
+    </section>
+
+    <section class="list-panel">
+      <div class="section-title">
+        <div>
+          <span class="mdi mdi-file-document-multiple-outline"></span>
+          <div>
+            <h3>Danh sách phiếu thanh toán</h3>
+            <p>Webhook ngân hàng sẽ tự đổi trạng thái khi đúng mã và đủ tiền.</p>
+          </div>
+        </div>
+        <v-select
+          v-model="statusFilter"
+          :items="statusOptions"
+          item-title="title"
+          item-value="value"
+          label="Trạng thái"
+          variant="outlined"
+          density="compact"
+          hide-details
+          class="status-filter"
+        />
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Mã phiếu</th>
+              <th>Sinh viên</th>
+              <th>Kỳ / Phòng</th>
+              <th>Điện · Nước</th>
+              <th>Tổng tiền</th>
+              <th>Trạng thái</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="invoice in filteredInvoices" :key="invoice.id">
+              <td><strong>{{ invoice.invoiceCode }}</strong><small>{{ formatDate(invoice.issuedAt) }}</small></td>
+              <td><strong>{{ invoice.studentName }}</strong><small>{{ invoice.studentCode }}</small></td>
+              <td><strong>{{ invoice.billingPeriod }}</strong><small>Phòng {{ invoice.roomName }}</small></td>
+              <td><strong>{{ invoice.electricityUsage }} · {{ invoice.waterUsage }}</strong><small>Số tiêu thụ</small></td>
+              <td><strong class="money">{{ formatMoney(invoice.totalAmount) }}</strong><small>Hạn {{ formatDate(invoice.dueDate) }}</small></td>
+              <td><span :class="['status-pill', invoice.status.toLowerCase()]">{{ statusLabel(invoice.status) }}</span></td>
+              <td>
+                <v-menu>
+                  <template #activator="{ props }">
+                    <v-btn v-bind="props" icon="mdi-dots-vertical" variant="text" density="comfortable" />
+                  </template>
+                  <v-list density="compact">
+                    <v-list-item prepend-icon="mdi-eye-outline" title="Xem chi tiết" @click="openDetail(invoice)" />
+                    <v-list-item prepend-icon="mdi-printer-outline" title="In phiếu" @click="printInvoice(invoice)" />
+                    <v-list-item prepend-icon="mdi-email-fast-outline" title="Gửi lại email" @click="resendEmail(invoice)" />
+                    <v-list-item v-if="invoice.status !== 'Paid'" prepend-icon="mdi-check-decagram-outline" title="Xác nhận đã thanh toán" @click="markPaid(invoice)" />
+                  </v-list>
+                </v-menu>
+              </td>
+            </tr>
+            <tr v-if="filteredInvoices.length === 0">
+              <td colspan="7" class="empty-row">Chưa có phiếu thanh toán phù hợp.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="history-panel">
+      <div class="section-title">
+        <div>
+          <span class="mdi mdi-history"></span>
+          <div><h3>Lịch sử thanh toán</h3><p>Dùng chung cho tài khoản admin và nhân viên.</p></div>
+        </div>
+      </div>
+      <div class="history-list">
+        <article v-for="item in history.slice(0, 12)" :key="item.id">
+          <span class="mdi mdi-check-circle-outline"></span>
+          <div><strong>{{ item.studentName }} · {{ item.invoiceCode }}</strong><small>{{ formatDateTime(item.paidAt) }} · {{ item.referenceCode }}</small></div>
+          <b>{{ formatMoney(item.amount) }}</b>
+        </article>
+        <p v-if="history.length === 0" class="empty-row">Chưa phát sinh giao dịch đã hoàn thành.</p>
+      </div>
+    </section>
+
+    <v-dialog v-model="detailDialog" max-width="820">
+      <v-card v-if="selectedInvoice" class="invoice-dialog">
+        <v-card-title>Chi tiết {{ selectedInvoice.invoiceCode }}</v-card-title>
+        <v-card-text>
+          <div class="invoice-detail">
+            <div class="detail-lines">
+              <p><span>Sinh viên</span><strong>{{ selectedInvoice.studentName }} ({{ selectedInvoice.studentCode }})</strong></p>
+              <p><span>Kỳ thanh toán</span><strong>{{ selectedInvoice.billingPeriod }}</strong></p>
+              <p><span>Tiền phòng</span><strong>{{ formatMoney(selectedInvoice.roomFee) }}</strong></p>
+              <p><span>Tiền điện</span><strong>{{ selectedInvoice.electricityUsage }} số · {{ formatMoney(selectedInvoice.electricityAmount) }}</strong></p>
+              <p><span>Tiền nước</span><strong>{{ selectedInvoice.waterUsage }} số · {{ formatMoney(selectedInvoice.waterAmount) }}</strong></p>
+              <p class="total"><span>Tổng thanh toán</span><strong>{{ formatMoney(selectedInvoice.totalAmount) }}</strong></p>
+              <p><span>Nội dung chuyển khoản</span><strong>{{ selectedInvoice.paymentCode }}</strong></p>
+            </div>
+            <div class="qr-panel">
+              <img v-if="selectedInvoice.qrCodeUrl" :src="selectedInvoice.qrCodeUrl" alt="Mã QR thanh toán" />
+              <div v-else class="qr-missing"><span class="mdi mdi-qrcode-remove"></span><p>Chưa cấu hình tài khoản VietQR.</p></div>
+            </div>
+          </div>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" @click="detailDialog = false">Đóng</v-btn>
+          <v-btn color="success" prepend-icon="mdi-printer-outline" @click="printInvoice(selectedInvoice)">In phiếu</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+  </section>
+</template>
+
+<script setup>
+import { computed, onMounted, reactive, ref } from 'vue'
+import api from '../../../services/api'
+
+const ELECTRICITY_RATE = 4000
+const WATER_RATE = 20000
+const loading = ref(false)
+const issuing = ref(false)
+const error = ref('')
+const success = ref('')
+const students = ref([])
+const contracts = ref([])
+const rooms = ref([])
+const invoices = ref([])
+const history = ref([])
+const statusFilter = ref('')
+const detailDialog = ref(false)
+const selectedInvoice = ref(null)
+
+const today = new Date()
+const defaultPeriod = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`
+const dueDate = new Date(today)
+dueDate.setDate(dueDate.getDate() + 7)
+
+const form = reactive({
+  studentId: null,
+  contractId: null,
+  billingPeriod: defaultPeriod,
+  dueDate: dueDate.toISOString().slice(0, 10),
+  roomFee: 0,
+  roomId: 0,
+  roomName: '',
+  previousElectricityReading: 0,
+  currentElectricityReading: 0,
+  previousWaterReading: 0,
+  currentWaterReading: 0,
+})
+
+const normalizeList = (payload) => {
+  if (Array.isArray(payload)) return payload
+  if (Array.isArray(payload?.data)) return payload.data
+  if (Array.isArray(payload?.items)) return payload.items
+  if (Array.isArray(payload?.data?.data)) return payload.data.data
+  return []
+}
+
+const studentOptions = computed(() => students.value.map((student) => ({
+  title: `${student.studentCode} · ${student.fullName}`,
+  value: Number(student.id),
+})))
+
+const contractOptions = computed(() => contracts.value
+  .filter((contract) => Number(contract.studentId) === Number(form.studentId))
+  .map((contract) => ({
+    title: `${contract.contractCode} · ${statusLabel(contract.status)}`,
+    value: Number(contract.id),
+  })))
+
+const electricityUsage = computed(() => Math.max(0, Number(form.currentElectricityReading || 0) - Number(form.previousElectricityReading || 0)))
+const waterUsage = computed(() => Math.max(0, Number(form.currentWaterReading || 0) - Number(form.previousWaterReading || 0)))
+const electricityAmount = computed(() => electricityUsage.value * ELECTRICITY_RATE)
+const waterAmount = computed(() => waterUsage.value * WATER_RATE)
+const previewTotal = computed(() => Number(form.roomFee || 0) + electricityAmount.value + waterAmount.value)
+const canIssue = computed(() => form.studentId && form.contractId && form.billingPeriod && form.dueDate && form.currentElectricityReading >= form.previousElectricityReading && form.currentWaterReading >= form.previousWaterReading)
+const unpaidInvoices = computed(() => invoices.value.filter((item) => item.status !== 'Paid'))
+const paidInvoices = computed(() => invoices.value.filter((item) => item.status === 'Paid'))
+const unpaidTotal = computed(() => unpaidInvoices.value.reduce((sum, item) => sum + Number(item.totalAmount || 0), 0))
+const paidTotal = computed(() => paidInvoices.value.reduce((sum, item) => sum + Number(item.totalAmount || 0), 0))
+const filteredInvoices = computed(() => statusFilter.value
+  ? invoices.value.filter((item) => item.status === statusFilter.value)
+  : invoices.value)
+
+const statusOptions = [
+  { title: 'Tất cả', value: '' },
+  { title: 'Chưa thanh toán', value: 'Unpaid' },
+  { title: 'Đã thanh toán', value: 'Paid' },
+]
+
+const formatMoney = (value) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 }).format(Number(value || 0))
+const formatDate = (value) => value ? new Intl.DateTimeFormat('vi-VN').format(new Date(value)) : '-'
+const formatDateTime = (value) => value ? new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value)) : '-'
+const statusLabel = (status) => ({ Paid: 'Đã thanh toán', Unpaid: 'Chưa thanh toán', Active: 'Đang hiệu lực', Expired: 'Hết hạn', Cancelled: 'Đã hủy' }[status] || status || '-')
+
+const loadAll = async () => {
+  loading.value = true
+  error.value = ''
+  try {
+    const [studentResponse, contractResponse, roomResponse, invoiceResponse, historyResponse] = await Promise.all([
+      api.get('/students'),
+      api.get('/contracts'),
+      api.get('/rooms').catch(() => ({ data: [] })),
+      api.get('/billing/monthly-invoices'),
+      api.get('/billing/payment-history'),
+    ])
+    students.value = normalizeList(studentResponse.data)
+    contracts.value = normalizeList(contractResponse.data)
+    rooms.value = normalizeList(roomResponse.data)
+    invoices.value = normalizeList(invoiceResponse.data)
+    history.value = normalizeList(historyResponse.data)
+  } catch (err) {
+    error.value = err.response?.data?.detail || err.response?.data?.message || 'Không tải được dữ liệu thanh toán.'
+  } finally {
+    loading.value = false
+  }
+}
+
+const onStudentChanged = () => {
+  const available = contractOptions.value
+  form.contractId = available.length ? available[0].value : null
+  onContractChanged()
+}
+
+const onContractChanged = () => {
+  const contract = contracts.value.find((item) => Number(item.id) === Number(form.contractId))
+  if (!contract) return
+
+  form.roomFee = Number(contract.monthlyFee || 0)
+  form.roomId = Number(contract.roomId || 0)
+  const room = rooms.value.find((item) => Number(item.id) === form.roomId)
+  form.roomName = room?.roomNumber || room?.name || String(form.roomId || '')
+
+  const latest = invoices.value
+    .filter((item) => Number(item.contractId) === Number(form.contractId))
+    .sort((first, second) => new Date(second.issuedAt || 0) - new Date(first.issuedAt || 0))[0]
+
+  form.previousElectricityReading = Number(latest?.currentElectricityReading || 0)
+  form.currentElectricityReading = form.previousElectricityReading
+  form.previousWaterReading = Number(latest?.currentWaterReading || 0)
+  form.currentWaterReading = form.previousWaterReading
+}
+
+const issueAndPrint = async () => {
+  const printWindow = window.open('', '_blank')
+  issuing.value = true
+  error.value = ''
+  success.value = ''
+
+  try {
+    const student = students.value.find((item) => Number(item.id) === Number(form.studentId))
+    const contract = contracts.value.find((item) => Number(item.id) === Number(form.contractId))
+    const response = await api.post('/billing/monthly-invoices', {
+      contractId: Number(form.contractId),
+      contractCode: contract?.contractCode,
+      studentId: Number(form.studentId),
+      studentCode: student?.studentCode,
+      studentName: student?.fullName,
+      studentEmail: student?.email,
+      roomId: Number(form.roomId || contract?.roomId || 0),
+      roomName: form.roomName,
+      billingPeriod: form.billingPeriod,
+      roomFee: Number(form.roomFee || 0),
+      previousElectricityReading: Number(form.previousElectricityReading || 0),
+      currentElectricityReading: Number(form.currentElectricityReading || 0),
+      previousWaterReading: Number(form.previousWaterReading || 0),
+      currentWaterReading: Number(form.currentWaterReading || 0),
+      dueDate: form.dueDate,
+      issuedBy: localStorage.getItem('fullName') || localStorage.getItem('username') || 'Nhân viên',
+    })
+
+    const invoice = response.data.invoice
+    success.value = response.data.message
+    await loadAll()
+    printInvoice(invoice, printWindow)
+  } catch (err) {
+    printWindow?.close()
+    error.value = err.response?.data?.message || err.response?.data?.detail || 'Không phát hành được phiếu thanh toán.'
+  } finally {
+    issuing.value = false
+  }
+}
+
+const openDetail = (invoice) => {
+  selectedInvoice.value = invoice
+  detailDialog.value = true
+}
+
+const resendEmail = async (invoice) => {
+  error.value = ''
+  try {
+    const response = await api.post(`/billing/monthly-invoices/${invoice.id}/resend-email`)
+    success.value = response.data.message
+    await loadAll()
+  } catch (err) {
+    error.value = err.response?.data?.detail || 'Không gửi lại được email.'
+  }
+}
+
+const markPaid = async (invoice) => {
+  if (!window.confirm(`Xác nhận phiếu ${invoice.invoiceCode} đã được thanh toán?`)) return
+  try {
+    await api.post(`/billing/monthly-invoices/${invoice.id}/mark-paid`, {
+      amount: invoice.totalAmount,
+      referenceCode: `MANUAL-${Date.now()}`,
+      confirmedBy: localStorage.getItem('fullName') || 'Nhân viên',
+    })
+    success.value = 'Đã xác nhận thanh toán và lưu lịch sử.'
+    await loadAll()
+  } catch (err) {
+    error.value = err.response?.data?.message || 'Không xác nhận được thanh toán.'
+  }
+}
+
+const printInvoice = (invoice, targetWindow = null) => {
+  const popup = targetWindow || window.open('', '_blank')
+  if (!popup) {
+    error.value = 'Trình duyệt đang chặn cửa sổ in.'
+    return
+  }
+
+  const qr = invoice.qrCodeUrl
+    ? `<img src="${invoice.qrCodeUrl}" alt="VietQR" style="width:260px;max-width:100%"><p><b>${invoice.paymentCode}</b></p>`
+    : '<p>Chưa cấu hình VietQR.</p>'
+
+  popup.document.write(`<!doctype html><html lang="vi"><head><meta charset="utf-8"><title>${invoice.invoiceCode}</title><style>body{font-family:Arial,sans-serif;color:#17201b;max-width:760px;margin:30px auto;padding:0 20px}h1{color:#0f7f51}table{width:100%;border-collapse:collapse;margin:20px 0}th,td{border:1px solid #cfd8d2;padding:11px}th{text-align:left;background:#eaf7ef}.right{text-align:right}.total{font-size:20px;font-weight:700;color:#0f7f51}.qr{text-align:center;margin-top:24px}@media print{button{display:none}}</style></head><body><h1>PHIẾU THANH TOÁN HÀNG THÁNG</h1><p><b>Mã phiếu:</b> ${invoice.invoiceCode}</p><p><b>Sinh viên:</b> ${invoice.studentName} (${invoice.studentCode})</p><p><b>Phòng:</b> ${invoice.roomName} &nbsp; <b>Kỳ:</b> ${invoice.billingPeriod}</p><table><tr><th>Khoản thu</th><th class="right">Thành tiền</th></tr><tr><td>Tiền phòng</td><td class="right">${formatMoney(invoice.roomFee)}</td></tr><tr><td>Điện: ${invoice.electricityUsage} số × 4.000đ</td><td class="right">${formatMoney(invoice.electricityAmount)}</td></tr><tr><td>Nước: ${invoice.waterUsage} số × 20.000đ</td><td class="right">${formatMoney(invoice.waterAmount)}</td></tr><tr class="total"><td>Tổng cộng</td><td class="right">${formatMoney(invoice.totalAmount)}</td></tr></table><p><b>Hạn thanh toán:</b> ${formatDate(invoice.dueDate)}</p><div class="qr">${qr}</div></body></html>`)
+  popup.document.close()
+  popup.focus()
+  setTimeout(() => popup.print(), 500)
+}
+
+onMounted(loadAll)
+</script>
+
+<style scoped>
+.billing-page { display: grid; width: 100%; min-width: 0; gap: 20px; }
+.billing-page > * { width: 100%; min-width: 0; max-width: 100%; }
+.page-heading, .section-title, .section-title > div, .issue-footer, .history-list article { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.page-heading > div, .section-title > div { min-width: 0; }
+.section-title { flex-wrap: wrap; }
+.page-heading h2, .section-title h3 { margin: 0; color: #13251c; }
+.page-heading h2 { font-size: 30px; }
+.page-heading p, .section-title p { margin: 5px 0 0; color: #66736b; }
+.eyebrow { color: #13875a; font-size: 12px; font-weight: 900; }
+.metric-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+.metric-grid > *, .form-grid > *, .meter-grid > * { min-width: 0; }
+.metric-grid article, .issue-panel, .list-panel, .history-panel { border: 1px solid #dce5df; border-radius: 8px; background: #fff; }
+.metric-grid article { display: grid; gap: 5px; padding: 18px; }
+.metric-grid span, .metric-grid small { color: #6a776f; }
+.metric-grid strong { font-size: 26px; color: #12251b; }
+.issue-panel, .list-panel, .history-panel { padding: 22px; }
+.section-title { margin-bottom: 20px; }
+.section-title > div > .mdi { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 7px; background: #e8f7ef; color: #0f8b5a; font-size: 23px; }
+.rate-note { color: #0f7f51; font-weight: 800; text-align: right; }
+.form-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.meter-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 2px; }
+.meter-box { padding: 18px; border: 1px solid #dce5df; border-left: 4px solid; border-radius: 7px; background: #fbfdfb; }
+.meter-box.electric { border-left-color: #e0a400; }
+.meter-box.water { border-left-color: #1976d2; }
+.meter-title { display: flex; gap: 9px; align-items: center; margin-bottom: 14px; font-size: 18px; }
+.meter-inputs { display: grid; grid-template-columns: 1fr auto 1fr; gap: 10px; align-items: center; }
+.meter-box p { margin: 0; color: #58665e; }
+.issue-footer { margin-top: 18px; padding-top: 18px; border-top: 1px solid #e1e8e3; }
+.issue-footer > div { display: grid; gap: 2px; }
+.issue-footer span { color: #647168; }
+.issue-footer strong { color: #0f7f51; font-size: 28px; }
+.status-filter { max-width: 220px; }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; min-width: 920px; }
+th { padding: 11px 12px; background: #f3f7f4; color: #58675e; text-align: left; font-size: 12px; text-transform: uppercase; }
+td { padding: 13px 12px; border-bottom: 1px solid #e5ebe7; vertical-align: middle; }
+td strong, td small { display: block; }
+td small { margin-top: 4px; color: #758179; }
+.money { color: #0f7f51; }
+.status-pill { display: inline-flex; padding: 5px 9px; border-radius: 999px; font-size: 12px; font-weight: 800; }
+.status-pill.unpaid { background: #fff2d7; color: #9b6200; }
+.status-pill.paid { background: #def7e8; color: #087947; }
+.empty-row { padding: 28px; text-align: center; color: #77837b; }
+.history-list { display: grid; }
+.history-list article { padding: 13px 4px; border-bottom: 1px solid #e5ebe7; }
+.history-list article > .mdi { color: #0f9b60; font-size: 24px; }
+.history-list article > div { flex: 1; display: grid; }
+.history-list small { color: #718077; }
+.history-list b { color: #0f7f51; }
+.invoice-detail { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 24px; }
+.detail-lines p { display: flex; justify-content: space-between; gap: 20px; padding: 10px 0; margin: 0; border-bottom: 1px solid #e5ebe7; }
+.detail-lines span { color: #67746c; }
+.detail-lines .total strong { color: #0f7f51; font-size: 22px; }
+.qr-panel { display: grid; place-items: center; text-align: center; }
+.qr-panel img { width: 280px; max-width: 100%; }
+.qr-missing .mdi { font-size: 64px; color: #9aa49e; }
+@media (max-width: 1100px) { .metric-grid { grid-template-columns: repeat(2, 1fr); } .form-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 720px) { .page-heading, .section-title, .issue-footer { align-items: stretch; flex-direction: column; } .metric-grid, .form-grid, .meter-grid, .invoice-detail { grid-template-columns: 1fr; } .page-heading h2 { font-size: 24px; } .status-filter { max-width: none; } }
+</style>

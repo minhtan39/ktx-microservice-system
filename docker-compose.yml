@@ -53,6 +53,21 @@ services:
     restart: unless-stopped
     environment:
       ASPNETCORE_ENVIRONMENT: Production
+      BillingData__FilePath: "/app/data/billing-data.json"
+      Email__SmtpHost: "smtp.gmail.com"
+      Email__SmtpPort: "587"
+      Email__EnableSsl: "true"
+      Email__Username: "${GMAIL_USERNAME:-}"
+      Email__Password: "${GMAIL_APP_PASSWORD:-}"
+      Email__FromEmail: "${GMAIL_USERNAME:-}"
+      Email__FromName: "DormManager Billing"
+      Payment__BankCode: "${PAYMENT_BANK_CODE:-}"
+      Payment__AccountNumber: "${PAYMENT_ACCOUNT_NUMBER:-}"
+      Payment__AccountName: "${PAYMENT_ACCOUNT_NAME:-}"
+      Payment__QrTemplate: "compact2"
+      Payment__WebhookSecret: "${PAYMENT_WEBHOOK_SECRET:-}"
+    volumes:
+      - billing-data:/app/data
 
   contract-student-service:
     build:
@@ -103,3 +118,4 @@ services:
 volumes:
   sqlserver-data:
   auth-data:
+  billing-data:

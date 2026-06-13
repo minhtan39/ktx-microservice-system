@@ -59,6 +59,13 @@ const routes = [
           import('../modules/auth/views/ChangePasswordView.vue'),
       },
       {
+        path: 'student/payments',
+        name: 'StudentPayments',
+        meta: { roles: STUDENT_ROLES },
+        component: () =>
+          import('../modules/billing/views/StudentPaymentsView.vue'),
+      },
+      {
         path: 'student-service/dashboard',
         name: 'StudentServiceDashboard',
         meta: { roles: ADMIN_ROLES },
@@ -115,6 +122,13 @@ const routes = [
           import('../modules/finance/views/IncidentManage.vue'),
       },
       {
+        path: 'finance/billing',
+        name: 'BillingManagement',
+        meta: { roles: ADMIN_ROLES },
+        component: () =>
+          import('../modules/billing/views/BillingManagementView.vue'),
+      },
+      {
         path: 'auth/accounts',
         name: 'AccountManage',
         meta: { roles: ADMIN_ONLY_ROLES },
@@ -147,6 +161,7 @@ const routes = [
 const router = createRouter({
   history: createWebHistory(),
   routes,
+  scrollBehavior: () => ({ top: 0, left: 0 }),
 })
 
 router.beforeEach((to) => {
