@@ -25,10 +25,11 @@ public sealed class PasswordResetEmailSender
     {
         var host = _configuration["Email:SmtpHost"] ?? "smtp.gmail.com";
         var port = _configuration.GetValue("Email:SmtpPort", 587);
-        var username = _configuration["Email:Username"]
+        var username = _configuration["Email:Username"]?.Trim()
             ?? throw new InvalidOperationException("Email username is not configured.");
-        var password = _configuration["Email:Password"]
+        var configuredPassword = _configuration["Email:Password"]
             ?? throw new InvalidOperationException("Email password is not configured.");
+        var password = string.Concat(configuredPassword.Where(character => !char.IsWhiteSpace(character)));
         var fromEmail = _configuration["Email:FromEmail"] ?? username;
         var fromName = _configuration["Email:FromName"] ?? "DormManager";
 
@@ -61,7 +62,10 @@ public sealed class PasswordResetEmailSender
         using var smtp = new SmtpClient(host, port)
         {
             EnableSsl = _configuration.GetValue("Email:EnableSsl", true),
-            Credentials = new NetworkCredential(username, password)
+            UseDefaultCredentials = false,
+            Credentials = new NetworkCredential(username, password),
+            DeliveryMethod = SmtpDeliveryMethod.Network,
+            Timeout = 20000
         };
 
         await smtp.SendMailAsync(message);

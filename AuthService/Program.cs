@@ -213,7 +213,7 @@ app.MapPost("/api/auth/forgot-password", async (
 
         return Results.Problem(
             title: "Không gửi được email đặt lại mật khẩu",
-            detail: "Kiểm tra cấu hình Gmail hoặc thử lại sau.",
+            detail: GetSafeEmailFailureDetail(exception),
             statusCode: StatusCodes.Status502BadGateway);
     }
 
@@ -504,6 +504,37 @@ static DemoUser? TryGetAuthenticatedUser(
 static bool IsValidNewPassword(string password)
 {
     return !string.IsNullOrWhiteSpace(password) && password.Length >= 6;
+}
+
+static string GetSafeEmailFailureDetail(Exception exception)
+{
+    var error = exception.ToString().ToLowerInvariant();
+
+    if (error.Contains("5.7.0") ||
+        error.Contains("5.7.8") ||
+        error.Contains("authentication") ||
+        error.Contains("credentials"))
+    {
+        return "Gmail từ chối đăng nhập. Hãy bật xác minh 2 bước và tạo lại App Password 16 ký tự.";
+    }
+
+    if (error.Contains("5.1.1") ||
+        error.Contains("mailbox unavailable") ||
+        error.Contains("recipient"))
+    {
+        return "Địa chỉ email trong hồ sơ sinh viên không hợp lệ hoặc không nhận được thư.";
+    }
+
+    if (error.Contains("timed out") ||
+        error.Contains("timeout") ||
+        error.Contains("socket") ||
+        error.Contains("connection") ||
+        error.Contains("network"))
+    {
+        return "VPS không kết nối được smtp.gmail.com qua cổng 587. Hãy kiểm tra firewall hoặc nhà cung cấp VPS.";
+    }
+
+    return "Không gửi được email. Hãy kiểm tra Gmail, App Password và email trong hồ sơ sinh viên.";
 }
 
 static object ToAuthResponse(DemoUser user)
