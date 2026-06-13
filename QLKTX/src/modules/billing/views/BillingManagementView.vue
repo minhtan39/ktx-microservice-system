@@ -182,6 +182,17 @@
             hide-details
             class="status-filter"
           />
+          <v-select
+            v-model="invoiceSort"
+            :items="invoiceSortOptions"
+            item-title="title"
+            item-value="value"
+            label="Sắp xếp theo"
+            variant="outlined"
+            density="compact"
+            hide-details
+            class="sort-filter"
+          />
         </div>
       </div>
 
@@ -254,16 +265,29 @@
           <span class="mdi mdi-history"></span>
           <div><h3>Lịch sử thanh toán</h3><p>Dùng chung cho tài khoản admin và nhân viên.</p></div>
         </div>
-        <v-text-field
-          v-model="historySearch"
-          prepend-inner-icon="mdi-magnify"
-          label="Tìm sinh viên hoặc mã giao dịch"
-          variant="outlined"
-          density="compact"
-          hide-details
-          clearable
-          class="history-search"
-        />
+        <div class="history-tools">
+          <v-text-field
+            v-model="historySearch"
+            prepend-inner-icon="mdi-magnify"
+            label="Tìm sinh viên hoặc mã giao dịch"
+            variant="outlined"
+            density="compact"
+            hide-details
+            clearable
+            class="history-search"
+          />
+          <v-select
+            v-model="historySort"
+            :items="historySortOptions"
+            item-title="title"
+            item-value="value"
+            label="Sắp xếp theo"
+            variant="outlined"
+            density="compact"
+            hide-details
+            class="sort-filter"
+          />
+        </div>
       </div>
       <v-data-table
         :headers="historyHeaders"
@@ -354,26 +378,28 @@ const history = ref([])
 const statusFilter = ref('')
 const invoiceSearch = ref('')
 const historySearch = ref('')
+const invoiceSort = ref('default')
+const historySort = ref('default')
 const detailDialog = ref(false)
 const selectedInvoice = ref(null)
 
 const invoiceHeaders = [
-  { title: 'Mã phiếu', key: 'invoiceCode', minWidth: 150 },
-  { title: 'Sinh viên', key: 'studentName', minWidth: 180 },
-  { title: 'Kỳ / Phòng', key: 'billingPeriod', minWidth: 130 },
+  { title: 'Mã phiếu', key: 'invoiceCode', sortable: false, minWidth: 150 },
+  { title: 'Sinh viên', key: 'studentName', sortable: false, minWidth: 180 },
+  { title: 'Kỳ / Phòng', key: 'billingPeriod', sortable: false, minWidth: 130 },
   { title: 'Điện · Nước', key: 'utilityUsage', sortable: false, minWidth: 120 },
-  { title: 'Tổng tiền', key: 'totalAmount', align: 'end', minWidth: 150 },
-  { title: 'Trạng thái', key: 'status', minWidth: 145 },
+  { title: 'Tổng tiền', key: 'totalAmount', sortable: false, align: 'end', minWidth: 150 },
+  { title: 'Trạng thái', key: 'status', sortable: false, minWidth: 145 },
   { title: '', key: 'actions', sortable: false, align: 'end', width: 56 },
 ]
 
 const historyHeaders = [
-  { title: 'Sinh viên', key: 'studentName', minWidth: 190 },
-  { title: 'Phiếu thanh toán', key: 'invoiceCode', minWidth: 160 },
-  { title: 'Thời gian / Đối soát', key: 'paidAt', minWidth: 220 },
-  { title: 'Phương thức', key: 'method', minWidth: 145 },
-  { title: 'Người xác nhận', key: 'confirmedBy', minWidth: 160 },
-  { title: 'Số tiền', key: 'amount', align: 'end', minWidth: 150 },
+  { title: 'Sinh viên', key: 'studentName', sortable: false, minWidth: 190 },
+  { title: 'Phiếu thanh toán', key: 'invoiceCode', sortable: false, minWidth: 160 },
+  { title: 'Thời gian / Đối soát', key: 'paidAt', sortable: false, minWidth: 220 },
+  { title: 'Phương thức', key: 'method', sortable: false, minWidth: 145 },
+  { title: 'Người xác nhận', key: 'confirmedBy', sortable: false, minWidth: 160 },
+  { title: 'Số tiền', key: 'amount', sortable: false, align: 'end', minWidth: 150 },
 ]
 
 const today = new Date()
@@ -426,10 +452,29 @@ const paidInvoices = computed(() => invoices.value.filter((item) => item.status 
 const unpaidTotal = computed(() => unpaidInvoices.value.reduce((sum, item) => sum + Number(item.totalAmount || 0), 0))
 const paidTotal = computed(() => paidInvoices.value.reduce((sum, item) => sum + Number(item.totalAmount || 0), 0))
 const normalizeSearch = (value) => String(value || '').trim().toLocaleLowerCase('vi')
+const compareText = (left, right) => String(left || '').localeCompare(String(right || ''), 'vi', { sensitivity: 'base', numeric: true })
+const compareDate = (left, right) => {
+  const leftTime = new Date(left || 0).getTime()
+  const rightTime = new Date(right || 0).getTime()
+  return (Number.isNaN(leftTime) ? 0 : leftTime) - (Number.isNaN(rightTime) ? 0 : rightTime)
+}
+const sortItems = (items, sortValue, dateKey, amountKey) => {
+  const sorted = [...items]
+
+  switch (sortValue) {
+    case 'newest': return sorted.sort((left, right) => compareDate(right[dateKey], left[dateKey]))
+    case 'oldest': return sorted.sort((left, right) => compareDate(left[dateKey], right[dateKey]))
+    case 'student-asc': return sorted.sort((left, right) => compareText(left.studentName, right.studentName))
+    case 'student-desc': return sorted.sort((left, right) => compareText(right.studentName, left.studentName))
+    case 'amount-asc': return sorted.sort((left, right) => Number(left[amountKey] || 0) - Number(right[amountKey] || 0))
+    case 'amount-desc': return sorted.sort((left, right) => Number(right[amountKey] || 0) - Number(left[amountKey] || 0))
+    default: return sorted
+  }
+}
 const filteredInvoices = computed(() => {
   const keyword = normalizeSearch(invoiceSearch.value)
 
-  return invoices.value.filter((item) => {
+  const filtered = invoices.value.filter((item) => {
     const matchesStatus = !statusFilter.value || item.status === statusFilter.value
     const matchesKeyword = !keyword || [
       item.invoiceCode,
@@ -442,12 +487,12 @@ const filteredInvoices = computed(() => {
 
     return matchesStatus && matchesKeyword
   })
+
+  return sortItems(filtered, invoiceSort.value, 'issuedAt', 'totalAmount')
 })
 const filteredHistory = computed(() => {
   const keyword = normalizeSearch(historySearch.value)
-  if (!keyword) return history.value
-
-  return history.value.filter((item) => [
+  const filtered = !keyword ? history.value : history.value.filter((item) => [
     item.studentName,
     item.studentCode,
     item.invoiceCode,
@@ -455,12 +500,34 @@ const filteredHistory = computed(() => {
     item.confirmedBy,
     item.method,
   ].some((value) => normalizeSearch(value).includes(keyword)))
+
+  return sortItems(filtered, historySort.value, 'paidAt', 'amount')
 })
 
 const statusOptions = [
   { title: 'Tất cả', value: '' },
   { title: 'Chưa thanh toán', value: 'Unpaid' },
   { title: 'Đã thanh toán', value: 'Paid' },
+]
+
+const invoiceSortOptions = [
+  { title: 'Mặc định', value: 'default' },
+  { title: 'Ngày phát hành: Mới nhất trước', value: 'newest' },
+  { title: 'Ngày phát hành: Cũ nhất trước', value: 'oldest' },
+  { title: 'Sinh viên: A → Z', value: 'student-asc' },
+  { title: 'Sinh viên: Z → A', value: 'student-desc' },
+  { title: 'Tổng tiền: Thấp → cao', value: 'amount-asc' },
+  { title: 'Tổng tiền: Cao → thấp', value: 'amount-desc' },
+]
+
+const historySortOptions = [
+  { title: 'Mặc định', value: 'default' },
+  { title: 'Thời gian thanh toán: Mới nhất trước', value: 'newest' },
+  { title: 'Thời gian thanh toán: Cũ nhất trước', value: 'oldest' },
+  { title: 'Sinh viên: A → Z', value: 'student-asc' },
+  { title: 'Sinh viên: Z → A', value: 'student-desc' },
+  { title: 'Số tiền: Thấp → cao', value: 'amount-asc' },
+  { title: 'Số tiền: Cao → thấp', value: 'amount-desc' },
 ]
 
 const formatMoney = (value) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 }).format(Number(value || 0))
@@ -644,10 +711,9 @@ onMounted(loadAll)
 .issue-footer span { color: #647168; }
 .issue-footer strong { color: #0f7f51; font-size: 28px; }
 .table-heading { align-items: flex-end; }
-.table-tools { display: grid; grid-template-columns: minmax(260px, 1fr) 190px; gap: 10px; width: min(520px, 100%); }
-.search-field, .history-search { min-width: 0; }
-.history-search { width: min(330px, 100%); }
-.status-filter { min-width: 0; }
+.table-tools { display: grid; grid-template-columns: minmax(240px, 1fr) 170px 250px; gap: 10px; width: min(760px, 100%); }
+.history-tools { display: grid; grid-template-columns: minmax(230px, 1fr) 280px; gap: 10px; width: min(630px, 100%); }
+.search-field, .history-search, .status-filter, .sort-filter { min-width: 0; }
 .ant-table { overflow: hidden; border: 1px solid #dfe6e1; border-radius: 6px; box-shadow: 0 1px 2px rgba(26, 43, 34, 0.04); }
 .ant-table :deep(.v-table__wrapper) { overflow-x: auto; }
 .ant-table :deep(table) { min-width: 920px; }
@@ -677,5 +743,5 @@ onMounted(loadAll)
 .qr-panel img { width: 280px; max-width: 100%; }
 .qr-missing .mdi { font-size: 64px; color: #9aa49e; }
 @media (max-width: 1100px) { .metric-grid { grid-template-columns: repeat(2, 1fr); } .form-grid { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 720px) { .page-heading, .section-title, .issue-footer { align-items: stretch; flex-direction: column; } .metric-grid, .form-grid, .meter-grid, .invoice-detail { grid-template-columns: 1fr; } .page-heading h2 { font-size: 24px; } .table-tools { grid-template-columns: 1fr; width: 100%; } .history-search { width: 100%; } .ant-table :deep(.v-data-table-footer) { align-items: flex-start; flex-wrap: wrap; padding: 10px 8px; } }
+@media (max-width: 720px) { .page-heading, .section-title, .issue-footer { align-items: stretch; flex-direction: column; } .metric-grid, .form-grid, .meter-grid, .invoice-detail { grid-template-columns: 1fr; } .page-heading h2 { font-size: 24px; } .table-tools, .history-tools { grid-template-columns: 1fr; width: 100%; } .ant-table :deep(.v-data-table-footer) { align-items: flex-start; flex-wrap: wrap; padding: 10px 8px; } }
 </style>
