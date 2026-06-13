@@ -152,7 +152,7 @@
     </section>
 
     <section class="list-panel">
-      <div class="section-title">
+      <div class="section-title table-heading">
         <div>
           <span class="mdi mdi-file-document-multiple-outline"></span>
           <div>
@@ -160,77 +160,150 @@
             <p>Webhook ngân hàng sẽ tự đổi trạng thái khi đúng mã và đủ tiền.</p>
           </div>
         </div>
-        <v-select
-          v-model="statusFilter"
-          :items="statusOptions"
-          item-title="title"
-          item-value="value"
-          label="Trạng thái"
-          variant="outlined"
-          density="compact"
-          hide-details
-          class="status-filter"
-        />
+        <div class="table-tools">
+          <v-text-field
+            v-model="invoiceSearch"
+            prepend-inner-icon="mdi-magnify"
+            label="Tìm mã phiếu hoặc sinh viên"
+            variant="outlined"
+            density="compact"
+            hide-details
+            clearable
+            class="search-field"
+          />
+          <v-select
+            v-model="statusFilter"
+            :items="statusOptions"
+            item-title="title"
+            item-value="value"
+            label="Trạng thái"
+            variant="outlined"
+            density="compact"
+            hide-details
+            class="status-filter"
+          />
+        </div>
       </div>
 
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Mã phiếu</th>
-              <th>Sinh viên</th>
-              <th>Kỳ / Phòng</th>
-              <th>Điện · Nước</th>
-              <th>Tổng tiền</th>
-              <th>Trạng thái</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="invoice in filteredInvoices" :key="invoice.id">
-              <td><strong>{{ invoice.invoiceCode }}</strong><small>{{ formatDate(invoice.issuedAt) }}</small></td>
-              <td><strong>{{ invoice.studentName }}</strong><small>{{ invoice.studentCode }}</small></td>
-              <td><strong>{{ invoice.billingPeriod }}</strong><small>Phòng {{ invoice.roomName }}</small></td>
-              <td><strong>{{ invoice.electricityUsage }} · {{ invoice.waterUsage }}</strong><small>Số tiêu thụ</small></td>
-              <td><strong class="money">{{ formatMoney(invoice.totalAmount) }}</strong><small>Hạn {{ formatDate(invoice.dueDate) }}</small></td>
-              <td><span :class="['status-pill', invoice.status.toLowerCase()]">{{ statusLabel(invoice.status) }}</span></td>
-              <td>
-                <v-menu>
-                  <template #activator="{ props }">
-                    <v-btn v-bind="props" icon="mdi-dots-vertical" variant="text" density="comfortable" />
-                  </template>
-                  <v-list density="compact">
-                    <v-list-item prepend-icon="mdi-eye-outline" title="Xem chi tiết" @click="openDetail(invoice)" />
-                    <v-list-item prepend-icon="mdi-printer-outline" title="In phiếu" @click="printInvoice(invoice)" />
-                    <v-list-item prepend-icon="mdi-email-fast-outline" title="Gửi lại email" @click="resendEmail(invoice)" />
-                    <v-list-item v-if="invoice.status !== 'Paid'" prepend-icon="mdi-check-decagram-outline" title="Xác nhận đã thanh toán" @click="markPaid(invoice)" />
-                  </v-list>
-                </v-menu>
-              </td>
-            </tr>
-            <tr v-if="filteredInvoices.length === 0">
-              <td colspan="7" class="empty-row">Chưa có phiếu thanh toán phù hợp.</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+      <v-data-table
+        :headers="invoiceHeaders"
+        :items="filteredInvoices"
+        :loading="loading"
+        item-value="id"
+        :items-per-page="8"
+        :items-per-page-options="[5, 8, 15, 30]"
+        items-per-page-text="Số dòng mỗi trang"
+        density="comfortable"
+        hover
+        class="ant-table"
+        loading-text="Đang tải danh sách phiếu..."
+        no-data-text="Chưa có phiếu thanh toán phù hợp."
+      >
+        <template #item.invoiceCode="{ item }">
+          <div class="cell-stack">
+            <strong>{{ item.invoiceCode }}</strong>
+            <small>{{ formatDate(item.issuedAt) }}</small>
+          </div>
+        </template>
+        <template #item.studentName="{ item }">
+          <div class="cell-stack">
+            <strong>{{ item.studentName }}</strong>
+            <small>{{ item.studentCode }}</small>
+          </div>
+        </template>
+        <template #item.billingPeriod="{ item }">
+          <div class="cell-stack">
+            <strong>{{ item.billingPeriod }}</strong>
+            <small>Phòng {{ item.roomName }}</small>
+          </div>
+        </template>
+        <template #item.utilityUsage="{ item }">
+          <div class="cell-stack">
+            <strong>{{ item.electricityUsage }} · {{ item.waterUsage }}</strong>
+            <small>Điện · Nước</small>
+          </div>
+        </template>
+        <template #item.totalAmount="{ item }">
+          <div class="cell-stack">
+            <strong class="money">{{ formatMoney(item.totalAmount) }}</strong>
+            <small>Hạn {{ formatDate(item.dueDate) }}</small>
+          </div>
+        </template>
+        <template #item.status="{ item }">
+          <span :class="['status-pill', item.status.toLowerCase()]">{{ statusLabel(item.status) }}</span>
+        </template>
+        <template #item.actions="{ item }">
+          <v-menu location="bottom end">
+            <template #activator="{ props }">
+              <v-btn v-bind="props" icon="mdi-dots-horizontal" variant="text" density="comfortable" title="Thao tác" />
+            </template>
+            <v-list density="compact" min-width="220">
+              <v-list-item prepend-icon="mdi-eye-outline" title="Xem chi tiết" @click="openDetail(item)" />
+              <v-list-item prepend-icon="mdi-printer-outline" title="In phiếu" @click="printInvoice(item)" />
+              <v-list-item prepend-icon="mdi-email-fast-outline" title="Gửi lại email" @click="resendEmail(item)" />
+              <v-list-item v-if="item.status !== 'Paid'" prepend-icon="mdi-check-decagram-outline" title="Xác nhận đã thanh toán" @click="markPaid(item)" />
+            </v-list>
+          </v-menu>
+        </template>
+      </v-data-table>
     </section>
 
     <section class="history-panel">
-      <div class="section-title">
+      <div class="section-title table-heading">
         <div>
           <span class="mdi mdi-history"></span>
           <div><h3>Lịch sử thanh toán</h3><p>Dùng chung cho tài khoản admin và nhân viên.</p></div>
         </div>
+        <v-text-field
+          v-model="historySearch"
+          prepend-inner-icon="mdi-magnify"
+          label="Tìm sinh viên hoặc mã giao dịch"
+          variant="outlined"
+          density="compact"
+          hide-details
+          clearable
+          class="history-search"
+        />
       </div>
-      <div class="history-list">
-        <article v-for="item in history.slice(0, 12)" :key="item.id">
-          <span class="mdi mdi-check-circle-outline"></span>
-          <div><strong>{{ item.studentName }} · {{ item.invoiceCode }}</strong><small>{{ formatDateTime(item.paidAt) }} · {{ item.referenceCode }}</small></div>
-          <b>{{ formatMoney(item.amount) }}</b>
-        </article>
-        <p v-if="history.length === 0" class="empty-row">Chưa phát sinh giao dịch đã hoàn thành.</p>
-      </div>
+      <v-data-table
+        :headers="historyHeaders"
+        :items="filteredHistory"
+        :loading="loading"
+        item-value="id"
+        :items-per-page="6"
+        :items-per-page-options="[6, 12, 24]"
+        items-per-page-text="Số dòng mỗi trang"
+        density="comfortable"
+        hover
+        class="ant-table"
+        loading-text="Đang tải lịch sử thanh toán..."
+        no-data-text="Chưa phát sinh giao dịch đã hoàn thành."
+      >
+        <template #item.studentName="{ item }">
+          <div class="cell-stack history-student">
+            <strong><span class="mdi mdi-check-circle-outline"></span>{{ item.studentName }}</strong>
+            <small>{{ item.studentCode }}</small>
+          </div>
+        </template>
+        <template #item.invoiceCode="{ item }">
+          <div class="cell-stack">
+            <strong>{{ item.invoiceCode }}</strong>
+            <small>Kỳ {{ item.billingPeriod }}</small>
+          </div>
+        </template>
+        <template #item.paidAt="{ item }">
+          <div class="cell-stack">
+            <strong>{{ formatDateTime(item.paidAt) }}</strong>
+            <small>{{ item.referenceCode }}</small>
+          </div>
+        </template>
+        <template #item.method="{ item }">
+          <span class="method-tag">{{ paymentMethodLabel(item.method) }}</span>
+        </template>
+        <template #item.amount="{ item }">
+          <strong class="money">{{ formatMoney(item.amount) }}</strong>
+        </template>
+      </v-data-table>
     </section>
 
     <v-dialog v-model="detailDialog" max-width="820">
@@ -279,8 +352,29 @@ const rooms = ref([])
 const invoices = ref([])
 const history = ref([])
 const statusFilter = ref('')
+const invoiceSearch = ref('')
+const historySearch = ref('')
 const detailDialog = ref(false)
 const selectedInvoice = ref(null)
+
+const invoiceHeaders = [
+  { title: 'Mã phiếu', key: 'invoiceCode', minWidth: 150 },
+  { title: 'Sinh viên', key: 'studentName', minWidth: 180 },
+  { title: 'Kỳ / Phòng', key: 'billingPeriod', minWidth: 130 },
+  { title: 'Điện · Nước', key: 'utilityUsage', sortable: false, minWidth: 120 },
+  { title: 'Tổng tiền', key: 'totalAmount', align: 'end', minWidth: 150 },
+  { title: 'Trạng thái', key: 'status', minWidth: 145 },
+  { title: '', key: 'actions', sortable: false, align: 'end', width: 56 },
+]
+
+const historyHeaders = [
+  { title: 'Sinh viên', key: 'studentName', minWidth: 190 },
+  { title: 'Phiếu thanh toán', key: 'invoiceCode', minWidth: 160 },
+  { title: 'Thời gian / Đối soát', key: 'paidAt', minWidth: 220 },
+  { title: 'Phương thức', key: 'method', minWidth: 145 },
+  { title: 'Người xác nhận', key: 'confirmedBy', minWidth: 160 },
+  { title: 'Số tiền', key: 'amount', align: 'end', minWidth: 150 },
+]
 
 const today = new Date()
 const defaultPeriod = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`
@@ -331,9 +425,37 @@ const unpaidInvoices = computed(() => invoices.value.filter((item) => item.statu
 const paidInvoices = computed(() => invoices.value.filter((item) => item.status === 'Paid'))
 const unpaidTotal = computed(() => unpaidInvoices.value.reduce((sum, item) => sum + Number(item.totalAmount || 0), 0))
 const paidTotal = computed(() => paidInvoices.value.reduce((sum, item) => sum + Number(item.totalAmount || 0), 0))
-const filteredInvoices = computed(() => statusFilter.value
-  ? invoices.value.filter((item) => item.status === statusFilter.value)
-  : invoices.value)
+const normalizeSearch = (value) => String(value || '').trim().toLocaleLowerCase('vi')
+const filteredInvoices = computed(() => {
+  const keyword = normalizeSearch(invoiceSearch.value)
+
+  return invoices.value.filter((item) => {
+    const matchesStatus = !statusFilter.value || item.status === statusFilter.value
+    const matchesKeyword = !keyword || [
+      item.invoiceCode,
+      item.studentName,
+      item.studentCode,
+      item.billingPeriod,
+      item.roomName,
+      item.paymentCode,
+    ].some((value) => normalizeSearch(value).includes(keyword))
+
+    return matchesStatus && matchesKeyword
+  })
+})
+const filteredHistory = computed(() => {
+  const keyword = normalizeSearch(historySearch.value)
+  if (!keyword) return history.value
+
+  return history.value.filter((item) => [
+    item.studentName,
+    item.studentCode,
+    item.invoiceCode,
+    item.referenceCode,
+    item.confirmedBy,
+    item.method,
+  ].some((value) => normalizeSearch(value).includes(keyword)))
+})
 
 const statusOptions = [
   { title: 'Tất cả', value: '' },
@@ -345,14 +467,18 @@ const formatMoney = (value) => new Intl.NumberFormat('vi-VN', { style: 'currency
 const formatDate = (value) => value ? new Intl.DateTimeFormat('vi-VN').format(new Date(value)) : '-'
 const formatDateTime = (value) => value ? new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value)) : '-'
 const statusLabel = (status) => ({ Paid: 'Đã thanh toán', Unpaid: 'Chưa thanh toán', Active: 'Đang hiệu lực', Expired: 'Hết hạn', Cancelled: 'Đã hủy' }[status] || status || '-')
+const paymentMethodLabel = (method) => ({
+  BankWebhook: 'Ngân hàng tự động',
+  Manual: 'Xác nhận thủ công',
+}[method] || method || 'Không xác định')
 
 const loadAll = async () => {
   loading.value = true
   error.value = ''
   try {
     const [studentResponse, contractResponse, roomResponse, invoiceResponse, historyResponse] = await Promise.all([
-      api.get('/students'),
-      api.get('/contracts'),
+      api.get('/students').catch(() => ({ data: [] })),
+      api.get('/contracts').catch(() => ({ data: [] })),
       api.get('/rooms').catch(() => ({ data: [] })),
       api.get('/billing/monthly-invoices'),
       api.get('/billing/payment-history'),
@@ -517,24 +643,32 @@ onMounted(loadAll)
 .issue-footer > div { display: grid; gap: 2px; }
 .issue-footer span { color: #647168; }
 .issue-footer strong { color: #0f7f51; font-size: 28px; }
-.status-filter { max-width: 220px; }
-.table-wrap { overflow-x: auto; }
-table { width: 100%; border-collapse: collapse; min-width: 920px; }
-th { padding: 11px 12px; background: #f3f7f4; color: #58675e; text-align: left; font-size: 12px; text-transform: uppercase; }
-td { padding: 13px 12px; border-bottom: 1px solid #e5ebe7; vertical-align: middle; }
-td strong, td small { display: block; }
-td small { margin-top: 4px; color: #758179; }
+.table-heading { align-items: flex-end; }
+.table-tools { display: grid; grid-template-columns: minmax(260px, 1fr) 190px; gap: 10px; width: min(520px, 100%); }
+.search-field, .history-search { min-width: 0; }
+.history-search { width: min(330px, 100%); }
+.status-filter { min-width: 0; }
+.ant-table { overflow: hidden; border: 1px solid #dfe6e1; border-radius: 6px; box-shadow: 0 1px 2px rgba(26, 43, 34, 0.04); }
+.ant-table :deep(.v-table__wrapper) { overflow-x: auto; }
+.ant-table :deep(table) { min-width: 920px; }
+.ant-table :deep(thead th) { height: 46px; background: #f5f7f6; color: #4e5c54; font-size: 12px; font-weight: 800; letter-spacing: 0; white-space: nowrap; }
+.ant-table :deep(tbody td) { height: 62px; border-bottom-color: #e8ede9; color: #26342c; }
+.ant-table :deep(tbody tr:last-child td) { border-bottom: 0; }
+.ant-table :deep(tbody tr:hover td) { background: #f6fbf8 !important; }
+.ant-table :deep(.v-data-table-footer) { min-height: 56px; border-top: 1px solid #e8ede9; background: #fff; }
+.ant-table :deep(.v-data-table-rows-no-data td) { padding: 34px 16px; color: #748078; text-align: center; }
+.cell-stack { display: grid; gap: 3px; min-width: 0; }
+.cell-stack strong, .cell-stack small { display: block; overflow: hidden; text-overflow: ellipsis; }
+.cell-stack strong { color: #203029; font-size: 14px; }
+.cell-stack small { color: #748078; font-size: 12px; }
+.history-student strong { display: flex; align-items: center; gap: 7px; }
+.history-student .mdi { color: #0f985d; font-size: 19px; }
 .money { color: #0f7f51; }
 .status-pill { display: inline-flex; padding: 5px 9px; border-radius: 999px; font-size: 12px; font-weight: 800; }
 .status-pill.unpaid { background: #fff2d7; color: #9b6200; }
 .status-pill.paid { background: #def7e8; color: #087947; }
+.method-tag { display: inline-flex; padding: 5px 9px; border: 1px solid #cfe0d6; border-radius: 5px; background: #f3faf6; color: #25714e; font-size: 12px; font-weight: 700; white-space: nowrap; }
 .empty-row { padding: 28px; text-align: center; color: #77837b; }
-.history-list { display: grid; }
-.history-list article { padding: 13px 4px; border-bottom: 1px solid #e5ebe7; }
-.history-list article > .mdi { color: #0f9b60; font-size: 24px; }
-.history-list article > div { flex: 1; display: grid; }
-.history-list small { color: #718077; }
-.history-list b { color: #0f7f51; }
 .invoice-detail { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 24px; }
 .detail-lines p { display: flex; justify-content: space-between; gap: 20px; padding: 10px 0; margin: 0; border-bottom: 1px solid #e5ebe7; }
 .detail-lines span { color: #67746c; }
@@ -543,5 +677,5 @@ td small { margin-top: 4px; color: #758179; }
 .qr-panel img { width: 280px; max-width: 100%; }
 .qr-missing .mdi { font-size: 64px; color: #9aa49e; }
 @media (max-width: 1100px) { .metric-grid { grid-template-columns: repeat(2, 1fr); } .form-grid { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 720px) { .page-heading, .section-title, .issue-footer { align-items: stretch; flex-direction: column; } .metric-grid, .form-grid, .meter-grid, .invoice-detail { grid-template-columns: 1fr; } .page-heading h2 { font-size: 24px; } .status-filter { max-width: none; } }
+@media (max-width: 720px) { .page-heading, .section-title, .issue-footer { align-items: stretch; flex-direction: column; } .metric-grid, .form-grid, .meter-grid, .invoice-detail { grid-template-columns: 1fr; } .page-heading h2 { font-size: 24px; } .table-tools { grid-template-columns: 1fr; width: 100%; } .history-search { width: 100%; } .ant-table :deep(.v-data-table-footer) { align-items: flex-start; flex-wrap: wrap; padding: 10px 8px; } }
 </style>
