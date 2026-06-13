@@ -137,6 +137,8 @@ const isStudent = computed(() => roleKey.value === 'Student')
 
 const titleByRoute = {
   StudentPortal: 'Theo dõi hồ sơ, đăng ký nội trú và hợp đồng của bạn',
+  ChangePassword: 'Xác nhận mật khẩu hiện tại và bảo vệ tài khoản của bạn',
+  StudentPayments: 'Theo dõi hóa đơn, quét QR và lịch sử thanh toán nội trú',
   StudentServiceDashboard: 'Nắm nhanh tình hình phòng ở, đơn đăng ký và hợp đồng',
   StudentManage: 'Quản lý hồ sơ sinh viên, lớp, khoa và lịch sử lưu trú',
   RoomRegistrationCreate: 'Tiếp nhận đăng ký nội trú trực tuyến',
@@ -145,6 +147,7 @@ const titleByRoute = {
   ContractManage: 'Theo dõi hiệu lực và xử lý trạng thái hợp đồng',
   RoomDashboard: 'Sơ đồ phòng, số giường và trạng thái vận hành',
   IncidentManage: 'Tiếp nhận sự cố phòng ở và theo dõi xử lý',
+  BillingManagement: 'Nhập chỉ số điện nước, phát hành phiếu và đối soát thanh toán',
   AccountManage: 'Quản lý tài khoản đăng nhập của nhân viên và sinh viên',
   SystemLogs: 'Nhật ký hệ thống và kiểm tra vận hành',
 }
@@ -155,6 +158,18 @@ const studentOverviewItems = [
     names: ['StudentPortal'],
     icon: 'mdi-account-school-outline',
     label: 'Cổng sinh viên',
+  },
+  {
+    to: '/student/change-password',
+    names: ['ChangePassword'],
+    icon: 'mdi-lock-reset',
+    label: 'Đổi mật khẩu',
+  },
+  {
+    to: '/student/payments',
+    names: ['StudentPayments'],
+    icon: 'mdi-credit-card-check-outline',
+    label: 'Thanh toán',
   },
 ]
 
@@ -216,7 +231,13 @@ const adminServiceItems = [
     to: '/finance/incidents',
     names: ['IncidentManage'],
     icon: 'mdi-tools',
-    label: 'Billing & Maintenance',
+    label: 'Sửa chữa & bảo trì',
+  },
+  {
+    to: '/finance/billing',
+    names: ['BillingManagement'],
+    icon: 'mdi-receipt-text-check-outline',
+    label: 'Hóa đơn & thanh toán',
   },
   {
     to: '/auth/accounts',
@@ -261,7 +282,7 @@ const pageTitle = computed(() =>
 const routeBadge = computed(() => {
   if (isStudent.value) return 'Sinh viên'
   if (['RoomDashboard'].includes(route.name)) return 'Nhóm 1'
-  if (['IncidentManage', 'SystemLogs', 'AccountManage'].includes(route.name)) return 'Nhóm 3'
+  if (['IncidentManage', 'BillingManagement', 'SystemLogs', 'AccountManage'].includes(route.name)) return 'Nhóm 3'
   return 'Nhóm 2'
 })
 
@@ -533,6 +554,7 @@ const logout = async () => {
 .main-panel {
   min-width: 0;
   min-height: 100vh;
+  overflow-x: clip;
   background: transparent;
 }
 
@@ -665,7 +687,8 @@ const logout = async () => {
 }
 
 .page-body {
-  width: min(100%, 1500px);
+  width: auto;
+  max-width: 1500px;
   margin: 0 auto;
   padding: 30px 34px 54px;
 }

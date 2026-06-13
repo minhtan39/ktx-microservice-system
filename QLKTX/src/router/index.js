@@ -30,6 +30,16 @@ const routes = [
     component: () => import('../modules/auth/views/LoginView.vue'),
   },
   {
+    path: '/forgot-password',
+    name: 'ForgotPassword',
+    component: () => import('../modules/auth/views/ForgotPasswordView.vue'),
+  },
+  {
+    path: '/reset-password',
+    name: 'ResetPassword',
+    component: () => import('../modules/auth/views/ResetPasswordView.vue'),
+  },
+  {
     path: '/',
     meta: { requiresAuth: true },
     component: () => import('../components/MainLayout.vue'),
@@ -40,6 +50,20 @@ const routes = [
         meta: { roles: STUDENT_ROLES },
         component: () =>
           import('../modules/contract-student/views/StudentPortalView.vue'),
+      },
+      {
+        path: 'student/change-password',
+        name: 'ChangePassword',
+        meta: { roles: STUDENT_ROLES },
+        component: () =>
+          import('../modules/auth/views/ChangePasswordView.vue'),
+      },
+      {
+        path: 'student/payments',
+        name: 'StudentPayments',
+        meta: { roles: STUDENT_ROLES },
+        component: () =>
+          import('../modules/billing/views/StudentPaymentsView.vue'),
       },
       {
         path: 'student-service/dashboard',
@@ -98,6 +122,13 @@ const routes = [
           import('../modules/finance/views/IncidentManage.vue'),
       },
       {
+        path: 'finance/billing',
+        name: 'BillingManagement',
+        meta: { roles: ADMIN_ROLES },
+        component: () =>
+          import('../modules/billing/views/BillingManagementView.vue'),
+      },
+      {
         path: 'auth/accounts',
         name: 'AccountManage',
         meta: { roles: ADMIN_ONLY_ROLES },
@@ -130,6 +161,7 @@ const routes = [
 const router = createRouter({
   history: createWebHistory(),
   routes,
+  scrollBehavior: () => ({ top: 0, left: 0 }),
 })
 
 router.beforeEach((to) => {

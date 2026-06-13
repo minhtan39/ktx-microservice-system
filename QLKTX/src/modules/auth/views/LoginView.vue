@@ -43,6 +43,10 @@
           {{ error }}
         </v-alert>
 
+        <v-alert v-if="success" type="success" variant="tonal" class="mb-4">
+          {{ success }}
+        </v-alert>
+
         <v-form @submit.prevent="login">
           <v-text-field
             v-model="form.username"
@@ -62,6 +66,10 @@
             autocomplete="current-password"
             @click:append-inner="showPassword = !showPassword"
           />
+
+          <div class="form-links">
+            <router-link to="/forgot-password">Quên mật khẩu?</router-link>
+          </div>
 
           <v-btn
             block
@@ -85,12 +93,16 @@
 
 <script setup>
 import { reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
 
 const router = useRouter()
+const route = useRoute()
 const loading = ref(false)
 const error = ref('')
+const success = ref(route.query.passwordChanged === '1'
+  ? 'Mật khẩu đã được thay đổi. Vui lòng đăng nhập lại.'
+  : '')
 const showPassword = ref(false)
 
 const form = reactive({
@@ -106,6 +118,7 @@ const login = async () => {
   try {
     loading.value = true
     error.value = ''
+    success.value = ''
 
     const response = await api.post('/auth/login', {
       username: form.username,
@@ -400,6 +413,23 @@ const login = async () => {
   margin: 0;
   font-size: 13px;
   line-height: 1.45;
+}
+
+.form-links {
+  display: flex;
+  justify-content: flex-end;
+  margin: -6px 0 18px;
+}
+
+.form-links a {
+  color: var(--brand-dark);
+  font-size: 14px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.form-links a:hover {
+  text-decoration: underline;
 }
 
 @media (max-width: 920px) {

@@ -171,7 +171,7 @@
         <div class="panel-title">
           <span class="mdi mdi-tools"></span>
           <div>
-            <strong>Yeu cau sua chua</strong>
+            <strong>Yêu cầu sửa chữa</strong>
             <small>Sinh viên gửi sự cố phòng ở, nhân viên/admin tiếp nhận và cập nhật trạng thái</small>
           </div>
         </div>
@@ -181,7 +181,7 @@
             <v-col cols="12" sm="4">
               <v-text-field
                 v-model="incidentForm.roomName"
-                label="Phong"
+                label="Phòng"
                 density="comfortable"
               />
             </v-col>
@@ -189,7 +189,7 @@
               <v-select
                 v-model="incidentForm.building"
                 :items="buildingOptions"
-                label="Toa"
+                label="Tòa"
                 density="comfortable"
               />
             </v-col>
@@ -197,6 +197,8 @@
               <v-select
                 v-model="incidentForm.category"
                 :items="incidentCategories"
+                item-title="title"
+                item-value="value"
                 label="Loại sự cố"
                 density="comfortable"
               />
@@ -228,12 +230,12 @@
           <table>
             <thead>
               <tr>
-                <th>Ngay gui</th>
-                <th>Phong</th>
+                <th>Ngày gửi</th>
+                <th>Phòng</th>
                 <th>Loại sự cố</th>
                 <th>Mô tả</th>
-                <th>Trang thai</th>
-                <th>Phan hoi</th>
+                <th>Trạng thái</th>
+                <th>Phản hồi</th>
               </tr>
             </thead>
             <tbody>
@@ -243,7 +245,7 @@
               <tr v-for="incident in ownIncidents" :key="incident.id">
                 <td>{{ formatDate(incident.createdAt) }}</td>
                 <td>{{ incident.building }}-{{ incident.roomName }}</td>
-                <td>{{ incident.category }}</td>
+                <td>{{ incidentCategoryLabel(incident.category) }}</td>
                 <td>{{ incident.description }}</td>
                 <td>
                   <span class="status-pill" :class="incidentStatusClass(incident.status)">
@@ -388,7 +390,13 @@ const form = reactive({
   endDate: '',
 })
 
-const incidentCategories = ['Electric', 'Water', 'Furniture', 'Internet', 'Other']
+const incidentCategories = [
+  { title: 'Điện', value: 'Electric' },
+  { title: 'Nước', value: 'Water' },
+  { title: 'Nội thất', value: 'Furniture' },
+  { title: 'Internet', value: 'Internet' },
+  { title: 'Khác', value: 'Other' },
+]
 const incidentSubmitting = ref(false)
 const incidentForm = reactive({
   roomName: '',
@@ -505,7 +513,7 @@ const submitIncident = async () => {
   }
 
   if (!incidentForm.roomName.trim() || !incidentForm.description.trim()) {
-    error.value = 'Vui long nhap phong va mo ta su co.'
+    error.value = 'Vui lòng nhập phòng và mô tả sự cố.'
     return
   }
 
@@ -601,11 +609,15 @@ const statusClass = (status) => {
 
 const incidentStatusLabel = (status) => {
   const normalized = String(status || '').toLowerCase()
-  if (normalized === 'new') return 'Moi gui'
-  if (normalized === 'processing') return 'Dang xu ly'
-  if (normalized === 'done') return 'Hoan thanh'
-  if (normalized === 'rejected') return 'Tu choi'
-  return status || 'Chua cap nhat'
+  if (normalized === 'new') return 'Mới gửi'
+  if (normalized === 'processing') return 'Đang xử lý'
+  if (normalized === 'done') return 'Hoàn thành'
+  if (normalized === 'rejected') return 'Từ chối'
+  return status || 'Chưa cập nhật'
+}
+
+const incidentCategoryLabel = (category) => {
+  return incidentCategories.find((item) => item.value === category)?.title || category
 }
 
 const incidentStatusClass = (status) => {
