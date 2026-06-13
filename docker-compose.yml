@@ -24,6 +24,16 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       Accounts__DataFile: "/app/data/accounts.json"
+      PasswordReset__DataFile: "/app/data/password-reset-tokens.json"
+      PasswordReset__LifetimeMinutes: "30"
+      Frontend__BaseUrl: "${FRONTEND_BASE_URL:-http://103.188.242.37}"
+      Email__SmtpHost: "smtp.gmail.com"
+      Email__SmtpPort: "587"
+      Email__EnableSsl: "true"
+      Email__Username: "${GMAIL_USERNAME:-}"
+      Email__Password: "${GMAIL_APP_PASSWORD:-}"
+      Email__FromEmail: "${GMAIL_USERNAME:-}"
+      Email__FromName: "DormManager"
     volumes:
       - auth-data:/app/data
 

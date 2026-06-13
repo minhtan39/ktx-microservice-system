@@ -30,6 +30,16 @@ const routes = [
     component: () => import('../modules/auth/views/LoginView.vue'),
   },
   {
+    path: '/forgot-password',
+    name: 'ForgotPassword',
+    component: () => import('../modules/auth/views/ForgotPasswordView.vue'),
+  },
+  {
+    path: '/reset-password',
+    name: 'ResetPassword',
+    component: () => import('../modules/auth/views/ResetPasswordView.vue'),
+  },
+  {
     path: '/',
     meta: { requiresAuth: true },
     component: () => import('../components/MainLayout.vue'),
@@ -40,6 +50,13 @@ const routes = [
         meta: { roles: STUDENT_ROLES },
         component: () =>
           import('../modules/contract-student/views/StudentPortalView.vue'),
+      },
+      {
+        path: 'student/change-password',
+        name: 'ChangePassword',
+        meta: { roles: STUDENT_ROLES },
+        component: () =>
+          import('../modules/auth/views/ChangePasswordView.vue'),
       },
       {
         path: 'student-service/dashboard',

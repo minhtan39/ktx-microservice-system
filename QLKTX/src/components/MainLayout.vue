@@ -137,6 +137,7 @@ const isStudent = computed(() => roleKey.value === 'Student')
 
 const titleByRoute = {
   StudentPortal: 'Theo dõi hồ sơ, đăng ký nội trú và hợp đồng của bạn',
+  ChangePassword: 'Xác nhận mật khẩu hiện tại và bảo vệ tài khoản của bạn',
   StudentServiceDashboard: 'Nắm nhanh tình hình phòng ở, đơn đăng ký và hợp đồng',
   StudentManage: 'Quản lý hồ sơ sinh viên, lớp, khoa và lịch sử lưu trú',
   RoomRegistrationCreate: 'Tiếp nhận đăng ký nội trú trực tuyến',
@@ -155,6 +156,12 @@ const studentOverviewItems = [
     names: ['StudentPortal'],
     icon: 'mdi-account-school-outline',
     label: 'Cổng sinh viên',
+  },
+  {
+    to: '/student/change-password',
+    names: ['ChangePassword'],
+    icon: 'mdi-lock-reset',
+    label: 'Đổi mật khẩu',
   },
 ]
 

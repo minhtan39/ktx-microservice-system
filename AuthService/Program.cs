@@ -15,6 +15,8 @@ builder.Services.AddCors(options =>
 
 builder.Services.AddOpenApi();
 builder.Services.AddSingleton<AccountStore>();
+builder.Services.AddSingleton<PasswordResetTokenStore>();
+builder.Services.AddSingleton<PasswordResetEmailSender>();
 builder.Services.AddHttpClient("Gateway", client =>
 {
     var gatewayBaseUrl = builder.Configuration["Integration:GatewayBaseUrl"]
@@ -95,6 +97,171 @@ app.MapPost("/api/auth/login", async (
     }
 
     return Results.Ok(ToAuthResponse(user));
+});
+
+app.MapPost("/api/auth/change-password", (
+    ChangePasswordRequest request,
+    HttpRequest httpRequest,
+    PasswordResetTokenStore passwordResetTokens) =>
+{
+    var user = TryGetAuthenticatedUser(httpRequest, users);
+
+    if (user == null)
+        return Results.Unauthorized();
+
+    if (!user.Role.Equals("Student", StringComparison.OrdinalIgnoreCase))
+    {
+        return Results.Json(
+            new { message = "Chức năng này chỉ dành cho sinh viên." },
+            statusCode: StatusCodes.Status403Forbidden);
+    }
+
+    var currentPassword = request.CurrentPassword.Trim();
+    var newPassword = request.NewPassword.Trim();
+
+    if (!user.Password.Equals(currentPassword, StringComparison.Ordinal))
+    {
+        return Results.BadRequest(new { message = "Mật khẩu hiện tại không đúng." });
+    }
+
+    if (!IsValidNewPassword(newPassword))
+    {
+        return Results.BadRequest(new
+        {
+            message = "Mật khẩu mới phải có ít nhất 6 ký tự."
+        });
+    }
+
+    if (user.Password.Equals(newPassword, StringComparison.Ordinal))
+    {
+        return Results.BadRequest(new
+        {
+            message = "Mật khẩu mới phải khác mật khẩu hiện tại."
+        });
+    }
+
+    accountStore.Upsert(user with { Password = newPassword });
+    passwordResetTokens.InvalidateForUsername(user.Username);
+
+    return Results.Ok(new { message = "Đổi mật khẩu thành công." });
+});
+
+app.MapPost("/api/auth/forgot-password", async (
+    ForgotPasswordRequest request,
+    IHttpClientFactory httpClientFactory,
+    PasswordResetTokenStore passwordResetTokens,
+    PasswordResetEmailSender emailSender) =>
+{
+    var studentCode = request.StudentCode.Trim();
+
+    if (string.IsNullOrWhiteSpace(studentCode))
+    {
+        return Results.BadRequest(new { message = "Vui lòng nhập mã sinh viên." });
+    }
+
+    const string genericMessage =
+        "Nếu mã sinh viên hợp lệ và hồ sơ có email, hệ thống sẽ gửi liên kết đặt lại mật khẩu.";
+
+    await SynchronizeStudentAccountsAsync(accountStore, httpClientFactory);
+
+    var account = users.Values.FirstOrDefault(user =>
+        user.Role.Equals("Student", StringComparison.OrdinalIgnoreCase) &&
+        (user.Username.Equals(studentCode, StringComparison.OrdinalIgnoreCase) ||
+         user.StudentCode?.Equals(studentCode, StringComparison.OrdinalIgnoreCase) == true));
+
+    if (account == null)
+        return Results.Ok(new { message = genericMessage });
+
+    var contact = await TryResolveStudentContactAsync(
+        account.StudentId,
+        account.StudentCode ?? studentCode,
+        httpClientFactory);
+
+    if (contact == null || string.IsNullOrWhiteSpace(contact.Email))
+        return Results.Ok(new { message = genericMessage });
+
+    if (!emailSender.IsConfigured)
+    {
+        return Results.Problem(
+            title: "Dịch vụ email chưa được cấu hình",
+            detail: "Admin cần cấu hình Gmail và App Password cho AuthService.",
+            statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+
+    var lifetimeMinutes = Math.Clamp(
+        app.Configuration.GetValue("PasswordReset:LifetimeMinutes", 30),
+        5,
+        120);
+    var token = passwordResetTokens.Create(
+        account.Username,
+        TimeSpan.FromMinutes(lifetimeMinutes));
+    var frontendBaseUrl = (app.Configuration["Frontend:BaseUrl"]
+        ?? "http://localhost:5173").TrimEnd('/');
+    var resetUrl = $"{frontendBaseUrl}/reset-password?token={Uri.EscapeDataString(token)}";
+
+    try
+    {
+        await emailSender.SendPasswordResetAsync(
+            contact.Email,
+            string.IsNullOrWhiteSpace(contact.FullName) ? account.FullName : contact.FullName,
+            resetUrl);
+    }
+    catch (Exception exception)
+    {
+        passwordResetTokens.InvalidateForUsername(account.Username);
+        app.Logger.LogError(exception, "Could not send password reset email.");
+
+        return Results.Problem(
+            title: "Không gửi được email đặt lại mật khẩu",
+            detail: "Kiểm tra cấu hình Gmail hoặc thử lại sau.",
+            statusCode: StatusCodes.Status502BadGateway);
+    }
+
+    return Results.Ok(new { message = genericMessage });
+});
+
+app.MapGet("/api/auth/reset-password/validate", (
+    string token,
+    PasswordResetTokenStore passwordResetTokens) =>
+{
+    return passwordResetTokens.IsValid(token)
+        ? Results.Ok(new { valid = true })
+        : Results.BadRequest(new
+        {
+            valid = false,
+            message = "Liên kết đặt lại mật khẩu không hợp lệ hoặc đã hết hạn."
+        });
+});
+
+app.MapPost("/api/auth/reset-password", (
+    ResetPasswordRequest request,
+    PasswordResetTokenStore passwordResetTokens) =>
+{
+    var newPassword = request.NewPassword.Trim();
+
+    if (!IsValidNewPassword(newPassword))
+    {
+        return Results.BadRequest(new
+        {
+            message = "Mật khẩu mới phải có ít nhất 6 ký tự."
+        });
+    }
+
+    var username = passwordResetTokens.Consume(request.Token);
+
+    if (username == null ||
+        !users.TryGetValue(username, out var user) ||
+        !user.Role.Equals("Student", StringComparison.OrdinalIgnoreCase))
+    {
+        return Results.BadRequest(new
+        {
+            message = "Liên kết đặt lại mật khẩu không hợp lệ hoặc đã hết hạn."
+        });
+    }
+
+    accountStore.Upsert(user with { Password = newPassword });
+
+    return Results.Ok(new { message = "Đặt lại mật khẩu thành công." });
 });
 
 app.MapGet("/api/auth/student-accounts", async (IHttpClientFactory httpClientFactory) =>
@@ -178,7 +345,11 @@ app.MapGet("/api/auth/accounts/{username}", (string username, HttpRequest reques
             : Results.NotFound(new { message = "Account not found." });
 });
 
-app.MapPut("/api/auth/accounts/{username}", (string username, UpdateAccountRequest update, HttpRequest request) =>
+app.MapPut("/api/auth/accounts/{username}", (
+    string username,
+    UpdateAccountRequest update,
+    HttpRequest request,
+    PasswordResetTokenStore passwordResetTokens) =>
 {
     if (!IsAdminRequest(request))
         return Results.Unauthorized();
@@ -221,6 +392,8 @@ app.MapPut("/api/auth/accounts/{username}", (string username, UpdateAccountReque
     };
 
     accountStore.Replace(username, updated);
+    passwordResetTokens.InvalidateForUsername(username);
+    passwordResetTokens.InvalidateForUsername(nextUsername);
 
     return Results.Ok(new { data = ToAccountResponse(updated) });
 });
@@ -228,7 +401,8 @@ app.MapPut("/api/auth/accounts/{username}", (string username, UpdateAccountReque
 app.MapDelete("/api/auth/accounts/{username}", async (
     string username,
     HttpRequest request,
-    IHttpClientFactory httpClientFactory) =>
+    IHttpClientFactory httpClientFactory,
+    PasswordResetTokenStore passwordResetTokens) =>
 {
     if (!IsAdminRequest(request))
         return Results.Unauthorized();
@@ -257,6 +431,7 @@ app.MapDelete("/api/auth/accounts/{username}", async (
     }
 
     accountStore.Remove(username);
+    passwordResetTokens.InvalidateForUsername(username);
 
     return Results.Ok(new
     {
@@ -297,6 +472,38 @@ static bool IsAdminRequest(HttpRequest request)
     {
         return false;
     }
+}
+
+static DemoUser? TryGetAuthenticatedUser(
+    HttpRequest request,
+    IReadOnlyDictionary<string, DemoUser> users)
+{
+    var authorization = request.Headers.Authorization.ToString();
+    const string bearerPrefix = "Bearer ";
+
+    if (!authorization.StartsWith(bearerPrefix, StringComparison.OrdinalIgnoreCase))
+        return null;
+
+    var token = authorization[bearerPrefix.Length..].Trim();
+
+    try
+    {
+        var raw = Encoding.UTF8.GetString(Convert.FromBase64String(token));
+        var parts = raw.Split(':');
+
+        return parts.Length >= 2 && users.TryGetValue(parts[0], out var user)
+            ? user
+            : null;
+    }
+    catch
+    {
+        return null;
+    }
+}
+
+static bool IsValidNewPassword(string password)
+{
+    return !string.IsNullOrWhiteSpace(password) && password.Length >= 6;
 }
 
 static object ToAuthResponse(DemoUser user)
@@ -473,6 +680,56 @@ static async Task<DemoUser?> TryResolveStudentAccountAsync(
     return null;
 }
 
+static async Task<StudentContact?> TryResolveStudentContactAsync(
+    long? studentId,
+    string studentCode,
+    IHttpClientFactory httpClientFactory)
+{
+    try
+    {
+        var client = httpClientFactory.CreateClient("Gateway");
+        var response = await client.GetAsync("/api/students");
+
+        if (!response.IsSuccessStatusCode)
+            return null;
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+        var students = TryGetStudentArray(document.RootElement);
+
+        if (students.ValueKind != JsonValueKind.Array)
+            return null;
+
+        foreach (var student in students.EnumerateArray())
+        {
+            var id = GetInt64(student, "id");
+            var code = GetString(student, "studentCode");
+
+            if ((studentId.HasValue && studentId.Value > 0 && id == studentId.Value) ||
+                studentCode.Equals(code, StringComparison.OrdinalIgnoreCase))
+            {
+                return new StudentContact(
+                    GetString(student, "email"),
+                    GetString(student, "fullName"));
+            }
+        }
+    }
+    catch (HttpRequestException)
+    {
+        return null;
+    }
+    catch (TaskCanceledException)
+    {
+        return null;
+    }
+    catch (JsonException)
+    {
+        return null;
+    }
+
+    return null;
+}
+
 static JsonElement TryGetStudentArray(JsonElement root)
 {
     if (root.ValueKind == JsonValueKind.Array)
@@ -507,6 +764,16 @@ static long GetInt64(JsonElement element, string propertyName)
 
 public sealed record LoginRequest(string Username, string Password);
 
+public sealed record ChangePasswordRequest(
+    string CurrentPassword,
+    string NewPassword);
+
+public sealed record ForgotPasswordRequest(string StudentCode);
+
+public sealed record ResetPasswordRequest(
+    string Token,
+    string NewPassword);
+
 public sealed record StudentAccountRequest(
     long StudentId,
     string StudentCode,
@@ -524,3 +791,5 @@ public sealed record DemoUser(
     string FullName,
     long? StudentId = null,
     string? StudentCode = null);
+
+public sealed record StudentContact(string Email, string FullName);
