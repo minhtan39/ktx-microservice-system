@@ -298,18 +298,16 @@ const logout = async () => {
   localStorage.removeItem('user_home')
   localStorage.removeItem('student_id')
   localStorage.removeItem('student_code')
-  await router.push('/login')
+  await router.push('/')
 }
 </script>
 
 <style scoped>
 .app-shell {
   display: grid;
-  grid-template-columns: 292px minmax(0, 1fr);
+  grid-template-columns: 260px minmax(0, 1fr);
   min-height: 100vh;
-  background:
-    radial-gradient(circle at top left, rgba(20, 157, 113, 0.08), transparent 32%),
-    linear-gradient(180deg, #f8faf7 0%, #f3f6f4 100%);
+  background: var(--app-bg);
   color: var(--ink);
 }
 
@@ -319,25 +317,26 @@ const logout = async () => {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  padding: 22px 18px 18px;
-  background:
-    linear-gradient(180deg, rgba(20, 157, 113, 0.12), transparent 34%),
-    var(--sidebar);
+  padding: 0 12px 14px;
+  background: var(--ant-sider);
   color: #f5f7f8;
-  box-shadow: 12px 0 34px rgba(15, 23, 42, 0.12);
+  box-shadow: none;
 }
 
 .sidebar-top {
   display: grid;
-  gap: 14px;
-  margin-bottom: 18px;
+  gap: 12px;
+  margin: 0 -12px 10px;
+  padding: 14px 12px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--ant-sider-soft);
 }
 
 .brand {
   display: flex;
   align-items: center;
   gap: 12px;
-  min-height: 54px;
+  min-height: 46px;
   color: inherit;
   text-decoration: none;
 }
@@ -347,17 +346,17 @@ const logout = async () => {
   place-items: center;
   width: 44px;
   height: 44px;
-  border: 1px solid rgba(120, 242, 189, 0.24);
-  border-radius: 14px;
-  background: rgba(20, 157, 113, 0.12);
-  color: var(--brand);
-  font-size: 30px;
+  border: 0;
+  border-radius: 8px;
+  background: #1677ff;
+  color: #ffffff;
+  font-size: 28px;
 }
 
 .brand-name {
   color: #ffffff;
   font-family: var(--font-heading);
-  font-size: 21px;
+  font-size: 20px;
   font-weight: 900;
   line-height: 1;
 }
@@ -365,7 +364,7 @@ const logout = async () => {
 .brand-subtitle {
   display: block;
   margin-top: 5px;
-  color: #9aa1a8;
+  color: rgba(255, 255, 255, 0.62);
   font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.08em;
@@ -379,10 +378,10 @@ const logout = async () => {
   width: fit-content;
   min-height: 30px;
   padding: 0 11px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.06);
-  color: #cbd5d1;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.72);
   font-size: 12px;
   font-weight: 800;
 }
@@ -391,20 +390,20 @@ const logout = async () => {
   width: 8px;
   height: 8px;
   border-radius: 999px;
-  background: #35bb84;
-  box-shadow: 0 0 0 4px rgba(53, 187, 132, 0.16);
+  background: var(--ant-success);
+  box-shadow: 0 0 0 4px rgba(82, 196, 26, 0.18);
 }
 
 .nav {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 4px 2px 8px 0;
+  padding: 8px 0;
 }
 
 .nav-section {
-  margin: 18px 10px 10px;
-  color: #7f8b85;
+  margin: 18px 12px 8px;
+  color: rgba(255, 255, 255, 0.42);
   font-size: 11px;
   font-weight: 900;
   letter-spacing: 0;
@@ -416,14 +415,14 @@ const logout = async () => {
   grid-template-columns: 26px minmax(0, 1fr);
   gap: 12px;
   align-items: center;
-  min-height: 48px;
+  min-height: 42px;
   width: 100%;
-  margin: 5px 0;
-  padding: 11px 12px;
+  margin: 2px 0;
+  padding: 9px 12px;
   border: 1px solid transparent;
-  border-radius: 12px;
+  border-radius: 6px;
   background: transparent;
-  color: #dfe6e2;
+  color: rgba(255, 255, 255, 0.72);
   cursor: pointer;
   font-size: 14px;
   font-weight: 800;
@@ -443,14 +442,14 @@ const logout = async () => {
   width: 24px;
   height: 24px;
   border-radius: 999px;
-  background: #202624;
-  color: #c8f4df;
+  background: rgba(255, 255, 255, 0.10);
+  color: rgba(255, 255, 255, 0.76);
   font-size: 12px;
   font-weight: 900;
 }
 
 .nav-item .mdi {
-  color: #a9b5af;
+  color: rgba(255, 255, 255, 0.58);
   font-size: 21px;
 }
 
@@ -463,8 +462,9 @@ const logout = async () => {
 
 .nav-item:hover,
 .nav-item.active {
-  border-color: rgba(120, 242, 189, 0.22);
-  background: rgba(255, 255, 255, 0.09);
+  border-color: transparent;
+  background: #1677ff;
+  color: #ffffff;
 }
 
 .nav-item.active .mdi,
@@ -473,8 +473,8 @@ const logout = async () => {
 }
 
 .nav-item.active b {
-  background: var(--brand);
-  color: #052e1c;
+  background: rgba(255, 255, 255, 0.20);
+  color: #ffffff;
 }
 
 .sidebar-note {
@@ -483,13 +483,13 @@ const logout = async () => {
   gap: 10px;
   margin: 12px 0 0;
   padding: 14px;
-  border: 1px solid rgba(120, 242, 189, 0.18);
-  border-radius: 16px;
-  background: linear-gradient(135deg, rgba(22, 155, 99, 0.18), rgba(255, 255, 255, 0.05));
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .sidebar-note .mdi {
-  color: var(--brand);
+  color: #69b1ff;
   font-size: 24px;
 }
 
@@ -512,8 +512,8 @@ const logout = async () => {
   gap: 12px;
   align-items: center;
   margin-top: 16px;
-  padding-top: 18px;
-  border-top: 1px solid #24282c;
+  padding: 14px 0 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .account-avatar,
@@ -555,7 +555,7 @@ const logout = async () => {
   min-width: 0;
   min-height: 100vh;
   overflow-x: clip;
-  background: transparent;
+  background: var(--app-bg);
 }
 
 .topbar {
@@ -567,10 +567,10 @@ const logout = async () => {
   justify-content: space-between;
   gap: 24px;
   min-height: 92px;
-  padding: 18px 34px;
-  border-bottom: 1px solid rgba(221, 232, 223, 0.78);
-  background: rgba(248, 250, 247, 0.88);
-  backdrop-filter: blur(18px);
+  padding: 16px 28px;
+  border-bottom: 1px solid var(--line);
+  background: #ffffff;
+  backdrop-filter: none;
 }
 
 .topbar-title {
@@ -592,11 +592,11 @@ const logout = async () => {
   width: 5px;
   height: 5px;
   border-radius: 999px;
-  background: var(--primary-400);
+  background: var(--ant-primary);
 }
 
 .breadcrumb-line strong {
-  color: var(--primary-700);
+  color: var(--ant-primary);
 }
 
 .topbar h1 {
@@ -632,13 +632,13 @@ const logout = async () => {
   min-width: 154px;
   min-height: 50px;
   padding: 9px 12px;
-  border: 1px solid var(--background-200);
-  border-radius: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
   background: #ffffff;
 }
 
 .term-chip .mdi {
-  color: var(--brand-dark);
+  color: var(--ant-primary);
   font-size: 24px;
 }
 
@@ -664,8 +664,8 @@ const logout = async () => {
   gap: 12px;
   min-height: 50px;
   padding: 5px 5px 5px 12px;
-  border: 1px solid var(--background-200);
-  border-radius: 999px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
   background: #ffffff;
 }
 
@@ -690,7 +690,7 @@ const logout = async () => {
   width: auto;
   max-width: 1500px;
   margin: 0 auto;
-  padding: 30px 34px 54px;
+  padding: 24px 28px 48px;
 }
 
 @media (max-width: 1100px) {

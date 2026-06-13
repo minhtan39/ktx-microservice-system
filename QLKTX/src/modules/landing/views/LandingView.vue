@@ -189,16 +189,16 @@
       <div class="cta-media" aria-hidden="true"></div>
       <div class="cta-overlay" aria-hidden="true"></div>
       <div class="landing-container cta-content">
-        <h2>Sẵn sàng đưa ký túc xá lên một cổng quản lý gọn đẹp hơn?</h2>
-        <p>Sinh viên dễ dùng, nhân viên dễ duyệt, nhóm phát triển dễ demo đúng kiến trúc microservice.</p>
+        <h2>Vào DormManager để tiếp tục nghiệp vụ nội trú</h2>
+        <p>Sinh viên đăng ký và theo dõi hồ sơ. Nhân viên xử lý đơn, xếp phòng, hợp đồng và liên thông dịch vụ.</p>
         <div class="hero-cta">
           <router-link class="white-cta" to="/login">
             <span class="mdi mdi-login"></span>
-            Đăng nhập ngay
+            Đăng nhập hệ thống
           </router-link>
-          <a class="outline-cta" href="mailto:support@dormmanager.local">
-            <span class="mdi mdi-email-outline"></span>
-            Liên hệ tư vấn
+          <a class="outline-cta" href="#hero" @click.prevent="scrollTo('hero')">
+            <span class="mdi mdi-arrow-up"></span>
+            Về đầu trang
           </a>
         </div>
       </div>

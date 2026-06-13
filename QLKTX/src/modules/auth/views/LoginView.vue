@@ -1,43 +1,25 @@
 <template>
   <main class="login-page">
-    <section class="login-experience">
-      <div class="brand-row">
-        <span class="mdi mdi-home-city-outline"></span>
+    <router-link class="back-home" to="/">
+      <span class="mdi mdi-arrow-left"></span>
+      Trang giới thiệu
+    </router-link>
+
+    <section class="login-shell">
+      <div class="login-brand">
+        <span class="brand-mark mdi mdi-home-city-outline"></span>
         <div>
           <strong>DormManager</strong>
-          <small>Residence Portal</small>
+          <small>Smart Residence System</small>
         </div>
       </div>
 
-      <div class="visual-content">
-        <span class="eyebrow">Cổng nội trú sinh viên</span>
-        <h1>Một chỗ ở mới, một nhịp sống mới.</h1>
-        <p>Theo dõi phòng ở, đăng ký nội trú và hợp đồng trong một không gian gọn gàng, dễ dùng.</p>
-      </div>
-
-      <div class="campus-card" aria-hidden="true">
-        <div class="campus-sky"></div>
-        <div class="campus-building">
-          <span v-for="index in 18" :key="index"></span>
+      <v-card class="login-card">
+        <div class="card-head">
+          <span class="page-kicker">Đăng nhập hệ thống</span>
+          <h1>Chào mừng quay lại</h1>
+          <p>Sinh viên đăng nhập bằng MSSV. Admin và nhân viên dùng tài khoản do nhóm AuthService cấp.</p>
         </div>
-        <div class="campus-ground">
-          <b></b>
-          <i></i>
-        </div>
-      </div>
-
-      <div class="life-strip">
-        <span><b>24/7</b> Theo dõi hồ sơ</span>
-        <span><b>01</b> Cổng đăng ký</span>
-        <span><b>KTX</b> Sống tiện nghi</span>
-      </div>
-    </section>
-
-    <section class="login-panel">
-      <div class="panel-card">
-        <span class="page-kicker">DormManager</span>
-        <h2>Chào mừng bạn quay lại</h2>
-        <p class="panel-copy">Sinh viên dùng mã sinh viên để đăng nhập. Admin và nhân viên dùng tài khoản được cấp.</p>
 
         <v-alert v-if="error" type="error" variant="tonal" class="mb-4">
           {{ error }}
@@ -47,13 +29,14 @@
           {{ success }}
         </v-alert>
 
-        <v-form @submit.prevent="login">
+        <v-form class="login-form" @submit.prevent="login">
           <v-text-field
             v-model="form.username"
             label="Mã sinh viên hoặc tài khoản"
             density="comfortable"
             prepend-inner-icon="mdi-account-outline"
             autocomplete="username"
+            variant="outlined"
           />
 
           <v-text-field
@@ -64,28 +47,31 @@
             :type="showPassword ? 'text' : 'password'"
             :append-inner-icon="showPassword ? 'mdi-eye-off-outline' : 'mdi-eye-outline'"
             autocomplete="current-password"
+            variant="outlined"
             @click:append-inner="showPassword = !showPassword"
           />
 
-          <div class="form-links">
+          <div class="login-meta">
             <router-link to="/forgot-password">Quên mật khẩu?</router-link>
+            <span>Chưa có tài khoản? Liên hệ admin để tạo hồ sơ sinh viên.</span>
           </div>
 
           <v-btn
             block
-            color="success"
+            color="primary"
             size="large"
             type="submit"
             :loading="loading"
+            prepend-icon="mdi-login"
           >
             Vào hệ thống
           </v-btn>
         </v-form>
+      </v-card>
 
-        <div class="login-note">
-          <span class="mdi mdi-shield-check-outline"></span>
-          <p>Tài khoản sinh viên được tạo từ hồ sơ do nhà trường quản lý.</p>
-        </div>
+      <div class="login-foot">
+        <span class="mdi mdi-shield-check-outline"></span>
+        JWT được cấp bởi AuthService, các service còn lại chỉ xác thực token qua Gateway.
       </div>
     </section>
   </main>
@@ -165,301 +151,172 @@ const login = async () => {
 
 <style scoped>
 .login-page {
-  display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(420px, 520px);
-  min-height: 100vh;
-  background:
-    radial-gradient(circle at 15% 15%, rgba(22, 155, 99, 0.10), transparent 28%),
-    linear-gradient(135deg, #f7fbf8 0%, #eef7f1 42%, #fff8ec 100%);
-}
-
-.login-experience {
   position: relative;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  min-height: 100vh;
-  padding: 48px;
-  overflow: hidden;
-  color: #12352d;
-}
-
-.brand-row {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  position: relative;
-  z-index: 1;
-}
-
-.brand-row .mdi {
-  color: #169b63;
-  font-size: 42px;
-}
-
-.brand-row strong,
-.brand-row small {
-  display: block;
-}
-
-.brand-row strong {
-  color: #0b3b31;
-  font-size: 24px;
-  font-weight: 900;
-}
-
-.brand-row small {
-  margin-top: 4px;
-  color: #5b756e;
-  font-size: 13px;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.visual-content {
-  position: relative;
-  z-index: 2;
-  max-width: 620px;
-}
-
-.eyebrow {
-  display: block;
-  margin-bottom: 12px;
-  color: #0f7f51;
-  font-size: 13px;
-  font-weight: 900;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.visual-content h1 {
-  margin: 0;
-  max-width: 660px;
-  color: #0b2f28;
-  font-size: 58px;
-  line-height: 1.03;
-}
-
-.visual-content p {
-  max-width: 520px;
-  margin: 18px 0 0;
-  color: #4f665f;
-  font-size: 18px;
-  line-height: 1.6;
-}
-
-.campus-card {
-  position: relative;
-  z-index: 1;
-  align-self: flex-end;
-  width: min(520px, 70%);
-  min-height: 320px;
-  margin: 28px 8% 18px 0;
-  border: 1px solid rgba(12, 57, 47, 0.12);
-  border-radius: 8px;
-  overflow: hidden;
-  background: #dff4e9;
-  box-shadow: 0 28px 70px rgba(17, 24, 39, 0.12);
-}
-
-.campus-sky {
-  position: absolute;
-  inset: 0;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0)),
-    linear-gradient(135deg, #c8f4df, #fff6df);
-}
-
-.campus-building {
-  position: absolute;
-  left: 13%;
-  right: 13%;
-  bottom: 58px;
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 14px;
-  min-height: 188px;
-  padding: 26px 28px;
-  border-radius: 8px 8px 0 0;
-  background: linear-gradient(135deg, #0f513f, #0d3f35);
-}
-
-.campus-building::before {
-  content: '';
-  position: absolute;
-  left: 12%;
-  right: 12%;
-  top: -32px;
-  height: 48px;
-  border-radius: 8px 8px 0 0;
-  background: #174e42;
-}
-
-.campus-building span {
-  display: inline-flex;
-  min-height: 30px;
-  border-radius: 4px;
-  background: rgba(255, 244, 194, 0.9);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.38);
-}
-
-.campus-ground {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 92px;
-  background: linear-gradient(180deg, #bfe7cf, #8fc9ad);
-}
-
-.campus-ground b,
-.campus-ground i {
-  position: absolute;
-  display: block;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.72);
-}
-
-.campus-ground b {
-  left: 12%;
-  right: 12%;
-  top: 28px;
-  height: 10px;
-}
-
-.campus-ground i {
-  left: 36%;
-  right: 36%;
-  bottom: 18px;
-  height: 12px;
-}
-
-.life-strip {
-  position: relative;
-  z-index: 2;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-  max-width: 680px;
-}
-
-.life-strip span {
-  display: grid;
-  gap: 5px;
-  min-height: 74px;
-  padding: 15px 16px;
-  border: 1px solid rgba(12, 57, 47, 0.10);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.74);
-  color: #526962;
-  font-size: 13px;
-  font-weight: 700;
-  backdrop-filter: blur(12px);
-}
-
-.life-strip b {
-  color: #0f513f;
-  font-size: 20px;
-  line-height: 1;
-}
-
-.login-panel {
   display: grid;
   place-items: center;
-  padding: 42px;
+  min-height: 100vh;
+  padding: 40px 18px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.76), rgba(255, 255, 255, 0)),
+    #f5f5f5;
 }
 
-.panel-card {
-  width: 100%;
-  max-width: 430px;
-  padding: 34px;
-  border: 1px solid rgba(15, 81, 63, 0.10);
-  border-radius: 8px;
+.back-home {
+  position: fixed;
+  top: 22px;
+  left: 24px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
   background: #ffffff;
-  box-shadow: 0 22px 60px rgba(17, 24, 39, 0.08);
-}
-
-.panel-card h2 {
-  margin: 0;
-  color: #0b2f28;
-  font-size: 32px;
-  line-height: 1.15;
-}
-
-.panel-copy {
-  margin: 8px 0 24px;
-  color: var(--muted);
-  line-height: 1.5;
-}
-
-.login-note {
-  display: grid;
-  grid-template-columns: 30px minmax(0, 1fr);
-  gap: 10px;
-  margin-top: 18px;
-  padding: 14px;
-  border-radius: 8px;
-  background: #f2fbf6;
-  color: #45635b;
-}
-
-.login-note .mdi {
-  color: #169b63;
-  font-size: 22px;
-}
-
-.login-note p {
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.45;
-}
-
-.form-links {
-  display: flex;
-  justify-content: flex-end;
-  margin: -6px 0 18px;
-}
-
-.form-links a {
-  color: var(--brand-dark);
+  color: rgba(0, 0, 0, 0.72);
   font-size: 14px;
   font-weight: 800;
   text-decoration: none;
 }
 
-.form-links a:hover {
+.login-shell {
+  display: grid;
+  gap: 22px;
+  width: min(100%, 460px);
+}
+
+.login-brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 8px;
+  background: #1677ff;
+  color: #ffffff;
+  font-size: 28px;
+}
+
+.login-brand strong,
+.login-brand small {
+  display: block;
+}
+
+.login-brand strong {
+  color: rgba(0, 0, 0, 0.88);
+  font-family: var(--font-heading);
+  font-size: 24px;
+  line-height: 1;
+}
+
+.login-brand small {
+  margin-top: 5px;
+  color: rgba(0, 0, 0, 0.45);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.login-card {
+  padding: 34px;
+  background: #ffffff;
+}
+
+.card-head {
+  margin-bottom: 24px;
+  text-align: center;
+}
+
+.card-head h1 {
+  margin: 0;
+  color: rgba(0, 0, 0, 0.88);
+  font-family: var(--font-heading);
+  font-size: 30px;
+  line-height: 1.2;
+}
+
+.card-head p {
+  margin: 10px auto 0;
+  max-width: 360px;
+  color: rgba(0, 0, 0, 0.55);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.login-form {
+  display: grid;
+  gap: 2px;
+}
+
+.login-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: -2px 0 16px;
+  color: rgba(0, 0, 0, 0.45);
+  font-size: 13px;
+}
+
+.login-meta a {
+  flex: 0 0 auto;
+  color: #1677ff;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.login-meta a:hover {
   text-decoration: underline;
 }
 
-@media (max-width: 920px) {
+.login-meta span {
+  text-align: right;
+}
+
+.login-foot {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  color: rgba(0, 0, 0, 0.45);
+  font-size: 13px;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.login-foot .mdi {
+  color: #52c41a;
+  font-size: 18px;
+}
+
+@media (max-width: 560px) {
   .login-page {
-    grid-template-columns: 1fr;
+    align-items: start;
+    padding-top: 82px;
   }
 
-  .login-experience {
-    min-height: auto;
-    padding: 30px;
+  .back-home {
+    left: 16px;
+    top: 16px;
   }
 
-  .visual-content h1 {
-    font-size: 38px;
-  }
-
-  .campus-card {
-    align-self: stretch;
-    width: 100%;
-    min-height: 240px;
-    margin: 24px 0 0;
-  }
-
-  .life-strip {
-    grid-template-columns: 1fr;
-    margin-top: 18px;
-  }
-
-  .login-panel {
+  .login-card {
     padding: 24px;
+  }
+
+  .login-meta {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .login-meta span {
+    text-align: left;
   }
 }
 </style>
