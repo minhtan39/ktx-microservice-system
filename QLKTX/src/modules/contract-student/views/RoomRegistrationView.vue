@@ -192,21 +192,26 @@
           <span class="page-kicker">{{ isApprovalView ? 'Room Assignment' : 'Registration Queue' }}</span>
           <h3>{{ isApprovalView ? 'Hàng chờ duyệt xếp phòng' : 'Danh sách đơn đăng ký' }}</h3>
         </div>
-        <p>
-          {{ isApprovalView
-            ? 'Nguyện vọng của sinh viên là tham khảo; cán bộ có thể chọn phòng khác còn giường và phù hợp giới tính.'
-            : 'Đơn sau khi gửi sẽ đi vào hàng chờ để N2 kiểm tra ưu tiên và xếp phòng.'
-          }}
-        </p>
+        <div class="table-action-bar">
+          <span class="table-count">{{ filteredRegistrations.length }} đơn</span>
+          <v-btn
+            color="primary"
+            variant="tonal"
+            prepend-icon="mdi-file-excel-outline"
+            :disabled="filteredRegistrations.length === 0"
+            @click="exportRegistrations"
+          >
+            Xuất Excel
+          </v-btn>
+        </div>
       </div>
-      <table class="data-table">
+      <table class="data-table compact-table">
         <thead>
           <tr>
-            <th>ID</th>
+            <th>Mã đơn</th>
             <th>Sinh viên</th>
             <th>Nguyện vọng</th>
             <th>Ưu tiên</th>
-            <th>Thời gian ở</th>
             <th>Trạng thái</th>
             <th>Phòng xếp</th>
             <th v-if="isApprovalView">Thao tác</th>
@@ -214,23 +219,28 @@
         </thead>
         <tbody>
           <tr v-if="loading" class="table-empty">
-            <td :colspan="isApprovalView ? 8 : 7">Đang tải dữ liệu...</td>
+            <td :colspan="isApprovalView ? 7 : 6">Đang tải dữ liệu...</td>
           </tr>
           <tr v-else-if="filteredRegistrations.length === 0" class="table-empty">
-            <td :colspan="isApprovalView ? 8 : 7">{{ emptyText }}</td>
+            <td :colspan="isApprovalView ? 7 : 6">{{ emptyText }}</td>
           </tr>
-          <tr v-for="registration in filteredRegistrations" :key="registration.id">
-            <td>{{ registration.id }}</td>
-            <td>{{ studentName(registration.studentId) }}</td>
+          <tr v-for="registration in paginatedRegistrations" :key="registration.id">
             <td>
-              <strong>Tòa {{ registration.buildingName || 'bất kỳ' }}</strong>
-              <span>{{ registration.roomType || 'Bất kỳ loại phòng' }}</span>
+              <strong class="cell-title">#{{ registration.id }}</strong>
+              <span class="cell-subtitle">{{ formatDate(registration.startDate) }} - {{ formatDate(registration.endDate) }}</span>
             </td>
             <td>
-              <strong>{{ priorityLabel(registration.priorityType) }}</strong>
-              <span>Điểm: {{ registration.priorityScore || 0 }}</span>
+              <strong class="cell-title">{{ studentName(registration.studentId) }}</strong>
+              <span class="cell-subtitle">MSSV / ID: {{ registration.studentId }}</span>
             </td>
-            <td>{{ formatDate(registration.startDate) }} - {{ formatDate(registration.endDate) }}</td>
+            <td>
+              <strong class="cell-title">Tòa {{ registration.buildingName || 'bất kỳ' }}</strong>
+              <span class="cell-subtitle">{{ registration.roomType || 'Bất kỳ loại phòng' }}</span>
+            </td>
+            <td>
+              <strong class="cell-title">{{ priorityLabel(registration.priorityType) }}</strong>
+              <span class="cell-subtitle">Điểm: {{ registration.priorityScore || 0 }}</span>
+            </td>
             <td>
               <span class="status-pill" :class="statusClass(registration.status)">
                 {{ statusLabel(registration.status) }}
@@ -271,6 +281,27 @@
           </tr>
         </tbody>
       </table>
+      <div class="pagination-row">
+        <span>Hiển thị {{ pageStart }} - {{ pageEnd }} / {{ filteredRegistrations.length }} đơn</span>
+        <div class="pagination-actions">
+          <button class="page-button" type="button" :disabled="currentPage === 1" @click="currentPage -= 1">
+            &lt;
+          </button>
+          <button
+            v-for="page in totalPages"
+            :key="page"
+            class="page-button"
+            :class="{ active: currentPage === page }"
+            type="button"
+            @click="currentPage = page"
+          >
+            {{ page }}
+          </button>
+          <button class="page-button" type="button" :disabled="currentPage === totalPages" @click="currentPage += 1">
+            &gt;
+          </button>
+        </div>
+      </div>
     </v-card>
 
     <v-dialog v-model="approvalDialog" max-width="980">
@@ -362,6 +393,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '@/services/api'
+import { exportRowsToExcel } from '@/utils/exportExcel'
 import {
   buildStudentNameMap,
   cleanStudents,
@@ -385,6 +417,8 @@ const buildingFilter = ref('All')
 const roomTypeFilter = ref('All')
 const approvalDialog = ref(false)
 const selectedRegistration = ref(null)
+const currentPage = ref(1)
+const pageSize = 8
 
 const isApprovalView = computed(() => route.name === 'RoomRegistrationApproval')
 const pageKicker = computed(() => isApprovalView.value ? 'Rubric 7 - Approval' : 'Rubric 6 - Online Registration')
@@ -513,6 +547,16 @@ const filteredRegistrations = computed(() => {
   })
 })
 
+const totalPages = computed(() => Math.max(1, Math.ceil(filteredRegistrations.value.length / pageSize)))
+const paginatedRegistrations = computed(() => {
+  const start = (currentPage.value - 1) * pageSize
+  return filteredRegistrations.value.slice(start, start + pageSize)
+})
+const pageStart = computed(() =>
+  filteredRegistrations.value.length === 0 ? 0 : (currentPage.value - 1) * pageSize + 1)
+const pageEnd = computed(() =>
+  Math.min(currentPage.value * pageSize, filteredRegistrations.value.length))
+
 const availableRoomCount = computed(() => rooms.value.filter((room) => isRoomAvailable(room)).length)
 const registrationMetrics = computed(() => [
   {
@@ -579,6 +623,16 @@ watch(
   },
   { immediate: true },
 )
+
+watch([registrationSearch, buildingFilter, roomTypeFilter, statusFilter], () => {
+  currentPage.value = 1
+})
+
+watch(filteredRegistrations, () => {
+  if (currentPage.value > totalPages.value) {
+    currentPage.value = totalPages.value
+  }
+})
 
 const showMessage = (text, type = 'success') => {
   message.value = text
@@ -661,6 +715,31 @@ const rejectRegistration = async (id) => {
     showMessage('Không từ chối được đơn đăng ký.', 'error')
     console.error(err)
   }
+}
+
+const exportRegistrations = () => {
+  exportRowsToExcel({
+    filename: isApprovalView.value ? 'duyet-xep-phong.xls' : 'don-dang-ky-noi-tru.xls',
+    sheetName: isApprovalView.value ? 'Duyệt xếp phòng' : 'Đơn đăng ký nội trú',
+    rows: filteredRegistrations.value,
+    columns: [
+      { header: 'Mã đơn', value: (registration) => registration.id },
+      { header: 'Sinh viên', value: (registration) => studentName(registration.studentId) },
+      { header: 'Tòa mong muốn', value: (registration) => registration.buildingName || 'Bất kỳ' },
+      { header: 'Loại phòng', value: (registration) => registration.roomType || 'Bất kỳ' },
+      { header: 'Ưu tiên', value: (registration) => priorityLabel(registration.priorityType) },
+      { header: 'Điểm ưu tiên', value: (registration) => registration.priorityScore || 0 },
+      { header: 'Ngày bắt đầu', value: (registration) => formatDate(registration.startDate) },
+      { header: 'Ngày kết thúc', value: (registration) => formatDate(registration.endDate) },
+      { header: 'Trạng thái', value: (registration) => statusLabel(registration.status) },
+      {
+        header: 'Phòng xếp',
+        value: (registration) => registration.assignedRoomId
+          ? `Phòng ${registration.assignedRoomId}`
+          : 'Chưa xếp',
+      },
+    ],
+  })
 }
 
 const studentName = (id) => studentMap.value.get(id) || `Sinh viên #${id}`

@@ -75,39 +75,59 @@
           <span class="hero-kicker">Contract Registry</span>
           <h3>Sổ hợp đồng đã phát hành</h3>
         </div>
-        <p>Chỉ hiển thị hợp đồng được tạo sau bước duyệt xếp phòng; trạng thái từ chối không đi vào sổ hợp đồng.</p>
+        <div class="table-action-bar">
+          <span class="table-count">{{ filteredContracts.length }} hợp đồng</span>
+          <v-btn
+            color="primary"
+            variant="tonal"
+            prepend-icon="mdi-file-excel-outline"
+            :disabled="filteredContracts.length === 0"
+            @click="exportContracts"
+          >
+            Xuất Excel
+          </v-btn>
+        </div>
       </div>
-      <table class="data-table">
+      <table class="data-table compact-table">
         <thead>
           <tr>
             <th>Mã hợp đồng</th>
             <th>Sinh viên</th>
             <th>Phòng</th>
             <th>Thời hạn</th>
-            <th>Tiền cọc</th>
-            <th>Tiền phòng</th>
-            <th>Điều khoản</th>
+            <th>Tài chính</th>
             <th>Trạng thái</th>
             <th>Xem</th>
           </tr>
         </thead>
         <tbody>
           <tr v-if="loading" class="table-empty">
-            <td colspan="9">Đang tải dữ liệu...</td>
+            <td colspan="7">Đang tải dữ liệu...</td>
           </tr>
           <tr v-else-if="filteredContracts.length === 0" class="table-empty">
-            <td colspan="9">Chưa có hợp đồng phù hợp.</td>
+            <td colspan="7">Chưa có hợp đồng phù hợp.</td>
           </tr>
-          <tr v-for="contract in filteredContracts" :key="contract.id">
+          <tr v-for="contract in paginatedContracts" :key="contract.id">
             <td>
-              <strong class="contract-code">{{ contract.contractCode }}</strong>
+              <strong class="cell-title contract-code">{{ contract.contractCode }}</strong>
+              <span class="cell-subtitle">ID: {{ contract.id }}</span>
             </td>
-            <td>{{ studentName(contract.studentId) }}</td>
-            <td>{{ roomLabel(contract.roomId) }}</td>
-            <td>{{ formatDate(contract.startDate) }} - {{ formatDate(contract.endDate) }}</td>
-            <td>{{ formatMoney(contract.depositAmount) }}</td>
-            <td>{{ formatMoney(contract.monthlyFee) }}</td>
-            <td class="terms-cell">{{ contract.terms || 'Điều khoản mặc định' }}</td>
+            <td>
+              <strong class="cell-title">{{ studentName(contract.studentId) }}</strong>
+              <span class="cell-subtitle">SV ID: {{ contract.studentId }}</span>
+            </td>
+            <td>
+              <strong class="cell-title">{{ roomLabel(contract.roomId) }}</strong>
+              <span class="cell-subtitle">Mã phòng: {{ contract.roomId }}</span>
+            </td>
+            <td>
+              <strong class="cell-title">{{ formatDate(contract.startDate) }}</strong>
+              <span class="cell-subtitle">đến {{ formatDate(contract.endDate) }}</span>
+            </td>
+            <td>
+              <strong class="cell-title">{{ formatMoney(contract.monthlyFee) }}</strong>
+              <span class="cell-subtitle">Cọc: {{ formatMoney(contract.depositAmount) }}</span>
+            </td>
             <td>
               <span class="status-pill" :class="statusClass(contract.status)">
                 {{ statusText(contract.status) }}
@@ -125,6 +145,27 @@
           </tr>
         </tbody>
       </table>
+      <div class="pagination-row">
+        <span>Hiển thị {{ pageStart }} - {{ pageEnd }} / {{ filteredContracts.length }} hợp đồng</span>
+        <div class="pagination-actions">
+          <button class="page-button" type="button" :disabled="currentPage === 1" @click="currentPage -= 1">
+            &lt;
+          </button>
+          <button
+            v-for="page in totalPages"
+            :key="page"
+            class="page-button"
+            :class="{ active: currentPage === page }"
+            type="button"
+            @click="currentPage = page"
+          >
+            {{ page }}
+          </button>
+          <button class="page-button" type="button" :disabled="currentPage === totalPages" @click="currentPage += 1">
+            &gt;
+          </button>
+        </div>
+      </div>
     </v-card>
 
     <div class="contract-cards">
@@ -134,7 +175,7 @@
       <article v-else-if="filteredContracts.length === 0" class="contract-card muted-card">
         Chưa có hợp đồng phù hợp.
       </article>
-      <article v-for="contract in filteredContracts" :key="contract.id" class="contract-card">
+      <article v-for="contract in paginatedContracts" :key="contract.id" class="contract-card">
         <div class="card-top">
           <div>
             <span class="mini-label">Mã hợp đồng</span>
@@ -211,8 +252,9 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import api from '@/services/api'
+import { exportRowsToExcel } from '@/utils/exportExcel'
 import {
   buildStudentNameMap,
   cleanStudents,
@@ -230,6 +272,8 @@ const statusFilter = ref('All')
 const buildingFilter = ref('All')
 const detailDialog = ref(false)
 const selectedContract = ref(null)
+const currentPage = ref(1)
+const pageSize = 8
 
 const statusOptions = [
   { title: 'Tất cả', value: 'All' },
@@ -268,6 +312,16 @@ const filteredContracts = computed(() => {
     return matchesStatus && matchesBuilding && matchesKeyword
   })
 })
+
+const totalPages = computed(() => Math.max(1, Math.ceil(filteredContracts.value.length / pageSize)))
+const paginatedContracts = computed(() => {
+  const start = (currentPage.value - 1) * pageSize
+  return filteredContracts.value.slice(start, start + pageSize)
+})
+const pageStart = computed(() =>
+  filteredContracts.value.length === 0 ? 0 : (currentPage.value - 1) * pageSize + 1)
+const pageEnd = computed(() =>
+  Math.min(currentPage.value * pageSize, filteredContracts.value.length))
 
 const selectedContractFields = computed(() => {
   if (!selectedContract.value) return []
@@ -315,6 +369,35 @@ const loadAll = async () => {
   } finally {
     loading.value = false
   }
+}
+
+watch([keyword, statusFilter, buildingFilter], () => {
+  currentPage.value = 1
+})
+
+watch(filteredContracts, () => {
+  if (currentPage.value > totalPages.value) {
+    currentPage.value = totalPages.value
+  }
+})
+
+const exportContracts = () => {
+  exportRowsToExcel({
+    filename: 'danh-sach-hop-dong.xls',
+    sheetName: 'Danh sách hợp đồng',
+    rows: filteredContracts.value,
+    columns: [
+      { header: 'Mã hợp đồng', value: (contract) => contract.contractCode },
+      { header: 'Sinh viên', value: (contract) => studentName(contract.studentId) },
+      { header: 'Phòng', value: (contract) => roomLabel(contract.roomId) },
+      { header: 'Ngày bắt đầu', value: (contract) => formatDate(contract.startDate) },
+      { header: 'Ngày kết thúc', value: (contract) => formatDate(contract.endDate) },
+      { header: 'Tiền cọc', value: (contract) => formatMoney(contract.depositAmount) },
+      { header: 'Tiền phòng tháng', value: (contract) => formatMoney(contract.monthlyFee) },
+      { header: 'Trạng thái', value: (contract) => statusText(contract.status) },
+      { header: 'Điều khoản', value: (contract) => contract.terms || 'Điều khoản mặc định' },
+    ],
+  })
 }
 
 const studentName = (id) => studentMap.value.get(id) || `Sinh viên #${id}`

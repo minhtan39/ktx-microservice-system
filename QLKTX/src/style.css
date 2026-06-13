@@ -170,3 +170,95 @@ a {
 .data-table tbody tr:hover {
   background: #fafafa;
 }
+
+.data-table.compact-table th,
+.data-table.compact-table td {
+  padding: 12px 14px;
+  vertical-align: middle;
+}
+
+.cell-title,
+.cell-subtitle {
+  display: block;
+}
+
+.cell-title {
+  color: rgba(0, 0, 0, 0.88);
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.cell-subtitle {
+  margin-top: 3px;
+  color: rgba(0, 0, 0, 0.45);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.table-action-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.table-count {
+  color: rgba(0, 0, 0, 0.45);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.pagination-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border-top: 1px solid var(--line);
+  color: rgba(0, 0, 0, 0.55);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.pagination-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.page-button {
+  min-width: 32px;
+  height: 32px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: #ffffff;
+  color: rgba(0, 0, 0, 0.68);
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.page-button:disabled {
+  background: #f5f5f5;
+  color: rgba(0, 0, 0, 0.25);
+  cursor: not-allowed;
+}
+
+.page-button.active {
+  border-color: var(--ant-primary);
+  background: var(--ant-primary);
+  color: #ffffff;
+}
+
+@media (max-width: 720px) {
+  .pagination-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .table-action-bar {
+    justify-content: flex-start;
+  }
+}

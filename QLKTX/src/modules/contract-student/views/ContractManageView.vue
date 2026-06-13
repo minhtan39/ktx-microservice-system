@@ -105,9 +105,20 @@
           <span class="page-kicker">Operations Queue</span>
           <h3>Hợp đồng cần theo dõi</h3>
         </div>
-        <p>Hợp đồng đang hiệu lực có thể hủy hoặc kết thúc; hợp đồng đã hết hạn chỉ dùng để đối soát.</p>
+        <div class="table-action-bar">
+          <span class="table-count">{{ filteredContracts.length }} hợp đồng</span>
+          <v-btn
+            color="primary"
+            variant="tonal"
+            prepend-icon="mdi-file-excel-outline"
+            :disabled="filteredContracts.length === 0"
+            @click="exportContracts"
+          >
+            Xuất Excel
+          </v-btn>
+        </div>
       </div>
-      <table class="data-table">
+      <table class="data-table compact-table">
         <thead>
           <tr>
             <th>Mã hợp đồng</th>
@@ -126,16 +137,26 @@
           <tr v-else-if="filteredContracts.length === 0" class="table-empty">
             <td colspan="7">Chưa có hợp đồng phù hợp.</td>
           </tr>
-          <tr v-for="contract in filteredContracts" :key="contract.id">
+          <tr v-for="contract in paginatedContracts" :key="contract.id">
             <td>
-              <strong class="contract-code">{{ contract.contractCode }}</strong>
+              <strong class="cell-title contract-code">{{ contract.contractCode }}</strong>
+              <span class="cell-subtitle">ID: {{ contract.id }}</span>
             </td>
-            <td>{{ studentName(contract.studentId) }}</td>
-            <td>{{ roomLabel(contract.roomId) }}</td>
-            <td>{{ formatDate(contract.startDate) }} - {{ formatDate(contract.endDate) }}</td>
             <td>
-              Cọc: {{ formatMoney(contract.depositAmount) }}<br />
-              Tháng: {{ formatMoney(contract.monthlyFee) }}
+              <strong class="cell-title">{{ studentName(contract.studentId) }}</strong>
+              <span class="cell-subtitle">SV ID: {{ contract.studentId }}</span>
+            </td>
+            <td>
+              <strong class="cell-title">{{ roomLabel(contract.roomId) }}</strong>
+              <span class="cell-subtitle">Mã phòng: {{ contract.roomId }}</span>
+            </td>
+            <td>
+              <strong class="cell-title">{{ formatDate(contract.startDate) }}</strong>
+              <span class="cell-subtitle">đến {{ formatDate(contract.endDate) }}</span>
+            </td>
+            <td>
+              <strong class="cell-title">{{ formatMoney(contract.monthlyFee) }}</strong>
+              <span class="cell-subtitle">Cọc: {{ formatMoney(contract.depositAmount) }}</span>
             </td>
             <td>
               <span class="status-pill" :class="statusClass(contract.status)">
@@ -166,13 +187,35 @@
           </tr>
         </tbody>
       </table>
+      <div class="pagination-row">
+        <span>Hiển thị {{ pageStart }} - {{ pageEnd }} / {{ filteredContracts.length }} hợp đồng</span>
+        <div class="pagination-actions">
+          <button class="page-button" type="button" :disabled="currentPage === 1" @click="currentPage -= 1">
+            &lt;
+          </button>
+          <button
+            v-for="page in totalPages"
+            :key="page"
+            class="page-button"
+            :class="{ active: currentPage === page }"
+            type="button"
+            @click="currentPage = page"
+          >
+            {{ page }}
+          </button>
+          <button class="page-button" type="button" :disabled="currentPage === totalPages" @click="currentPage += 1">
+            &gt;
+          </button>
+        </div>
+      </div>
     </v-card>
   </section>
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import api from '@/services/api'
+import { exportRowsToExcel } from '@/utils/exportExcel'
 import {
   buildStudentNameMap,
   cleanStudents,
@@ -188,6 +231,8 @@ const rooms = ref([])
 const keyword = ref('')
 const statusFilter = ref('All')
 const buildingFilter = ref('All')
+const currentPage = ref(1)
+const pageSize = 8
 
 const statusOptions = [
   { title: 'Tất cả', value: 'All' },
@@ -238,6 +283,16 @@ const filteredContracts = computed(() => {
     return matchesStatus && matchesBuilding && matchesKeyword
   })
 })
+
+const totalPages = computed(() => Math.max(1, Math.ceil(filteredContracts.value.length / pageSize)))
+const paginatedContracts = computed(() => {
+  const start = (currentPage.value - 1) * pageSize
+  return filteredContracts.value.slice(start, start + pageSize)
+})
+const pageStart = computed(() =>
+  filteredContracts.value.length === 0 ? 0 : (currentPage.value - 1) * pageSize + 1)
+const pageEnd = computed(() =>
+  Math.min(currentPage.value * pageSize, filteredContracts.value.length))
 
 const showMessage = (text, type = 'success') => {
   message.value = text
@@ -292,6 +347,34 @@ const expireContract = async (id) => {
     showMessage('Không kết thúc được hợp đồng.', 'error')
     console.error(err)
   }
+}
+
+watch([keyword, statusFilter, buildingFilter], () => {
+  currentPage.value = 1
+})
+
+watch(filteredContracts, () => {
+  if (currentPage.value > totalPages.value) {
+    currentPage.value = totalPages.value
+  }
+})
+
+const exportContracts = () => {
+  exportRowsToExcel({
+    filename: 'quan-ly-hop-dong.xls',
+    sheetName: 'Quản lý hợp đồng',
+    rows: filteredContracts.value,
+    columns: [
+      { header: 'Mã hợp đồng', value: (contract) => contract.contractCode },
+      { header: 'Sinh viên', value: (contract) => studentName(contract.studentId) },
+      { header: 'Phòng', value: (contract) => roomLabel(contract.roomId) },
+      { header: 'Ngày bắt đầu', value: (contract) => formatDate(contract.startDate) },
+      { header: 'Ngày kết thúc', value: (contract) => formatDate(contract.endDate) },
+      { header: 'Tiền cọc', value: (contract) => formatMoney(contract.depositAmount) },
+      { header: 'Tiền phòng tháng', value: (contract) => formatMoney(contract.monthlyFee) },
+      { header: 'Trạng thái', value: (contract) => statusText(contract.status) },
+    ],
+  })
 }
 
 const studentName = (id) => studentMap.value.get(id) || `Sinh viên #${id}`

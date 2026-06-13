@@ -27,6 +27,9 @@
         <v-text-field v-model="search" label="Tìm tài khoản, họ tên hoặc mã nhân viên" prepend-inner-icon="mdi-magnify" variant="outlined" density="compact" hide-details clearable />
         <v-select v-model="roleFilter" :items="roleOptions" item-title="title" item-value="value" label="Vai trò" variant="outlined" density="compact" hide-details />
         <v-select v-model="statusFilter" :items="statusOptions" item-title="title" item-value="value" label="Trạng thái" variant="outlined" density="compact" hide-details />
+        <v-btn color="success" variant="tonal" prepend-icon="mdi-file-excel-outline" :disabled="filteredAccounts.length === 0" @click="exportAccounts">
+          Xuất Excel
+        </v-btn>
       </div>
 
       <v-data-table
@@ -113,6 +116,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import api from '@/services/api'
+import { exportRowsToExcel } from '@/utils/exportExcel'
 
 const loading = ref(false), saving = ref(false), deleting = ref(false)
 const error = ref(''), success = ref(''), accounts = ref([]), search = ref('')
@@ -169,7 +173,50 @@ const saveAccount = async () => {
     dialog.value = false; success.value = editing.value ? 'Đã cập nhật tài khoản.' : 'Đã tạo nhân viên vận hành.'; await loadAccounts()
   } catch (err) { error.value = err.response?.data?.message || 'Không lưu được tài khoản.'; console.error(err) } finally { saving.value = false }
 }
-const deleteAccount = async () => { if (!deleteTarget.value) return; try { deleting.value = true; error.value = ''; const target = deleteTarget.value; await api.delete(`/auth/accounts/${encodeURIComponent(target.username)}`); deleteDialog.value = false; success.value = target.role === 'Student' ? 'Đã xóa tài khoản và hồ sơ sinh viên.' : 'Đã xóa tài khoản nhân viên.'; await loadAccounts() } catch (err) { error.value = err.response?.data?.detail || 'Không xóa được tài khoản.' } finally { deleting.value = false } }
+const deleteAccount = async () => {
+  if (!deleteTarget.value) return
+
+  try {
+    deleting.value = true
+    error.value = ''
+    success.value = ''
+
+    const account = deleteTarget.value
+    await api.delete(`/auth/accounts/${encodeURIComponent(account.username)}`)
+
+    deleteDialog.value = false
+    deleteTarget.value = null
+    success.value = account.role === 'Student'
+      ? 'Đã xóa tài khoản và hồ sơ sinh viên.'
+      : 'Đã xóa tài khoản nhân viên.'
+    await loadAccounts()
+  } catch (err) {
+    error.value = err.response?.data?.detail || 'Không xóa được tài khoản.'
+    console.error(err)
+  } finally {
+    deleting.value = false
+  }
+}
+
+const exportAccounts = () => {
+  exportRowsToExcel({
+    filename: 'danh-sach-tai-khoan.xls',
+    sheetName: 'Danh sách tài khoản',
+    rows: filteredAccounts.value,
+    columns: [
+      { header: 'Tên đăng nhập', value: (account) => account.username },
+      { header: 'Vai trò', value: (account) => roleLabel(account.role) },
+      { header: 'Họ tên', value: (account) => account.fullName || '-' },
+      { header: 'Mã nhân viên', value: (account) => account.employeeCode || '-' },
+      { header: 'Mã sinh viên', value: (account) => account.studentCode || '-' },
+      { header: 'Bộ phận', value: (account) => account.department || '-' },
+      { header: 'Khu vực phụ trách', value: (account) => account.assignedArea || '-' },
+      { header: 'Trạng thái', value: (account) => statusLabel(account.accountStatus) },
+      { header: 'Số quyền', value: (account) => account.permissions?.length || 0 },
+    ],
+  })
+}
+
 const roleLabel = (role) => role === 'Staff' ? 'Nhân viên' : role === 'Student' ? 'Sinh viên' : role
 const statusLabel = (status) => ({ Active: 'Đang hoạt động', Pending: 'Chờ kích hoạt', Locked: 'Tạm khóa', Inactive: 'Ngừng hoạt động' }[status || 'Active'])
 onMounted(loadAccounts)
@@ -178,7 +225,7 @@ onMounted(loadAccounts)
 <style scoped>
 .account-page { display: grid; gap: 18px; } .page-head, .head-actions { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; } .page-head h2 { margin: 4px 0 6px; font-size: 30px; } .page-head p { margin: 0; color: var(--muted); }
 .account-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; } .account-metric { display: grid; grid-template-columns: 46px 1fr; gap: 14px; align-items: center; padding: 18px; border: 1px solid var(--line); border-radius: 8px; background: #fff; } .account-metric > .mdi { display: grid; place-items: center; width: 46px; height: 46px; border-radius: 8px; background: #e6f4ff; color: #1677ff; font-size: 24px; } .account-metric strong, .account-metric small { display: block; } .account-metric strong { font-size: 28px; } .account-metric small { color: var(--muted); }
-.panel { padding: 18px; border: 1px solid var(--line); border-radius: 8px; background: #fff; } .toolbar-row { display: grid; grid-template-columns: minmax(260px, 1fr) 180px 190px; gap: 10px; margin-bottom: 16px; } .account-table { border: 1px solid #e8ece9; border-radius: 6px; } .cell-stack strong, .cell-stack small, .permission-summary small { display: block; } .cell-stack small, .permission-summary small, .muted { margin-top: 3px; color: var(--muted); font-size: 12px; }
+.panel { padding: 18px; border: 1px solid var(--line); border-radius: 8px; background: #fff; } .toolbar-row { display: grid; grid-template-columns: minmax(260px, 1fr) 180px 190px auto; gap: 10px; align-items: center; margin-bottom: 16px; } .account-table { border: 1px solid #e8ece9; border-radius: 6px; } .cell-stack strong, .cell-stack small, .permission-summary small { display: block; } .cell-stack small, .permission-summary small, .muted { margin-top: 3px; color: var(--muted); font-size: 12px; }
 .role-pill, .status-pill { display: inline-flex; padding: 5px 9px; border-radius: 999px; font-size: 12px; font-weight: 800; } .role-pill.staff { background: #e6f4ff; color: #0958d9; } .role-pill.student { background: #f6ffed; color: #389e0d; } .status-pill.active { background: #f6ffed; color: #389e0d; } .status-pill.pending { background: #fffbe6; color: #d48806; } .status-pill.locked, .status-pill.inactive { background: #fff1f0; color: #cf1322; }
 code { padding: 5px 8px; border-radius: 5px; background: #f5f5f5; } .action-row { display: flex; justify-content: flex-end; } .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 14px; } .permission-panel { margin-top: 12px; padding-top: 18px; border-top: 1px solid var(--line); } .permission-panel p { margin: 4px 0 14px; color: var(--muted); } .permission-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; } .permission-item { display: grid; grid-template-columns: 42px 1fr; align-items: start; padding: 8px; border: 1px solid #e8ece9; border-radius: 6px; } .permission-item strong, .permission-item small { display: block; } .permission-item small { margin-top: 3px; color: var(--muted); }
 @media (max-width: 900px) { .account-metrics { grid-template-columns: repeat(2, 1fr); } .toolbar-row { grid-template-columns: 1fr; } } @media (max-width: 640px) { .page-head, .head-actions { flex-direction: column; } .account-metrics, .form-grid, .permission-grid { grid-template-columns: 1fr; } }

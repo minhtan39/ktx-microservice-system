@@ -80,27 +80,35 @@
           <span class="page-kicker">Student Directory</span>
           <h3>Danh sách hồ sơ</h3>
         </div>
-        <p>Tài khoản sinh viên được tạo theo MSSV để liên thông AuthService.</p>
+        <div class="table-action-bar">
+          <span class="table-count">{{ filteredStudents.length }} hồ sơ</span>
+          <v-btn
+            color="primary"
+            variant="tonal"
+            prepend-icon="mdi-file-excel-outline"
+            :disabled="filteredStudents.length === 0"
+            @click="exportStudents"
+          >
+            Xuất Excel
+          </v-btn>
+        </div>
       </div>
-      <table class="data-table">
+      <table class="data-table compact-table">
         <thead>
           <tr>
-            <th>MSSV</th>
-            <th>Họ tên</th>
-            <th>Khoa</th>
-            <th>Lớp</th>
+            <th>Sinh viên</th>
+            <th>Đào tạo</th>
             <th>Liên hệ</th>
             <th>Trạng thái</th>
-            <th>Tài khoản</th>
-            <th>Lịch sử lưu trú</th>
+            <th>Chi tiết</th>
           </tr>
         </thead>
         <tbody>
           <tr v-if="loading" class="table-empty">
-            <td colspan="8">Đang tải dữ liệu...</td>
+            <td colspan="5">Đang tải dữ liệu...</td>
           </tr>
           <tr v-else-if="filteredStudents.length === 0" class="table-empty">
-            <td colspan="8">
+            <td colspan="5">
               <span class="empty-icon mdi mdi-account-search-outline"></span>
               Không tìm thấy sinh viên phù hợp.
             </td>
@@ -112,30 +120,30 @@
             @click="openStudentDetails(student)"
           >
             <td>
-              <strong>{{ student.studentCode }}</strong>
-            </td>
-            <td>
               <div class="student-cell">
                 <span class="avatar-badge">{{ initials(student.fullName) }}</span>
                 <div>
-                  <strong>{{ student.fullName }}</strong>
-                  <span>{{ student.gender ? 'Nam' : 'Nữ' }}</span>
+                  <strong class="cell-title">{{ student.fullName }}</strong>
+                  <span class="cell-subtitle">{{ student.studentCode }} · {{ student.gender ? 'Nam' : 'Nữ' }}</span>
                 </div>
               </div>
             </td>
-            <td>{{ student.facultyName || 'Chưa cập nhật' }}</td>
-            <td>{{ student.className || 'Chưa cập nhật' }}</td>
-            <td>{{ student.phone || '-' }}<br />{{ student.email || '-' }}</td>
+            <td>
+              <strong class="cell-title">{{ student.facultyName || 'Chưa cập nhật' }}</strong>
+              <span class="cell-subtitle">{{ student.className || 'Chưa cập nhật lớp' }}</span>
+            </td>
+            <td>
+              <strong class="cell-title">{{ student.phone || '-' }}</strong>
+              <span class="cell-subtitle">{{ student.email || '-' }}</span>
+            </td>
             <td>
               <span class="status-pill" :class="statusClass(student.status)">
                 {{ statusLabel(student.status) }}
               </span>
             </td>
             <td>
-              <strong>{{ student.studentCode }}</strong>
-              <span>Mật khẩu mặc định: {{ student.studentCode }}</span>
+              <v-btn color="primary" variant="tonal" size="small" icon="mdi-eye-outline" @click.stop="openStudentDetails(student)" />
             </td>
-            <td>{{ student.residenceHistory || 'Chưa có lịch sử lưu trú' }}</td>
           </tr>
         </tbody>
       </table>
@@ -258,6 +266,7 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import api from '@/services/api'
+import { exportRowsToExcel } from '@/utils/exportExcel'
 import { cleanStudents } from '../utils/studentDisplay'
 
 const loading = ref(false)
@@ -459,6 +468,27 @@ const clearStudentFilters = () => {
   search.value = ''
   facultyFilter.value = 'All'
   statusFilter.value = 'All'
+}
+
+const exportStudents = () => {
+  exportRowsToExcel({
+    filename: 'danh-sach-sinh-vien.xls',
+    sheetName: 'Danh sách sinh viên',
+    rows: filteredStudents.value,
+    columns: [
+      { header: 'MSSV', value: (student) => student.studentCode },
+      { header: 'Họ tên', value: (student) => student.fullName },
+      { header: 'Giới tính', value: (student) => student.gender ? 'Nam' : 'Nữ' },
+      { header: 'Khoa', value: (student) => student.facultyName },
+      { header: 'Lớp', value: (student) => student.className },
+      { header: 'Số điện thoại', value: (student) => student.phone },
+      { header: 'Email', value: (student) => student.email },
+      { header: 'CCCD', value: (student) => student.cccd },
+      { header: 'Trạng thái', value: (student) => statusLabel(student.status) },
+      { header: 'Tài khoản mặc định', value: (student) => student.studentCode },
+      { header: 'Lịch sử lưu trú', value: (student) => student.residenceHistory || 'Chưa có lịch sử lưu trú' },
+    ],
+  })
 }
 
 const normalizeStudentCode = (value) => String(value || '').trim().toUpperCase()

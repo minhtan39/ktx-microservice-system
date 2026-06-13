@@ -164,7 +164,7 @@
           <v-text-field
             v-model="invoiceSearch"
             prepend-inner-icon="mdi-magnify"
-            label="Tìm mã phiếu hoặc sinh viên"
+            label="Tìm mã phiếu, sinh viên hoặc phòng"
             variant="outlined"
             density="compact"
             hide-details
@@ -193,6 +193,15 @@
             hide-details
             class="sort-filter"
           />
+          <v-btn
+            color="success"
+            variant="tonal"
+            prepend-icon="mdi-file-excel-outline"
+            :disabled="filteredInvoices.length === 0"
+            @click="exportInvoices"
+          >
+            Xuất Excel
+          </v-btn>
         </div>
       </div>
 
@@ -363,6 +372,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import api from '../../../services/api'
+import { exportRowsToExcel } from '@/utils/exportExcel'
 
 const ELECTRICITY_RATE = 4000
 const WATER_RATE = 20000
@@ -658,6 +668,28 @@ const markPaid = async (invoice) => {
   }
 }
 
+const exportInvoices = () => {
+  exportRowsToExcel({
+    filename: 'danh-sach-phieu-thanh-toan.xls',
+    sheetName: 'Danh sách phiếu thanh toán',
+    rows: filteredInvoices.value,
+    columns: [
+      { header: 'Mã phiếu', value: (invoice) => invoice.invoiceCode },
+      { header: 'Sinh viên', value: (invoice) => invoice.studentName },
+      { header: 'MSSV', value: (invoice) => invoice.studentCode },
+      { header: 'Kỳ thanh toán', value: (invoice) => invoice.billingPeriod },
+      { header: 'Phòng', value: (invoice) => invoice.roomName },
+      { header: 'Tiền phòng', value: (invoice) => formatMoney(invoice.roomFee) },
+      { header: 'Điện', value: (invoice) => formatMoney(invoice.electricityAmount) },
+      { header: 'Nước', value: (invoice) => formatMoney(invoice.waterAmount) },
+      { header: 'Tổng tiền', value: (invoice) => formatMoney(invoice.totalAmount) },
+      { header: 'Hạn thanh toán', value: (invoice) => formatDate(invoice.dueDate) },
+      { header: 'Trạng thái', value: (invoice) => statusLabel(invoice.status) },
+      { header: 'Nội dung chuyển khoản', value: (invoice) => invoice.paymentCode },
+    ],
+  })
+}
+
 const printInvoice = (invoice, targetWindow = null) => {
   const popup = targetWindow || window.open('', '_blank')
   if (!popup) {
@@ -711,7 +743,7 @@ onMounted(loadAll)
 .issue-footer span { color: #647168; }
 .issue-footer strong { color: #0f7f51; font-size: 28px; }
 .table-heading { align-items: flex-end; }
-.table-tools { display: grid; grid-template-columns: minmax(240px, 1fr) 170px 250px; gap: 10px; width: min(760px, 100%); }
+.table-tools { display: grid; grid-template-columns: minmax(220px, 1fr) 170px 230px auto; gap: 10px; width: min(940px, 100%); align-items: center; }
 .history-tools { display: grid; grid-template-columns: minmax(230px, 1fr) 280px; gap: 10px; width: min(630px, 100%); }
 .search-field, .history-search, .status-filter, .sort-filter { min-width: 0; }
 .ant-table { overflow: hidden; border: 1px solid #dfe6e1; border-radius: 6px; box-shadow: 0 1px 2px rgba(26, 43, 34, 0.04); }
