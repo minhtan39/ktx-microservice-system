@@ -81,6 +81,7 @@
 import { reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
+import { defaultHomeForRole } from '@/utils/auth'
 
 const router = useRouter()
 const route = useRoute()
@@ -95,10 +96,6 @@ const form = reactive({
   username: '',
   password: '',
 })
-
-const homePathByRole = (role) => String(role || '').toLowerCase() === 'student'
-  ? '/student/portal'
-  : '/student-service/dashboard'
 
 const login = async () => {
   try {
@@ -119,13 +116,17 @@ const login = async () => {
     }
 
     const role = payload.role || 'User'
-    const homePath = payload.homePath || homePathByRole(role)
+    const homePath = payload.homePath || defaultHomeForRole(role)
 
     localStorage.setItem('user_token', token)
     localStorage.setItem('user_role', role)
     localStorage.setItem('fullName', payload.fullName || payload.username || form.username)
     localStorage.setItem('username', payload.username || form.username)
     localStorage.setItem('user_home', homePath)
+    localStorage.setItem('user_permissions', JSON.stringify(payload.permissions || []))
+    localStorage.setItem('employee_code', payload.employeeCode || '')
+    localStorage.setItem('employee_department', payload.department || '')
+    localStorage.setItem('employee_area', payload.assignedArea || '')
 
     if (payload.studentId) {
       localStorage.setItem('student_id', String(payload.studentId))

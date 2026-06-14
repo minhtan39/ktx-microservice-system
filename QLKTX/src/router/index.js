@@ -1,22 +1,9 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { defaultHomeForRole, hasPermission, normalizeRole } from '@/utils/auth'
 
 const ADMIN_ROLES = ['Admin', 'Staff']
 const ADMIN_ONLY_ROLES = ['Admin']
 const STUDENT_ROLES = ['Student']
-
-const normalizeRole = (role) => {
-  const normalized = String(role || '').toLowerCase()
-
-  if (normalized === 'student' || normalized === 'sinhvien') return 'Student'
-  if (normalized === 'staff' || normalized === 'nhanvien') return 'Staff'
-  return 'Admin'
-}
-
-const defaultHomeForRole = (role = localStorage.getItem('user_role')) => {
-  return normalizeRole(role) === 'Student'
-    ? '/student/portal'
-    : '/student-service/dashboard'
-}
 
 const routes = [
   {
@@ -45,6 +32,13 @@ const routes = [
     component: () => import('../components/MainLayout.vue'),
     children: [
       {
+        path: 'employee/dashboard',
+        name: 'EmployeeDashboard',
+        meta: { roles: ['Staff'] },
+        component: () =>
+          import('../modules/employee/views/EmployeeDashboard.vue'),
+      },
+      {
         path: 'student/portal',
         name: 'StudentPortal',
         meta: { roles: STUDENT_ROLES },
@@ -68,63 +62,66 @@ const routes = [
       {
         path: 'student-service/dashboard',
         name: 'StudentServiceDashboard',
-        meta: { roles: ADMIN_ROLES },
+        meta: { roles: ADMIN_ONLY_ROLES },
         component: () =>
           import('../modules/contract-student/views/DashboardView.vue'),
       },
       {
         path: 'student-service/students',
         name: 'StudentManage',
-        meta: { roles: ADMIN_ROLES },
+        meta: { roles: ADMIN_ROLES, permission: 'view_students' },
         component: () =>
           import('../modules/contract-student/views/StudentManageView.vue'),
       },
       {
         path: 'student-service/registrations',
         name: 'RoomRegistrationCreate',
-        meta: { roles: ADMIN_ROLES },
+        meta: { roles: ADMIN_ROLES, permission: 'approve_registrations' },
         component: () =>
           import('../modules/contract-student/views/RoomRegistrationView.vue'),
       },
       {
         path: 'student-service/registrations/approval',
         name: 'RoomRegistrationApproval',
-        meta: { roles: ADMIN_ROLES },
+        meta: { roles: ADMIN_ROLES, permission: 'approve_registrations' },
         component: () =>
           import('../modules/contract-student/views/RoomRegistrationView.vue'),
       },
       {
         path: 'student-service/contracts',
         name: 'ContractList',
-        meta: { roles: ADMIN_ROLES },
+        meta: { roles: ADMIN_ROLES, permission: 'manage_contracts' },
         component: () =>
           import('../modules/contract-student/views/ContractListView.vue'),
       },
       {
         path: 'student-service/contracts/manage',
         name: 'ContractManage',
-        meta: { roles: ADMIN_ROLES },
+        meta: { roles: ADMIN_ROLES, permission: 'manage_contracts' },
         component: () =>
           import('../modules/contract-student/views/ContractManageView.vue'),
       },
       {
         path: 'facility/rooms',
         name: 'RoomDashboard',
-        meta: { roles: ADMIN_ROLES },
+        meta: { roles: ADMIN_ROLES, permission: 'view_rooms' },
         component: () =>
           import('../modules/facility/views/RoomDashboard.vue'),
       },
       {
         path: 'finance/incidents',
         name: 'IncidentManage',
-        meta: { roles: ADMIN_ROLES },
+        meta: {
+          roles: ADMIN_ROLES,
+          permissionsAny: ['manage_incidents', 'manage_maintenance'],
+        },
         component: () =>
           import('../modules/finance/views/IncidentManage.vue'),
       },
       {
         path: 'finance/billing',
         name: 'BillingManagement',
-        meta: { roles: ADMIN_ROLES },
+        meta: { roles: ADMIN_ROLES, permission: 'issue_billing' },
         component: () =>
           import('../modules/billing/views/BillingManagementView.vue'),
       },
@@ -138,7 +135,7 @@ const routes = [
       {
         path: 'system/logs',
         name: 'SystemLogs',
-        meta: { roles: ADMIN_ROLES },
+        meta: { roles: ADMIN_ONLY_ROLES },
         component: () =>
           import('../modules/billing/views/SystemLogsView.vue'),
       },
@@ -179,6 +176,24 @@ router.beforeEach((to) => {
   const allowedRoles = to.matched.flatMap((record) => record.meta.roles || [])
 
   if (allowedRoles.length > 0 && !allowedRoles.includes(role)) {
+    return defaultHomeForRole(role)
+  }
+
+  const requiredPermission = to.matched
+    .map((record) => record.meta.permission)
+    .find(Boolean)
+
+  if (requiredPermission && !hasPermission(requiredPermission, role)) {
+    return defaultHomeForRole(role)
+  }
+
+  const requiredPermissionsAny = to.matched
+    .flatMap((record) => record.meta.permissionsAny || [])
+
+  if (
+    requiredPermissionsAny.length > 0 &&
+    !requiredPermissionsAny.some((permission) => hasPermission(permission, role))
+  ) {
     return defaultHomeForRole(role)
   }
 

@@ -178,14 +178,14 @@
 
         <v-form class="registration-form" @submit.prevent="submitIncident">
           <v-row dense>
-            <v-col cols="12" sm="4">
+            <v-col cols="12" sm="3">
               <v-text-field
                 v-model="incidentForm.roomName"
                 label="Phòng"
                 density="comfortable"
               />
             </v-col>
-            <v-col cols="12" sm="4">
+            <v-col cols="12" sm="3">
               <v-select
                 v-model="incidentForm.building"
                 :items="buildingOptions"
@@ -193,13 +193,38 @@
                 density="comfortable"
               />
             </v-col>
-            <v-col cols="12" sm="4">
+            <v-col cols="12" sm="3">
               <v-select
                 v-model="incidentForm.category"
                 :items="incidentCategories"
                 item-title="title"
                 item-value="value"
                 label="Loại sự cố"
+                density="comfortable"
+              />
+            </v-col>
+            <v-col cols="12" sm="3">
+              <v-select
+                v-model="incidentForm.priority"
+                :items="incidentPriorityOptions"
+                item-title="title"
+                item-value="value"
+                label="Mức độ ưu tiên"
+                density="comfortable"
+              />
+            </v-col>
+            <v-col cols="12" sm="6">
+              <v-text-field
+                v-model="incidentForm.preferredVisitAt"
+                type="datetime-local"
+                label="Thời gian có thể tiếp nhận"
+                density="comfortable"
+              />
+            </v-col>
+            <v-col cols="12" sm="6">
+              <v-text-field
+                v-model="incidentForm.contactPhone"
+                label="Số điện thoại liên hệ"
                 density="comfortable"
               />
             </v-col>
@@ -232,27 +257,41 @@
               <tr>
                 <th>Ngày gửi</th>
                 <th>Phòng</th>
+                <th>Mức độ</th>
                 <th>Loại sự cố</th>
                 <th>Mô tả</th>
+                <th>Phụ trách</th>
                 <th>Trạng thái</th>
-                <th>Phản hồi</th>
+                <th>Thao tác</th>
               </tr>
             </thead>
             <tbody>
               <tr v-if="ownIncidents.length === 0">
-                <td colspan="6" class="empty-cell">Bạn chưa có yêu cầu sửa chữa nào.</td>
+                <td colspan="8" class="empty-cell">Bạn chưa có yêu cầu sửa chữa nào.</td>
               </tr>
               <tr v-for="incident in ownIncidents" :key="incident.id">
                 <td>{{ formatDate(incident.createdAt) }}</td>
                 <td>{{ incident.building }}-{{ incident.roomName }}</td>
+                <td><span class="status-pill" :class="`priority-${incident.priority || 'normal'}`">{{ incidentPriorityLabel(incident.priority) }}</span></td>
                 <td>{{ incidentCategoryLabel(incident.category) }}</td>
                 <td>{{ incident.description }}</td>
+                <td>
+                  <strong>{{ incident.assignedName || 'Chưa phân công' }}</strong>
+                  <small class="table-note">{{ incident.dueAt ? `Hạn ${formatDateTime(incident.dueAt)}` : incident.staffNote || '-' }}</small>
+                </td>
                 <td>
                   <span class="status-pill" :class="incidentStatusClass(incident.status)">
                     {{ incidentStatusLabel(incident.status) }}
                   </span>
                 </td>
-                <td>{{ incident.staffNote || incident.handledBy || '-' }}</td>
+                <td>
+                  <div v-if="incident.status === 'completed'" class="incident-actions">
+                    <v-btn size="small" color="success" :loading="incidentActionLoading === incident.id" @click="confirmIncident(incident)">Đã sửa đạt</v-btn>
+                    <v-btn size="small" variant="tonal" color="warning" :disabled="incidentActionLoading === incident.id" @click="openReopenDialog(incident)">Chưa đạt</v-btn>
+                  </div>
+                  <v-btn v-else-if="incident.status === 'confirmed'" size="small" variant="text" color="warning" @click="openReopenDialog(incident)">Yêu cầu xử lý lại</v-btn>
+                  <span v-else class="table-note">{{ incident.staffNote || '-' }}</span>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -342,6 +381,21 @@
           </table>
         </div>
       </section>
+
+      <v-dialog v-model="reopenDialog" max-width="520">
+        <v-card>
+          <v-card-title>Yêu cầu xử lý lại</v-card-title>
+          <v-card-text>
+            <p class="dialog-copy">Hãy mô tả phần chưa đạt để nhân viên tiếp tục xử lý đúng vấn đề.</p>
+            <v-textarea v-model="reopenNote" label="Lý do chưa đạt" rows="4" variant="outlined" autofocus />
+          </v-card-text>
+          <v-card-actions>
+            <v-spacer />
+            <v-btn variant="text" @click="reopenDialog = false">Hủy</v-btn>
+            <v-btn color="warning" :loading="incidentActionLoading === reopenIncidentTarget?.id" @click="submitReopen">Gửi lại yêu cầu</v-btn>
+          </v-card-actions>
+        </v-card>
+      </v-dialog>
     </template>
   </section>
 </template>
@@ -359,6 +413,10 @@ const student = ref(null)
 const ownRegistrations = ref([])
 const ownContracts = ref([])
 const ownIncidents = ref([])
+const incidentActionLoading = ref(null)
+const reopenDialog = ref(false)
+const reopenIncidentTarget = ref(null)
+const reopenNote = ref('')
 
 const studentId = ref(Number(localStorage.getItem('student_id') || 0))
 const studentCode = ref(
@@ -395,13 +453,24 @@ const incidentCategories = [
   { title: 'Nước', value: 'Water' },
   { title: 'Nội thất', value: 'Furniture' },
   { title: 'Internet', value: 'Internet' },
+  { title: 'An toàn', value: 'Safety' },
+  { title: 'Vệ sinh', value: 'Sanitation' },
   { title: 'Khác', value: 'Other' },
+]
+const incidentPriorityOptions = [
+  { title: 'Thấp', value: 'low' },
+  { title: 'Bình thường', value: 'normal' },
+  { title: 'Cao', value: 'high' },
+  { title: 'Khẩn cấp', value: 'urgent' },
 ]
 const incidentSubmitting = ref(false)
 const incidentForm = reactive({
   roomName: '',
   building: 'A',
   category: 'Electric',
+  priority: 'normal',
+  preferredVisitAt: '',
+  contactPhone: '',
   description: '',
 })
 
@@ -447,6 +516,7 @@ const resolveStudent = async () => {
     localStorage.setItem('student_id', String(studentId.value))
     localStorage.setItem('student_code', studentCode.value)
     localStorage.setItem('fullName', student.value.fullName)
+    incidentForm.contactPhone = incidentForm.contactPhone || student.value.phone || ''
   }
 }
 
@@ -529,17 +599,67 @@ const submitIncident = async () => {
       roomName: incidentForm.roomName,
       building: incidentForm.building,
       category: incidentForm.category,
+      priority: incidentForm.priority,
+      preferredVisitAt: incidentForm.preferredVisitAt
+        ? new Date(incidentForm.preferredVisitAt).toISOString()
+        : null,
+      contactPhone: incidentForm.contactPhone,
       description: incidentForm.description,
     })
 
     success.value = 'Đã gửi yêu cầu sửa chữa. Nhân viên/admin sẽ tiếp nhận và cập nhật trạng thái.'
     incidentForm.description = ''
+    incidentForm.preferredVisitAt = ''
     await loadIncidents()
   } catch (err) {
     error.value = 'Không gửi được yêu cầu sửa chữa. Kiểm tra Gateway và BillingService.'
     console.error(err)
   } finally {
     incidentSubmitting.value = false
+  }
+}
+
+const confirmIncident = async (incident) => {
+  try {
+    incidentActionLoading.value = incident.id
+    error.value = ''
+    await api.post(`/incidents/${incident.id}/confirm`, {
+      note: 'Sinh viên xác nhận yêu cầu đã được xử lý đạt yêu cầu.',
+    })
+    success.value = 'Đã xác nhận yêu cầu sửa chữa hoàn thành.'
+    await loadIncidents()
+  } catch (err) {
+    error.value = err.response?.data?.message || 'Không xác nhận được yêu cầu sửa chữa.'
+  } finally {
+    incidentActionLoading.value = null
+  }
+}
+
+const openReopenDialog = (incident) => {
+  reopenIncidentTarget.value = incident
+  reopenNote.value = ''
+  reopenDialog.value = true
+}
+
+const submitReopen = async () => {
+  if (!reopenIncidentTarget.value || !reopenNote.value.trim()) {
+    error.value = 'Vui lòng nhập lý do cần xử lý lại.'
+    return
+  }
+
+  try {
+    incidentActionLoading.value = reopenIncidentTarget.value.id
+    error.value = ''
+    await api.post(`/incidents/${reopenIncidentTarget.value.id}/reopen`, {
+      note: reopenNote.value.trim(),
+    })
+    reopenDialog.value = false
+    success.value = 'Đã gửi lại yêu cầu cho nhân viên phụ trách.'
+    await loadIncidents()
+  } catch (err) {
+    error.value = err.response?.data?.message || 'Không thể mở lại yêu cầu sửa chữa.'
+  } finally {
+    incidentActionLoading.value = null
   }
 }
 
@@ -610,11 +730,20 @@ const statusClass = (status) => {
 const incidentStatusLabel = (status) => {
   const normalized = String(status || '').toLowerCase()
   if (normalized === 'new') return 'Mới gửi'
+  if (normalized === 'accepted') return 'Đã tiếp nhận'
+  if (normalized === 'assigned') return 'Đã phân công'
   if (normalized === 'processing') return 'Đang xử lý'
-  if (normalized === 'done') return 'Hoàn thành'
+  if (normalized === 'waiting-materials') return 'Chờ vật tư'
+  if (normalized === 'done' || normalized === 'completed') return 'Chờ bạn xác nhận'
+  if (normalized === 'confirmed') return 'Đã hoàn thành'
+  if (normalized === 'reopened') return 'Đang xử lý lại'
   if (normalized === 'rejected') return 'Từ chối'
+  if (normalized === 'cancelled') return 'Đã hủy'
   return status || 'Chưa cập nhật'
 }
+
+const incidentPriorityLabel = (priority) =>
+  incidentPriorityOptions.find((item) => item.value === priority)?.title || 'Bình thường'
 
 const incidentCategoryLabel = (category) => {
   return incidentCategories.find((item) => item.value === category)?.title || category
@@ -624,14 +753,23 @@ const incidentStatusClass = (status) => {
   const normalized = String(status || '').toLowerCase()
   return {
     'status-pending': normalized === 'new',
-    'status-approved': normalized === 'processing' || normalized === 'done',
-    'status-rejected': normalized === 'rejected',
+    'status-approved': ['accepted', 'assigned', 'processing', 'confirmed'].includes(normalized),
+    'status-expired': ['waiting-materials', 'completed', 'reopened'].includes(normalized),
+    'status-rejected': ['rejected', 'cancelled'].includes(normalized),
   }
 }
 
 const formatDate = (value) => {
   if (!value) return '-'
   return new Intl.DateTimeFormat('vi-VN').format(new Date(value))
+}
+
+const formatDateTime = (value) => {
+  if (!value) return '-'
+  return new Intl.DateTimeFormat('vi-VN', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+  }).format(new Date(value))
 }
 
 const money = (value) => {
@@ -651,6 +789,25 @@ onMounted(loadAll)
   display: grid;
   gap: 18px;
 }
+
+.incident-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.table-note {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.priority-low { background: #f5f5f5; color: #595959; }
+.priority-normal { background: #e6f4ff; color: #0958d9; }
+.priority-high { background: #fff7e6; color: #d46b08; }
+.priority-urgent { background: #fff1f0; color: #cf1322; }
+.dialog-copy { margin: 0 0 14px; color: var(--muted); }
 
 .student-hero {
   display: flex;

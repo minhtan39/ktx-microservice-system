@@ -337,12 +337,21 @@ app.MapPost("/api/billing/webhooks/payment", async Task<IResult> (
     });
 });
 
-app.MapGet("/api/incidents", (long? studentId, string? status, BillingStore store) =>
+app.MapGet("/api/incidents", (
+    long? studentId,
+    string? status,
+    string? assignedTo,
+    string? priority,
+    BillingStore store) =>
 {
     var incidents = store.Read(data => data.Incidents
         .Where(item => !studentId.HasValue || item.StudentId == studentId.Value)
         .Where(item => string.IsNullOrWhiteSpace(status) ||
             item.Status.Equals(status, StringComparison.OrdinalIgnoreCase))
+        .Where(item => string.IsNullOrWhiteSpace(assignedTo) ||
+            string.Equals(item.AssignedTo, assignedTo, StringComparison.OrdinalIgnoreCase))
+        .Where(item => string.IsNullOrWhiteSpace(priority) ||
+            item.Priority.Equals(priority, StringComparison.OrdinalIgnoreCase))
         .OrderByDescending(item => item.CreatedAt)
         .ToList());
 
@@ -357,36 +366,46 @@ app.MapGet("/api/incidents/{id:long}", (long id, BillingStore store) =>
         : Results.Ok(incident);
 });
 
-app.MapPost("/api/incidents", (CreateIncidentRequest request, BillingStore store) =>
-    CreateIncident(request, store));
+app.MapPost("/api/incidents", (
+    CreateIncidentRequest request,
+    HttpRequest httpRequest,
+    BillingStore store) =>
+    CreateIncident(request, GetRequestIdentity(httpRequest), store));
 
 app.MapMethods(
-    "/api/incidents/{id:long}/status",
+    "/api/incidents/{id:long}/assign",
     ["PATCH", "PUT"],
-    (long id, UpdateIncidentStatusRequest request, BillingStore store) =>
+    (long id, AssignIncidentRequest request, HttpRequest httpRequest, BillingStore store) =>
     {
-        var nextStatus = NormalizeIncidentStatus(request.Status);
+        var identity = GetRequestIdentity(httpRequest);
 
-        if (nextStatus == null)
-            return Results.BadRequest(new { message = "Status must be new, processing, done, or rejected." });
+        if (!identity.IsOperational)
+            return Results.Unauthorized();
+
+        if (string.IsNullOrWhiteSpace(request.AssignedTo))
+            return Results.BadRequest(new { message = "Vui lòng chọn nhân viên phụ trách." });
+
+        if (!identity.IsAdmin &&
+            !request.AssignedTo.Trim().Equals(identity.Username, StringComparison.OrdinalIgnoreCase))
+        {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
 
         var updated = store.Write(data =>
         {
-            var index = data.Incidents.FindIndex(item => item.Id == id);
+            var incident = data.Incidents.FirstOrDefault(item => item.Id == id);
+            if (incident == null) return null;
 
-            if (index < 0)
-                return null;
-
-            var current = data.Incidents[index];
-            var incident = current with
-            {
-                Status = nextStatus,
-                HandledBy = string.IsNullOrWhiteSpace(request.HandledBy) ? current.HandledBy : request.HandledBy.Trim(),
-                StaffNote = string.IsNullOrWhiteSpace(request.StaffNote) ? current.StaffNote : request.StaffNote.Trim(),
-                UpdatedAt = DateTime.UtcNow
-            };
-
-            data.Incidents[index] = incident;
+            incident.AssignedTo = request.AssignedTo.Trim();
+            incident.AssignedName = string.IsNullOrWhiteSpace(request.AssignedName)
+                ? request.AssignedTo.Trim()
+                : request.AssignedName.Trim();
+            incident.Priority = NormalizePriority(request.Priority) ?? incident.Priority;
+            incident.ScheduledAt = request.ScheduledAt ?? incident.ScheduledAt;
+            incident.DueAt = request.DueAt ?? incident.DueAt;
+            incident.Status = incident.Status == "new" ? "assigned" : incident.Status;
+            incident.UpdatedAt = DateTime.UtcNow;
+            AddIncidentTimeline(incident, "assigned", identity.Username, request.Note);
             return incident;
         });
 
@@ -395,13 +414,223 @@ app.MapMethods(
             : Results.Ok(updated);
     });
 
-app.MapGet("/api/maintenance", (BillingStore store) =>
-    Results.Ok(store.Read(data => data.Incidents
-        .OrderByDescending(item => item.CreatedAt)
+app.MapMethods(
+    "/api/incidents/{id:long}/status",
+    ["PATCH", "PUT"],
+    (long id, UpdateIncidentStatusRequest request, HttpRequest httpRequest, BillingStore store) =>
+    {
+        var identity = GetRequestIdentity(httpRequest);
+
+        if (!identity.IsOperational)
+            return Results.Unauthorized();
+
+        var nextStatus = NormalizeIncidentStatus(request.Status);
+
+        if (nextStatus == null)
+            return Results.BadRequest(new { message = "Trạng thái yêu cầu không hợp lệ." });
+
+        var existing = store.Read(data => data.Incidents.FirstOrDefault(item => item.Id == id));
+
+        if (existing == null)
+            return Results.NotFound(new { message = "Incident request not found." });
+
+        if (!identity.IsAdmin &&
+            !string.Equals(existing.AssignedTo, identity.Username, StringComparison.OrdinalIgnoreCase))
+        {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
+
+        if (nextStatus == "completed" &&
+            string.IsNullOrWhiteSpace(request.Resolution) &&
+            string.IsNullOrWhiteSpace(existing.Resolution))
+        {
+            return Results.BadRequest(new { message = "Vui lòng nhập kết quả xử lý trước khi hoàn thành." });
+        }
+
+        var updated = store.Write(data =>
+        {
+            var incident = data.Incidents.FirstOrDefault(item => item.Id == id);
+            if (incident == null) return null;
+
+            incident.Status = nextStatus;
+            incident.HandledBy = string.IsNullOrWhiteSpace(request.HandledBy)
+                ? identity.Username
+                : request.HandledBy.Trim();
+            incident.StaffNote = string.IsNullOrWhiteSpace(request.StaffNote)
+                ? incident.StaffNote
+                : request.StaffNote.Trim();
+            incident.RootCause = string.IsNullOrWhiteSpace(request.RootCause)
+                ? incident.RootCause
+                : request.RootCause.Trim();
+            incident.Resolution = string.IsNullOrWhiteSpace(request.Resolution)
+                ? incident.Resolution
+                : request.Resolution.Trim();
+            incident.MaterialCost = request.MaterialCost ?? incident.MaterialCost;
+            incident.LaborCost = request.LaborCost ?? incident.LaborCost;
+            incident.AfterImageUrls = request.AfterImageUrls ?? incident.AfterImageUrls;
+            incident.UpdatedAt = DateTime.UtcNow;
+
+            if (nextStatus == "completed")
+                incident.CompletedAt = DateTime.UtcNow;
+
+            AddIncidentTimeline(incident, "status-updated", identity.Username, request.StaffNote);
+            return incident;
+        });
+
+        return updated == null
+            ? Results.NotFound(new { message = "Incident request not found." })
+            : Results.Ok(updated);
+    });
+
+app.MapPost("/api/incidents/{id:long}/confirm", (
+    long id,
+    StudentIncidentActionRequest request,
+    HttpRequest httpRequest,
+    BillingStore store) =>
+{
+    var identity = GetRequestIdentity(httpRequest);
+    var updated = store.Write(data =>
+    {
+        var incident = data.Incidents.FirstOrDefault(item => item.Id == id);
+        if (incident == null) return null;
+        if (!identity.IsAdmin && !identity.IsStudentOwner(incident)) return new MaintenanceIncident { Id = -1 };
+        if (incident.Status != "completed") return new MaintenanceIncident { Id = -2 };
+
+        incident.Status = "confirmed";
+        incident.StudentConfirmedAt = DateTime.UtcNow;
+        incident.UpdatedAt = DateTime.UtcNow;
+        AddIncidentTimeline(incident, "student-confirmed", identity.Username, request.Note);
+        return incident;
+    });
+
+    if (updated?.Id == -1) return Results.Unauthorized();
+    if (updated?.Id == -2) return Results.BadRequest(new { message = "Yêu cầu chưa ở trạng thái hoàn thành." });
+    return updated == null ? Results.NotFound() : Results.Ok(updated);
+});
+
+app.MapPost("/api/incidents/{id:long}/reopen", (
+    long id,
+    StudentIncidentActionRequest request,
+    HttpRequest httpRequest,
+    BillingStore store) =>
+{
+    var identity = GetRequestIdentity(httpRequest);
+    var updated = store.Write(data =>
+    {
+        var incident = data.Incidents.FirstOrDefault(item => item.Id == id);
+        if (incident == null) return null;
+        if (!identity.IsAdmin && !identity.IsStudentOwner(incident)) return new MaintenanceIncident { Id = -1 };
+        if (incident.Status is not ("completed" or "confirmed")) return new MaintenanceIncident { Id = -2 };
+
+        incident.Status = "reopened";
+        incident.ReopenedAt = DateTime.UtcNow;
+        incident.UpdatedAt = DateTime.UtcNow;
+        AddIncidentTimeline(incident, "student-reopened", identity.Username, request.Note);
+        return incident;
+    });
+
+    if (updated?.Id == -1) return Results.Unauthorized();
+    if (updated?.Id == -2) return Results.BadRequest(new { message = "Yêu cầu chưa thể mở lại." });
+    return updated == null ? Results.NotFound() : Results.Ok(updated);
+});
+
+app.MapGet("/api/maintenance", (string? assignedTo, string? status, BillingStore store) =>
+    Results.Ok(store.Read(data => data.MaintenancePlans
+        .Where(item => string.IsNullOrWhiteSpace(assignedTo) ||
+            string.Equals(item.AssignedTo, assignedTo, StringComparison.OrdinalIgnoreCase))
+        .Where(item => string.IsNullOrWhiteSpace(status) ||
+            item.Status.Equals(status, StringComparison.OrdinalIgnoreCase))
+        .OrderBy(item => item.NextDueDate)
         .ToList())));
 
-app.MapPost("/api/maintenance", (CreateIncidentRequest request, BillingStore store) =>
-    CreateIncident(request, store));
+app.MapPost("/api/maintenance", (
+    CreateMaintenancePlanRequest request,
+    HttpRequest httpRequest,
+    BillingStore store) =>
+{
+    var identity = GetRequestIdentity(httpRequest);
+    if (!identity.IsAdmin) return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+    if (string.IsNullOrWhiteSpace(request.Title) ||
+        string.IsNullOrWhiteSpace(request.AssetName) ||
+        string.IsNullOrWhiteSpace(request.Location))
+    {
+        return Results.BadRequest(new { message = "Vui lòng nhập tên công việc, thiết bị và vị trí." });
+    }
+
+    var plan = store.Write(data =>
+    {
+        var nextId = data.MaintenancePlans.Count == 0 ? 1 : data.MaintenancePlans.Max(item => item.Id) + 1;
+        var created = new MaintenancePlan
+        {
+            Id = nextId,
+            Title = request.Title.Trim(),
+            AssetCode = request.AssetCode?.Trim() ?? string.Empty,
+            AssetName = request.AssetName.Trim(),
+            Location = request.Location.Trim(),
+            Category = string.IsNullOrWhiteSpace(request.Category) ? "Other" : request.Category.Trim(),
+            Frequency = string.IsNullOrWhiteSpace(request.Frequency) ? "Monthly" : request.Frequency.Trim(),
+            NextDueDate = request.NextDueDate,
+            AssignedTo = request.AssignedTo?.Trim(),
+            AssignedName = request.AssignedName?.Trim(),
+            Checklist = request.Checklist ?? [],
+            Notes = request.Notes?.Trim(),
+            CreatedAt = DateTime.UtcNow,
+            UpdatedBy = identity.Username
+        };
+        data.MaintenancePlans.Add(created);
+        return created;
+    });
+
+    return Results.Ok(plan);
+});
+
+app.MapMethods(
+    "/api/maintenance/{id:long}",
+    ["PATCH", "PUT"],
+    (long id, UpdateMaintenancePlanRequest request, HttpRequest httpRequest, BillingStore store) =>
+    {
+        var identity = GetRequestIdentity(httpRequest);
+        if (!identity.IsOperational) return Results.Unauthorized();
+
+        var existing = store.Read(data => data.MaintenancePlans.FirstOrDefault(item => item.Id == id));
+        if (existing == null) return Results.NotFound();
+
+        if (!identity.IsAdmin &&
+            !string.Equals(existing.AssignedTo, identity.Username, StringComparison.OrdinalIgnoreCase))
+        {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
+
+        var plan = store.Write(data =>
+        {
+            var current = data.MaintenancePlans.FirstOrDefault(item => item.Id == id);
+            if (current == null) return null;
+
+            current.Status = NormalizeMaintenanceStatus(request.Status) ?? current.Status;
+            if (identity.IsAdmin)
+            {
+                current.AssignedTo = string.IsNullOrWhiteSpace(request.AssignedTo) ? current.AssignedTo : request.AssignedTo.Trim();
+                current.AssignedName = string.IsNullOrWhiteSpace(request.AssignedName) ? current.AssignedName : request.AssignedName.Trim();
+            }
+            current.NextDueDate = request.NextDueDate ?? current.NextDueDate;
+            current.CompletedItems = request.CompletedItems ?? current.CompletedItems;
+            current.Cost = request.Cost ?? current.Cost;
+            current.Notes = string.IsNullOrWhiteSpace(request.Notes) ? current.Notes : request.Notes.Trim();
+            current.UpdatedAt = DateTime.UtcNow;
+            current.UpdatedBy = string.IsNullOrWhiteSpace(request.UpdatedBy) ? identity.Username : request.UpdatedBy.Trim();
+
+            if (current.Status == "completed")
+            {
+                current.LastCompletedAt = DateTime.UtcNow;
+                current.NextDueDate = request.NextDueDate ?? CalculateNextMaintenanceDate(current.NextDueDate, current.Frequency);
+            }
+
+            return current;
+        });
+
+        return plan == null ? Results.NotFound() : Results.Ok(plan);
+    });
 
 app.Run();
 
@@ -579,7 +808,7 @@ static decimal GetDecimal(JsonElement element, params string[] names)
         : 0;
 }
 
-static IResult CreateIncident(CreateIncidentRequest request, BillingStore store)
+static IResult CreateIncident(CreateIncidentRequest request, RequestIdentity identity, BillingStore store)
 {
     if (request.StudentId <= 0)
         return Results.BadRequest(new { message = "studentId is required." });
@@ -590,20 +819,25 @@ static IResult CreateIncident(CreateIncidentRequest request, BillingStore store)
     var incident = store.Write(data =>
     {
         var nextId = data.Incidents.Count == 0 ? 1 : data.Incidents.Max(item => item.Id) + 1;
-        var created = new MaintenanceIncident(
-            nextId,
-            request.StudentId,
-            string.IsNullOrWhiteSpace(request.StudentCode) ? $"SV-{request.StudentId}" : request.StudentCode.Trim(),
-            string.IsNullOrWhiteSpace(request.StudentName) ? "Student" : request.StudentName.Trim(),
-            request.RoomName.Trim(),
-            string.IsNullOrWhiteSpace(request.Building) ? "-" : request.Building.Trim(),
-            string.IsNullOrWhiteSpace(request.Category) ? "Other" : request.Category.Trim(),
-            request.Description.Trim(),
-            "new",
-            DateTime.UtcNow,
-            null,
-            null,
-            null);
+        var created = new MaintenanceIncident
+        {
+            Id = nextId,
+            StudentId = request.StudentId,
+            StudentCode = string.IsNullOrWhiteSpace(request.StudentCode) ? $"SV-{request.StudentId}" : request.StudentCode.Trim(),
+            StudentName = string.IsNullOrWhiteSpace(request.StudentName) ? "Student" : request.StudentName.Trim(),
+            RoomName = request.RoomName.Trim(),
+            Building = string.IsNullOrWhiteSpace(request.Building) ? "-" : request.Building.Trim(),
+            Category = string.IsNullOrWhiteSpace(request.Category) ? "Other" : request.Category.Trim(),
+            Description = request.Description.Trim(),
+            Priority = NormalizePriority(request.Priority) ?? "normal",
+            Status = "new",
+            CreatedAt = DateTime.UtcNow,
+            PreferredVisitAt = request.PreferredVisitAt,
+            ContactPhone = request.ContactPhone?.Trim(),
+            ImageUrls = request.ImageUrls ?? []
+        };
+
+        AddIncidentTimeline(created, "created", identity.Username, "Sinh viên gửi yêu cầu sửa chữa");
 
         data.Incidents.Add(created);
         return created;
@@ -619,11 +853,97 @@ static string? NormalizeIncidentStatus(string status)
     return normalized switch
     {
         "new" or "pending" => "new",
+        "accepted" or "received" => "accepted",
+        "assigned" => "assigned",
         "processing" or "approved" or "inprogress" or "in-progress" => "processing",
-        "done" or "completed" or "complete" => "done",
-        "rejected" or "cancelled" => "rejected",
+        "waiting-materials" or "waitingmaterials" or "waiting" => "waiting-materials",
+        "done" or "completed" or "complete" => "completed",
+        "confirmed" => "confirmed",
+        "reopened" => "reopened",
+        "rejected" => "rejected",
+        "cancelled" or "canceled" => "cancelled",
         _ => null
     };
 }
 
+static string? NormalizePriority(string? priority)
+{
+    return priority?.Trim().ToLowerInvariant() switch
+    {
+        "low" => "low",
+        "normal" or "medium" => "normal",
+        "high" => "high",
+        "urgent" or "critical" => "urgent",
+        _ => null
+    };
+}
+
+static string? NormalizeMaintenanceStatus(string? status)
+{
+    return status?.Trim().ToLowerInvariant() switch
+    {
+        "scheduled" => "scheduled",
+        "in-progress" or "processing" => "in-progress",
+        "waiting-materials" or "waiting" => "waiting-materials",
+        "completed" or "done" => "completed",
+        "cancelled" or "canceled" => "cancelled",
+        _ => null
+    };
+}
+
+static void AddIncidentTimeline(MaintenanceIncident incident, string action, string actor, string? note)
+{
+    incident.Timeline ??= [];
+    incident.Timeline.Add(new IncidentTimelineEntry(
+        DateTime.UtcNow,
+        action,
+        incident.Status,
+        string.IsNullOrWhiteSpace(actor) ? "system" : actor,
+        string.IsNullOrWhiteSpace(note) ? null : note.Trim()));
+}
+
+static DateTime CalculateNextMaintenanceDate(DateTime current, string frequency)
+{
+    return frequency.Trim().ToLowerInvariant() switch
+    {
+        "weekly" => current.AddDays(7),
+        "quarterly" => current.AddMonths(3),
+        "yearly" or "annual" => current.AddYears(1),
+        _ => current.AddMonths(1)
+    };
+}
+
+static RequestIdentity GetRequestIdentity(HttpRequest request)
+{
+    var authorization = request.Headers.Authorization.ToString();
+    const string bearerPrefix = "Bearer ";
+
+    if (!authorization.StartsWith(bearerPrefix, StringComparison.OrdinalIgnoreCase))
+        return new RequestIdentity("anonymous", string.Empty, string.Empty);
+
+    try
+    {
+        var token = authorization[bearerPrefix.Length..].Trim();
+        var raw = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(token));
+        var parts = raw.Split(':');
+        return new RequestIdentity(
+            parts.ElementAtOrDefault(0) ?? "anonymous",
+            parts.ElementAtOrDefault(1) ?? string.Empty,
+            parts.ElementAtOrDefault(2) ?? string.Empty);
+    }
+    catch
+    {
+        return new RequestIdentity("anonymous", string.Empty, string.Empty);
+    }
+}
+
 public sealed record IncomingPayment(decimal Amount, string Content, string ReferenceCode);
+
+public sealed record RequestIdentity(string Username, string Role, string StudentCode)
+{
+    public bool IsAdmin => Role.Equals("Admin", StringComparison.OrdinalIgnoreCase);
+    public bool IsOperational => IsAdmin || Role.Equals("Staff", StringComparison.OrdinalIgnoreCase);
+    public bool IsStudentOwner(MaintenanceIncident incident) =>
+        Role.Equals("Student", StringComparison.OrdinalIgnoreCase) &&
+        StudentCode.Equals(incident.StudentCode, StringComparison.OrdinalIgnoreCase);
+}
