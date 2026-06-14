@@ -1,87 +1,41 @@
 <template>
   <section class="student-page">
-    <div class="page-heading">
-      <div>
+    <div class="student-hero">
+      <div class="hero-copy">
         <span class="page-kicker">Rubric 5 - Student Profile</span>
         <h2>Hồ sơ sinh viên</h2>
-        <p>Lưu thông tin cá nhân, lớp, khoa và lịch sử lưu trú trước khi sinh viên đăng ký nội trú.</p>
-      </div>
-      <div class="heading-actions">
-        <v-btn color="primary" variant="tonal" prepend-icon="mdi-refresh" :loading="loading" @click="loadStudents">
-          Làm mới
-        </v-btn>
-        <v-btn color="success" variant="flat" prepend-icon="mdi-account-plus-outline" @click="openCreateDialog">
-          Thêm sinh viên
-        </v-btn>
-      </div>
-    </div>
-
-    <div class="student-metrics">
-      <article v-for="metric in profileMetrics" :key="metric.label" class="student-metric">
-        <span :class="['mdi', metric.icon]"></span>
-        <div>
-          <strong>{{ metric.value }}</strong>
-          <small>{{ metric.label }}</small>
+        <p>Quản lý hồ sơ, lớp, khoa và lịch sử lưu trú theo dạng roster gọn. Bấm một sinh viên để đọc chi tiết thay vì nhìn một bảng quá dày.</p>
+        <div class="heading-actions">
+          <v-btn color="primary" variant="tonal" prepend-icon="mdi-refresh" :loading="loading" @click="loadStudents">
+            Làm mới
+          </v-btn>
+          <v-btn color="success" variant="flat" prepend-icon="mdi-account-plus-outline" @click="openCreateDialog">
+            Thêm sinh viên
+          </v-btn>
         </div>
-      </article>
+      </div>
+
+      <div class="hero-stats">
+        <article v-for="metric in profileMetrics" :key="metric.label" class="stat-tile">
+          <span :class="['mdi', metric.icon]"></span>
+          <div>
+            <strong>{{ metric.value }}</strong>
+            <small>{{ metric.label }}</small>
+          </div>
+        </article>
+      </div>
     </div>
 
     <v-alert v-if="error" type="error" variant="tonal" class="mb-4">{{ error }}</v-alert>
     <v-alert v-if="success" type="success" variant="tonal" class="mb-4">{{ success }}</v-alert>
 
-    <v-card class="filter-card">
-      <div class="filter-head">
-        <div>
-          <span class="page-kicker">Student Filters</span>
-          <h3>Lọc hồ sơ</h3>
-        </div>
-        <p>Nhấn vào một dòng để xem chi tiết hồ sơ và thông tin lưu trú.</p>
-      </div>
-
-      <div class="filter-grid">
-        <v-text-field
-          v-model="search"
-          label="Tìm theo tên, MSSV, lớp hoặc email"
-          density="compact"
-          clearable
-          prepend-inner-icon="mdi-magnify"
-          hide-details
-        />
-
-        <v-select
-          v-model="facultyFilter"
-          :items="facultyOptions"
-          item-title="title"
-          item-value="value"
-          label="Khoa"
-          density="compact"
-          hide-details
-        />
-
-        <v-select
-          v-model="statusFilter"
-          :items="studentStatusOptions"
-          item-title="title"
-          item-value="value"
-          label="Trạng thái"
-          density="compact"
-          hide-details
-        />
-
-        <v-btn variant="tonal" color="primary" prepend-icon="mdi-filter-remove-outline" @click="clearStudentFilters">
-          Xóa lọc
-        </v-btn>
-      </div>
-    </v-card>
-
-    <v-card class="table-card">
-      <div class="table-toolbar">
-        <div>
-          <span class="page-kicker">Student Directory</span>
-          <h3>Danh sách hồ sơ</h3>
-        </div>
-        <div class="table-action-bar">
-          <span class="table-count">{{ filteredStudents.length }} hồ sơ</span>
+    <div class="student-workspace">
+      <section class="roster-panel">
+        <div class="roster-toolbar">
+          <div>
+            <span class="page-kicker">Student Roster</span>
+            <h3>{{ filteredStudents.length }} hồ sơ phù hợp</h3>
+          </div>
           <v-btn
             color="primary"
             variant="tonal"
@@ -92,80 +46,146 @@
             Xuất Excel
           </v-btn>
         </div>
-      </div>
-      <table class="data-table compact-table">
-        <thead>
-          <tr>
-            <th>Sinh viên</th>
-            <th>Đào tạo</th>
-            <th>Liên hệ</th>
-            <th>Trạng thái</th>
-            <th>Chi tiết</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-if="loading" class="table-empty">
-            <td colspan="5">Đang tải dữ liệu...</td>
-          </tr>
-          <tr v-else-if="filteredStudents.length === 0" class="table-empty">
-            <td colspan="5">
-              <span class="empty-icon mdi mdi-account-search-outline"></span>
-              Không tìm thấy sinh viên phù hợp.
-            </td>
-          </tr>
-          <tr
-            v-for="student in paginatedStudents"
-            :key="student.id"
-            class="click-row"
-            @click="openStudentDetails(student)"
-          >
-            <td>
-              <div class="student-cell">
-                <span class="avatar-badge">{{ initials(student.fullName) }}</span>
-                <div>
-                  <strong class="cell-title">{{ student.fullName }}</strong>
-                  <span class="cell-subtitle">{{ student.studentCode }} · {{ student.gender ? 'Nam' : 'Nữ' }}</span>
-                </div>
-              </div>
-            </td>
-            <td>
-              <strong class="cell-title">{{ student.facultyName || 'Chưa cập nhật' }}</strong>
-              <span class="cell-subtitle">{{ student.className || 'Chưa cập nhật lớp' }}</span>
-            </td>
-            <td>
-              <strong class="cell-title">{{ student.phone || '-' }}</strong>
-              <span class="cell-subtitle">{{ student.email || '-' }}</span>
-            </td>
-            <td>
-              <span class="status-pill" :class="statusClass(student.status)">
-                {{ statusLabel(student.status) }}
-              </span>
-            </td>
-            <td>
-              <v-btn color="primary" variant="tonal" size="small" icon="mdi-eye-outline" @click.stop="openStudentDetails(student)" />
-            </td>
-          </tr>
-        </tbody>
-      </table>
 
-      <div v-if="filteredStudents.length > 0" class="pagination-row">
-        <span>Hiển thị {{ pageStart }}-{{ pageEnd }} trên {{ filteredStudents.length }} sinh viên</span>
-        <div class="pagination-actions">
-          <v-btn icon="mdi-chevron-left" size="small" variant="tonal" :disabled="currentPage === 1" @click="currentPage -= 1" />
-          <button
-            v-for="page in totalPages"
-            :key="page"
-            type="button"
-            class="page-button"
-            :class="{ active: currentPage === page }"
-            @click="currentPage = page"
-          >
-            {{ page }}
-          </button>
-          <v-btn icon="mdi-chevron-right" size="small" variant="tonal" :disabled="currentPage === totalPages" @click="currentPage += 1" />
+        <div class="search-shell">
+          <v-text-field
+            v-model="search"
+            label="Tìm tên, MSSV, lớp hoặc email"
+            density="comfortable"
+            clearable
+            prepend-inner-icon="mdi-magnify"
+            hide-details
+          />
+          <div class="filter-row">
+            <v-select
+              v-model="facultyFilter"
+              :items="facultyOptions"
+              item-title="title"
+              item-value="value"
+              label="Khoa"
+              density="compact"
+              hide-details
+            />
+            <v-select
+              v-model="statusFilter"
+              :items="studentStatusOptions"
+              item-title="title"
+              item-value="value"
+              label="Trạng thái"
+              density="compact"
+              hide-details
+            />
+            <v-btn variant="tonal" color="primary" icon="mdi-filter-remove-outline" title="Xóa lọc" @click="clearStudentFilters" />
+          </div>
         </div>
-      </div>
-    </v-card>
+
+        <div class="student-list">
+          <div v-if="loading" class="empty-state">
+            <span class="mdi mdi-loading mdi-spin"></span>
+            Đang tải dữ liệu sinh viên...
+          </div>
+          <div v-else-if="filteredStudents.length === 0" class="empty-state">
+            <span class="mdi mdi-account-search-outline"></span>
+            Không tìm thấy sinh viên phù hợp.
+          </div>
+          <template v-else>
+            <button
+              v-for="student in paginatedStudents"
+              :key="student.id"
+              type="button"
+              class="student-row-card"
+              :class="{ active: highlightedStudent?.id === student.id }"
+              @click="selectStudent(student)"
+            >
+              <span class="avatar-badge">{{ initials(student.fullName) }}</span>
+              <span class="student-main">
+                <strong>{{ student.fullName }}</strong>
+                <small>{{ student.studentCode }} · {{ student.className || 'Chưa cập nhật lớp' }}</small>
+              </span>
+              <span class="student-meta">
+                <span class="status-pill" :class="statusClass(student.status)">
+                  {{ statusLabel(student.status) }}
+                </span>
+                <small>{{ student.facultyName || 'Chưa có khoa' }}</small>
+              </span>
+            </button>
+          </template>
+        </div>
+
+        <div v-if="filteredStudents.length > 0" class="pagination-row">
+          <span>{{ pageStart }}-{{ pageEnd }} / {{ filteredStudents.length }} sinh viên</span>
+          <div class="pagination-actions">
+            <button class="page-button" type="button" :disabled="currentPage === 1" @click="currentPage -= 1">
+              &lt;
+            </button>
+            <button
+              v-for="page in totalPages"
+              :key="page"
+              type="button"
+              class="page-button"
+              :class="{ active: currentPage === page }"
+              @click="currentPage = page"
+            >
+              {{ page }}
+            </button>
+            <button class="page-button" type="button" :disabled="currentPage === totalPages" @click="currentPage += 1">
+              &gt;
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <aside class="profile-panel">
+        <template v-if="highlightedStudent">
+          <div class="profile-cover">
+            <span class="avatar-badge profile-avatar">{{ initials(highlightedStudent.fullName) }}</span>
+            <div>
+              <span class="page-kicker">Selected Profile</span>
+              <h3>{{ highlightedStudent.fullName }}</h3>
+              <p>{{ highlightedStudent.studentCode }} · {{ highlightedStudent.gender ? 'Nam' : 'Nữ' }}</p>
+            </div>
+          </div>
+
+          <div class="profile-badges">
+            <span class="status-pill" :class="statusClass(highlightedStudent.status)">
+              {{ statusLabel(highlightedStudent.status) }}
+            </span>
+            <span>{{ highlightedStudent.facultyName || 'Chưa cập nhật khoa' }}</span>
+            <span>{{ highlightedStudent.className || 'Chưa cập nhật lớp' }}</span>
+          </div>
+
+          <div class="profile-section">
+            <h4>Liên hệ</h4>
+            <p><span>Số điện thoại</span><strong>{{ highlightedStudent.phone || '-' }}</strong></p>
+            <p><span>Email</span><strong>{{ highlightedStudent.email || '-' }}</strong></p>
+            <p><span>CCCD</span><strong>{{ highlightedStudent.cccd || '-' }}</strong></p>
+          </div>
+
+          <div class="profile-section soft">
+            <h4>Tài khoản sinh viên</h4>
+            <p><span>Tên đăng nhập</span><strong>{{ highlightedStudent.studentCode || '-' }}</strong></p>
+            <p><span>Mật khẩu mặc định</span><strong>{{ highlightedStudent.studentCode || '-' }}</strong></p>
+          </div>
+
+          <div class="residence-box">
+            <span class="mdi mdi-bed-outline"></span>
+            <div>
+              <strong>Lịch sử lưu trú</strong>
+              <p>{{ highlightedStudent.residenceHistory || 'Chưa có lịch sử lưu trú' }}</p>
+            </div>
+          </div>
+
+          <v-btn block color="primary" variant="flat" prepend-icon="mdi-card-account-details-outline" @click="openStudentDetails(highlightedStudent)">
+            Xem hồ sơ đầy đủ
+          </v-btn>
+        </template>
+        <div v-else class="empty-profile">
+          <span class="mdi mdi-account-outline"></span>
+          <strong>Chưa có hồ sơ để hiển thị</strong>
+          <p>Thêm sinh viên hoặc điều chỉnh bộ lọc để xem chi tiết tại đây.</p>
+        </div>
+      </aside>
+    </div>
 
     <v-dialog v-model="createDialog" max-width="980">
       <v-card class="dialog-card">
@@ -375,6 +395,13 @@ const paginatedStudents = computed(() => {
 })
 const pageStart = computed(() => filteredStudents.value.length === 0 ? 0 : (currentPage.value - 1) * pageSize + 1)
 const pageEnd = computed(() => Math.min(currentPage.value * pageSize, filteredStudents.value.length))
+const highlightedStudent = computed(() => {
+  if (selectedStudent.value && filteredStudents.value.some((student) => student.id === selectedStudent.value.id)) {
+    return selectedStudent.value
+  }
+
+  return paginatedStudents.value[0] || filteredStudents.value[0] || null
+})
 
 const selectedStudentFields = computed(() => {
   if (!selectedStudent.value) return []
@@ -459,6 +486,10 @@ const openCreateDialog = () => {
   createDialog.value = true
 }
 
+const selectStudent = (student) => {
+  selectedStudent.value = student
+}
+
 const openStudentDetails = (student) => {
   selectedStudent.value = student
   detailDialog.value = true
@@ -516,25 +547,46 @@ onMounted(loadStudents)
 
 <style scoped>
 .student-page {
+  display: grid;
+  gap: 18px;
+}
+
+.student-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(360px, 0.85fr);
+  gap: 18px;
+  min-height: 250px;
+  padding: 28px;
+  border: 1px solid rgba(15, 127, 81, 0.14);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(22, 155, 99, 0.13), transparent 42%),
+    linear-gradient(180deg, #ffffff, #f8fbf9);
+  box-shadow: 0 14px 35px rgba(17, 24, 39, 0.06);
+}
+
+.hero-copy {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  justify-content: center;
+  min-width: 0;
 }
 
-.page-heading {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 18px;
-  margin-bottom: 0;
+.hero-copy h2 {
+  max-width: 620px;
+  margin: 0;
+  color: var(--ink);
+  font-family: var(--font-heading);
+  font-size: clamp(34px, 4vw, 54px);
+  line-height: 1.02;
 }
 
-.page-heading p {
-  max-width: 760px;
-  margin: 8px 0 0;
+.hero-copy p {
+  max-width: 640px;
+  margin: 16px 0 0;
   color: var(--muted);
-  font-size: 15px;
-  line-height: 1.5;
+  font-size: 16px;
+  line-height: 1.65;
 }
 
 .heading-actions {
@@ -542,138 +594,136 @@ onMounted(loadStudents)
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-  justify-content: flex-end;
+  margin-top: 26px;
 }
 
-.student-metrics {
+.hero-stats {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  align-content: center;
 }
 
-.student-metric {
+.stat-tile {
   display: grid;
-  grid-template-columns: 46px minmax(0, 1fr);
+  grid-template-columns: 42px minmax(0, 1fr);
   align-items: center;
-  gap: 14px;
-  min-height: 92px;
-  padding: 18px;
-  border: 1px solid rgba(15, 127, 81, 0.14);
+  gap: 12px;
+  min-height: 94px;
+  padding: 16px;
+  border: 1px solid rgba(15, 127, 81, 0.12);
   border-radius: 8px;
-  background:
-    linear-gradient(135deg, rgba(22, 155, 99, 0.08), transparent 50%),
-    #ffffff;
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(8px);
 }
 
-.student-metric .mdi {
+.stat-tile .mdi {
   display: grid;
   place-items: center;
-  width: 46px;
-  height: 46px;
+  width: 42px;
+  height: 42px;
   border-radius: 8px;
   background: #ecfdf5;
   color: var(--brand-dark);
-  font-size: 24px;
+  font-size: 22px;
 }
 
-.student-metric strong,
-.student-metric small {
+.stat-tile strong,
+.stat-tile small {
   display: block;
 }
 
-.student-metric strong {
+.stat-tile strong {
   color: var(--ink);
   font-family: var(--font-heading);
-  font-size: 28px;
+  font-size: 30px;
   line-height: 1;
 }
 
-.student-metric small {
+.stat-tile small {
   margin-top: 6px;
   color: var(--muted);
   font-size: 13px;
   font-weight: 800;
 }
 
-.filter-card {
-  padding: 18px;
-  background: #ffffff;
-}
-
-.filter-head,
-.table-toolbar {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 18px;
-}
-
-.filter-head {
-  margin-bottom: 16px;
-}
-
-.filter-head h3,
-.filter-head p,
-.table-toolbar h3,
-.table-toolbar p {
-  margin: 0;
-}
-
-.filter-head h3,
-.table-toolbar h3 {
-  color: var(--ink);
-  font-family: var(--font-heading);
-  font-size: 20px;
-}
-
-.filter-head p,
-.table-toolbar p {
-  max-width: 520px;
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 1.45;
-  text-align: right;
-}
-
-.filter-grid {
+.student-workspace {
   display: grid;
-  grid-template-columns: minmax(260px, 1fr) 220px 190px auto;
-  align-items: center;
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  gap: 18px;
+  align-items: start;
 }
 
-.table-card {
+.roster-panel,
+.profile-panel {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 10px 28px rgba(17, 24, 39, 0.05);
+}
+
+.roster-panel {
   overflow: hidden;
 }
 
-.table-toolbar {
-  padding: 20px 22px;
+.roster-toolbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 22px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.roster-toolbar h3 {
+  margin: 0;
+  color: var(--ink);
+  font-family: var(--font-heading);
+  font-size: 24px;
+}
+
+.search-shell {
+  display: grid;
+  gap: 12px;
+  padding: 16px 22px;
+  background: #fbfdfc;
+}
+
+.filter-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 44px;
+  gap: 10px;
+  align-items: center;
+}
+
+.student-list {
+  display: grid;
+  gap: 0;
+}
+
+.student-row-card {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) minmax(160px, auto);
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 17px 22px;
+  border: 0;
   border-bottom: 1px solid var(--line);
   background: #ffffff;
-}
-
-.table-empty td {
-  padding: 34px 18px;
-  color: var(--muted);
-  font-weight: 800;
-  text-align: center;
-}
-
-.empty-icon {
-  display: block;
-  margin-bottom: 8px;
-  color: var(--brand);
-  font-size: 26px;
-}
-
-.click-row {
+  color: inherit;
   cursor: pointer;
+  text-align: left;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
 }
 
-.student-cell {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+.student-row-card:hover,
+.student-row-card.active {
+  background: #f3faf6;
+}
+
+.student-row-card.active {
+  box-shadow: inset 4px 0 0 var(--brand);
 }
 
 .avatar-badge {
@@ -689,21 +739,36 @@ onMounted(loadStudents)
   font-weight: 900;
 }
 
-.avatar-badge.large {
-  width: 48px;
-  height: 48px;
-  font-size: 15px !important;
+.student-main,
+.student-meta {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
 }
 
-.data-table td strong,
-.data-table td span {
-  display: block;
+.student-main strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 900;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.data-table td span {
-  margin-top: 4px;
+.student-main small,
+.student-meta small {
+  overflow: hidden;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 12px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.student-meta {
+  justify-items: end;
+  text-align: right;
 }
 
 .status-pill {
@@ -723,6 +788,22 @@ onMounted(loadStudents)
   color: #15803d !important;
 }
 
+.empty-state {
+  display: grid;
+  place-items: center;
+  gap: 10px;
+  min-height: 280px;
+  padding: 28px;
+  color: var(--muted);
+  font-weight: 900;
+  text-align: center;
+}
+
+.empty-state .mdi {
+  color: var(--brand);
+  font-size: 34px;
+}
+
 .pagination-row {
   display: flex;
   align-items: center;
@@ -733,6 +814,7 @@ onMounted(loadStudents)
   color: var(--muted);
   font-size: 13px;
   font-weight: 800;
+  background: #ffffff;
 }
 
 .pagination-actions {
@@ -756,6 +838,165 @@ onMounted(loadStudents)
   border-color: var(--brand);
   background: var(--brand);
   color: #ffffff;
+}
+
+.profile-panel {
+  position: sticky;
+  top: 18px;
+  display: grid;
+  gap: 18px;
+  padding: 22px;
+}
+
+.profile-cover {
+  display: grid;
+  grid-template-columns: 68px minmax(0, 1fr);
+  gap: 15px;
+  align-items: center;
+  padding: 18px;
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(22, 155, 99, 0.16), transparent 58%),
+    #f7fbf8;
+}
+
+.profile-avatar {
+  width: 68px;
+  height: 68px;
+  font-size: 20px !important;
+}
+
+.profile-cover h3,
+.profile-cover p,
+.profile-section h4,
+.profile-section p,
+.residence-box p {
+  margin: 0;
+}
+
+.profile-cover h3 {
+  overflow: hidden;
+  color: var(--ink);
+  font-family: var(--font-heading);
+  font-size: 22px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+}
+
+.profile-cover p {
+  margin-top: 6px;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.profile-badges {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.profile-badges > span:not(.status-pill) {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: #f3f6f4;
+  color: var(--muted-strong);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.profile-section {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.profile-section.soft {
+  background: #fbfdfc;
+}
+
+.profile-section h4 {
+  color: var(--ink);
+  font-family: var(--font-heading);
+  font-size: 15px;
+}
+
+.profile-section p {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.profile-section strong {
+  max-width: 190px;
+  overflow: hidden;
+  color: var(--ink);
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.residence-box {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 12px;
+  padding: 16px;
+  border-radius: 8px;
+  background: #0f172a;
+  color: #ffffff;
+}
+
+.residence-box .mdi {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #86efac;
+  font-size: 22px;
+}
+
+.residence-box strong {
+  display: block;
+}
+
+.residence-box p {
+  margin-top: 5px;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.empty-profile {
+  display: grid;
+  place-items: center;
+  min-height: 380px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.empty-profile .mdi {
+  color: var(--brand);
+  font-size: 42px;
+}
+
+.empty-profile strong {
+  margin-top: 8px;
+  color: var(--ink);
+}
+
+.empty-profile p {
+  max-width: 260px;
+  margin: 6px 0 0;
+  line-height: 1.45;
 }
 
 .dialog-card {
@@ -842,46 +1083,50 @@ onMounted(loadStudents)
 }
 
 @media (max-width: 980px) {
-  .filter-grid {
-    grid-template-columns: 1fr 1fr;
+  .student-hero,
+  .student-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .profile-panel {
+    position: static;
   }
 }
 
 @media (max-width: 860px) {
-  .page-heading {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .heading-actions {
-    justify-content: flex-start;
-  }
-
-  .student-metrics {
+  .hero-stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .filter-head,
-  .table-toolbar,
+  .roster-toolbar,
   .pagination-row {
     align-items: flex-start;
     flex-direction: column;
   }
 
-  .filter-head p,
-  .table-toolbar p {
-    text-align: left;
-  }
-
-  .filter-grid,
   .info-grid {
     grid-template-columns: 1fr;
   }
 }
 
 @media (max-width: 560px) {
-  .student-metrics {
+  .student-hero {
+    padding: 20px;
+  }
+
+  .hero-copy h2 {
+    font-size: 32px;
+  }
+
+  .hero-stats,
+  .filter-row,
+  .student-row-card {
     grid-template-columns: 1fr;
+  }
+
+  .student-meta {
+    justify-items: start;
+    text-align: left;
   }
 }
 </style>
