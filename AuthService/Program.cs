@@ -49,7 +49,14 @@ if (users.IsEmpty)
         "nhanvien",
         "staff123",
         "Staff",
-        "Nhân viên ký túc xá");
+        "Nhân viên ký túc xá",
+        EmployeeCode: "NV001",
+        Email: "nhanvien@dormmanager.local",
+        Department: "Kỹ thuật",
+        JobTitle: "Nhân viên vận hành",
+        AssignedArea: "Tòa A",
+        AccountStatus: "Active",
+        Permissions: DefaultStaffPermissions());
 
     users["SV20260001"] = new(
         "SV20260001",
@@ -94,6 +101,16 @@ app.MapPost("/api/auth/login", async (
     if (user == null || user.Password != password)
     {
         return Results.Unauthorized();
+    }
+
+    if (!user.AccountStatus.Equals("Active", StringComparison.OrdinalIgnoreCase))
+    {
+        return Results.Json(new
+        {
+            message = user.AccountStatus.Equals("Pending", StringComparison.OrdinalIgnoreCase)
+                ? "Tài khoản nhân viên đang chờ kích hoạt."
+                : "Tài khoản đã bị khóa hoặc ngừng hoạt động."
+        }, statusCode: StatusCodes.Status403Forbidden);
     }
 
     return Results.Ok(ToAuthResponse(user));
@@ -345,6 +362,76 @@ app.MapGet("/api/auth/accounts/{username}", (string username, HttpRequest reques
             : Results.NotFound(new { message = "Account not found." });
 });
 
+app.MapPost("/api/auth/accounts", (
+    CreateStaffAccountRequest create,
+    HttpRequest request) =>
+{
+    if (!IsAdminRequest(request))
+        return Results.Unauthorized();
+
+    var username = create.Username.Trim();
+    var password = create.Password.Trim();
+    var employeeCode = create.EmployeeCode.Trim();
+
+    if (string.IsNullOrWhiteSpace(username) ||
+        string.IsNullOrWhiteSpace(password) ||
+        string.IsNullOrWhiteSpace(employeeCode) ||
+        string.IsNullOrWhiteSpace(create.FullName))
+    {
+        return Results.BadRequest(new { message = "Tên đăng nhập, mật khẩu, mã nhân viên và họ tên là bắt buộc." });
+    }
+
+    if (users.ContainsKey(username))
+        return Results.Conflict(new { message = "Tên đăng nhập đã tồn tại." });
+
+    if (users.Values.Any(user =>
+        !string.IsNullOrWhiteSpace(user.EmployeeCode) &&
+        user.EmployeeCode.Equals(employeeCode, StringComparison.OrdinalIgnoreCase)))
+    {
+        return Results.Conflict(new { message = "Mã nhân viên đã tồn tại." });
+    }
+
+    var staff = new DemoUser(
+        username,
+        password,
+        "Staff",
+        create.FullName.Trim(),
+        EmployeeCode: employeeCode,
+        Email: create.Email?.Trim(),
+        Phone: create.Phone?.Trim(),
+        Department: create.Department?.Trim(),
+        JobTitle: create.JobTitle?.Trim(),
+        AssignedArea: create.AssignedArea?.Trim(),
+        AccountStatus: NormalizeAccountStatus(create.AccountStatus),
+        Permissions: NormalizePermissions(create.Permissions));
+
+    accountStore.Upsert(staff);
+    return Results.Ok(new { data = ToAccountResponse(staff) });
+});
+
+app.MapGet("/api/auth/staff", (HttpRequest request) =>
+{
+    if (!IsOperationalRequest(request))
+        return Results.Unauthorized();
+
+    var staff = users.Values
+        .Where(user => user.Role.Equals("Staff", StringComparison.OrdinalIgnoreCase))
+        .OrderBy(user => user.FullName)
+        .Select(user => new
+        {
+            user.Username,
+            user.FullName,
+            user.EmployeeCode,
+            user.Department,
+            user.JobTitle,
+            user.AssignedArea,
+            user.AccountStatus,
+            permissions = EffectivePermissions(user)
+        });
+
+    return Results.Ok(new { data = staff });
+});
+
 app.MapPut("/api/auth/accounts/{username}", (
     string username,
     UpdateAccountRequest update,
@@ -388,7 +475,21 @@ app.MapPut("/api/auth/accounts/{username}", (
         Username = nextUsername,
         Password = nextPassword,
         FullName = nextFullName,
-        StudentCode = current.StudentCode
+        StudentCode = current.StudentCode,
+        EmployeeCode = current.Role.Equals("Staff", StringComparison.OrdinalIgnoreCase)
+            ? CoalesceUpdate(update.EmployeeCode, current.EmployeeCode)
+            : current.EmployeeCode,
+        Email = CoalesceUpdate(update.Email, current.Email),
+        Phone = CoalesceUpdate(update.Phone, current.Phone),
+        Department = CoalesceUpdate(update.Department, current.Department),
+        JobTitle = CoalesceUpdate(update.JobTitle, current.JobTitle),
+        AssignedArea = CoalesceUpdate(update.AssignedArea, current.AssignedArea),
+        AccountStatus = string.IsNullOrWhiteSpace(update.AccountStatus)
+            ? current.AccountStatus
+            : NormalizeAccountStatus(update.AccountStatus),
+        Permissions = update.Permissions == null
+            ? current.Permissions
+            : NormalizePermissions(update.Permissions)
     };
 
     accountStore.Replace(username, updated);
@@ -474,6 +575,29 @@ static bool IsAdminRequest(HttpRequest request)
     }
 }
 
+static bool IsOperationalRequest(HttpRequest request)
+{
+    var authorization = request.Headers.Authorization.ToString();
+    const string bearerPrefix = "Bearer ";
+
+    if (!authorization.StartsWith(bearerPrefix, StringComparison.OrdinalIgnoreCase))
+        return false;
+
+    try
+    {
+        var token = authorization[bearerPrefix.Length..].Trim();
+        var raw = Encoding.UTF8.GetString(Convert.FromBase64String(token));
+        var parts = raw.Split(':');
+        return parts.Length >= 2 &&
+            (parts[1].Equals("Admin", StringComparison.OrdinalIgnoreCase) ||
+             parts[1].Equals("Staff", StringComparison.OrdinalIgnoreCase));
+    }
+    catch
+    {
+        return false;
+    }
+}
+
 static DemoUser? TryGetAuthenticatedUser(
     HttpRequest request,
     IReadOnlyDictionary<string, DemoUser> users)
@@ -549,9 +673,19 @@ static object ToAuthResponse(DemoUser user)
             fullName = user.FullName,
             studentId = user.StudentId,
             studentCode = user.StudentCode,
+            employeeCode = user.EmployeeCode,
+            email = user.Email,
+            phone = user.Phone,
+            department = user.Department,
+            jobTitle = user.JobTitle,
+            assignedArea = user.AssignedArea,
+            accountStatus = user.AccountStatus,
+            permissions = EffectivePermissions(user),
             homePath = user.Role.Equals("Student", StringComparison.OrdinalIgnoreCase)
                 ? "/student/portal"
-                : "/student-service/dashboard"
+                : user.Role.Equals("Staff", StringComparison.OrdinalIgnoreCase)
+                    ? "/employee/dashboard"
+                    : "/student-service/dashboard"
         }
     };
 }
@@ -565,9 +699,66 @@ static object ToAccountResponse(DemoUser user)
         user.Role,
         user.FullName,
         user.StudentId,
-        user.StudentCode
+        user.StudentCode,
+        user.EmployeeCode,
+        user.Email,
+        user.Phone,
+        user.Department,
+        user.JobTitle,
+        user.AssignedArea,
+        user.AccountStatus,
+        permissions = EffectivePermissions(user)
     };
 }
+
+static string CoalesceUpdate(string? next, string? current) =>
+    next == null ? current ?? string.Empty : next.Trim();
+
+static string NormalizeAccountStatus(string? status)
+{
+    return status?.Trim().ToLowerInvariant() switch
+    {
+        "pending" => "Pending",
+        "locked" => "Locked",
+        "inactive" => "Inactive",
+        _ => "Active"
+    };
+}
+
+static string[] NormalizePermissions(IEnumerable<string>? permissions)
+{
+    var allowed = DefaultStaffPermissions().ToHashSet(StringComparer.OrdinalIgnoreCase);
+    return (permissions ?? [])
+        .Where(permission => allowed.Contains(permission))
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .OrderBy(permission => permission)
+        .ToArray();
+}
+
+static string[] EffectivePermissions(DemoUser user)
+{
+    if (user.Role.Equals("Admin", StringComparison.OrdinalIgnoreCase))
+        return DefaultStaffPermissions();
+
+    if (!user.Role.Equals("Staff", StringComparison.OrdinalIgnoreCase))
+        return [];
+
+    return user.Permissions is { Length: > 0 }
+        ? NormalizePermissions(user.Permissions)
+        : DefaultStaffPermissions();
+}
+
+static string[] DefaultStaffPermissions() =>
+[
+    "view_students",
+    "approve_registrations",
+    "manage_contracts",
+    "view_rooms",
+    "manage_incidents",
+    "manage_maintenance",
+    "issue_billing",
+    "confirm_payments"
+];
 
 static async Task<(bool Success, string Message)> DeleteStudentProfileAsync(
     long studentId,
@@ -813,7 +1004,28 @@ public sealed record StudentAccountRequest(
 public sealed record UpdateAccountRequest(
     string? Username,
     string? Password,
-    string? FullName);
+    string? FullName,
+    string? EmployeeCode = null,
+    string? Email = null,
+    string? Phone = null,
+    string? Department = null,
+    string? JobTitle = null,
+    string? AssignedArea = null,
+    string? AccountStatus = null,
+    string[]? Permissions = null);
+
+public sealed record CreateStaffAccountRequest(
+    string Username,
+    string Password,
+    string EmployeeCode,
+    string FullName,
+    string? Email,
+    string? Phone,
+    string? Department,
+    string? JobTitle,
+    string? AssignedArea,
+    string? AccountStatus,
+    string[]? Permissions);
 
 public sealed record DemoUser(
     string Username,
@@ -821,6 +1033,14 @@ public sealed record DemoUser(
     string Role,
     string FullName,
     long? StudentId = null,
-    string? StudentCode = null);
+    string? StudentCode = null,
+    string? EmployeeCode = null,
+    string? Email = null,
+    string? Phone = null,
+    string? Department = null,
+    string? JobTitle = null,
+    string? AssignedArea = null,
+    string AccountStatus = "Active",
+    string[]? Permissions = null);
 
 public sealed record StudentContact(string Email, string FullName);

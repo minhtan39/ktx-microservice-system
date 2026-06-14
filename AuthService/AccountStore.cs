@@ -26,7 +26,26 @@ public sealed class AccountStore
 
         foreach (var user in LoadAccounts(_dataFilePath))
         {
-            loadedAccounts[user.Username] = user;
+            loadedAccounts[user.Username] = user with
+            {
+                AccountStatus = string.IsNullOrWhiteSpace(user.AccountStatus)
+                    ? "Active"
+                    : user.AccountStatus,
+                Permissions = user.Role.Equals("Staff", StringComparison.OrdinalIgnoreCase) &&
+                    (user.Permissions == null || user.Permissions.Length == 0)
+                        ? new[]
+                        {
+                            "view_students",
+                            "approve_registrations",
+                            "manage_contracts",
+                            "view_rooms",
+                            "manage_incidents",
+                            "manage_maintenance",
+                            "issue_billing",
+                            "confirm_payments"
+                        }
+                        : user.Permissions
+            };
         }
 
         Users = new ConcurrentDictionary<string, DemoUser>(

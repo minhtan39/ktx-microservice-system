@@ -14,7 +14,7 @@
 
         <div class="system-pill">
           <span class="live-dot"></span>
-          <span>{{ roleKey === 'Student' ? 'Không gian sinh viên' : 'Bảng điều hành' }}</span>
+          <span>{{ workspaceLabel }}</span>
         </div>
       </div>
 
@@ -64,7 +64,7 @@
         <span class="mdi mdi-clipboard-check-outline"></span>
         <div>
           <strong>Ưu tiên hôm nay</strong>
-          <p>Duyệt đơn chờ, xếp phòng còn giường và theo dõi hợp đồng mới.</p>
+          <p>{{ isStaff ? 'Xử lý công việc được giao và lịch bảo trì sắp đến hạn.' : 'Duyệt đơn chờ, phân công sửa chữa và theo dõi vận hành.' }}</p>
         </div>
       </div>
 
@@ -118,27 +118,28 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { getPermissions, normalizeRole } from '@/utils/auth'
 
 const route = useRoute()
 const router = useRouter()
 const userRole = ref(localStorage.getItem('user_role') || 'N2 Admin')
 const fullName = ref(localStorage.getItem('fullName') || 'demo_admin')
 
-const normalizeRole = (role) => {
-  const normalized = String(role || '').toLowerCase()
-
-  if (normalized === 'student' || normalized === 'sinhvien') return 'Student'
-  if (normalized === 'staff' || normalized === 'nhanvien') return 'Staff'
-  return 'Admin'
-}
-
 const roleKey = computed(() => normalizeRole(userRole.value))
 const isStudent = computed(() => roleKey.value === 'Student')
+const isStaff = computed(() => roleKey.value === 'Staff')
+const permissions = ref(getPermissions())
+const can = (permission) => roleKey.value === 'Admin' || permissions.value.includes(permission)
+const canAccessItem = (item) =>
+  (!item.adminOnly || roleKey.value === 'Admin') &&
+  (!item.permission || can(item.permission)) &&
+  (!item.permissionsAny || item.permissionsAny.some((permission) => can(permission)))
 
 const titleByRoute = {
   StudentPortal: 'Theo dõi hồ sơ, đăng ký nội trú và hợp đồng của bạn',
   ChangePassword: 'Xác nhận mật khẩu hiện tại và bảo vệ tài khoản của bạn',
   StudentPayments: 'Theo dõi hóa đơn, quét QR và lịch sử thanh toán nội trú',
+  EmployeeDashboard: 'Theo dõi công việc được giao, yêu cầu quá hạn và lịch bảo trì',
   StudentServiceDashboard: 'Nắm nhanh tình hình phòng ở, đơn đăng ký và hợp đồng',
   StudentManage: 'Quản lý hồ sơ sinh viên, lớp, khoa và lịch sử lưu trú',
   RoomRegistrationCreate: 'Tiếp nhận đăng ký nội trú trực tuyến',
@@ -182,6 +183,15 @@ const adminOverviewItems = [
   },
 ]
 
+const staffOverviewItems = [
+  {
+    to: '/employee/dashboard',
+    names: ['EmployeeDashboard'],
+    icon: 'mdi-clipboard-account-outline',
+    label: 'Công việc của tôi',
+  },
+]
+
 const adminRubricItems = [
   {
     step: '5',
@@ -189,6 +199,7 @@ const adminRubricItems = [
     names: ['StudentManage'],
     icon: 'mdi-account-school-outline',
     label: 'Hồ sơ sinh viên',
+    permission: 'view_students',
   },
   {
     step: '6',
@@ -196,6 +207,7 @@ const adminRubricItems = [
     names: ['RoomRegistrationCreate'],
     icon: 'mdi-form-select',
     label: 'Đăng ký nội trú',
+    adminOnly: true,
   },
   {
     step: '7',
@@ -203,6 +215,7 @@ const adminRubricItems = [
     names: ['RoomRegistrationApproval'],
     icon: 'mdi-clipboard-check-outline',
     label: 'Duyệt xếp phòng',
+    permission: 'approve_registrations',
   },
   {
     step: '8',
@@ -210,6 +223,7 @@ const adminRubricItems = [
     names: ['ContractList'],
     icon: 'mdi-file-document-outline',
     label: 'Hợp đồng thuê phòng',
+    permission: 'manage_contracts',
   },
   {
     step: '+',
@@ -217,6 +231,7 @@ const adminRubricItems = [
     names: ['ContractManage'],
     icon: 'mdi-file-cog-outline',
     label: 'Vận hành hợp đồng',
+    permission: 'manage_contracts',
   },
 ]
 
@@ -226,18 +241,21 @@ const adminServiceItems = [
     names: ['RoomDashboard'],
     icon: 'mdi-door-open',
     label: 'Room & Building',
+    permission: 'view_rooms',
   },
   {
     to: '/finance/incidents',
     names: ['IncidentManage'],
     icon: 'mdi-tools',
     label: 'Sửa chữa & bảo trì',
+    permissionsAny: ['manage_incidents', 'manage_maintenance'],
   },
   {
     to: '/finance/billing',
     names: ['BillingManagement'],
     icon: 'mdi-receipt-text-check-outline',
     label: 'Hóa đơn & thanh toán',
+    permission: 'issue_billing',
   },
   {
     to: '/auth/accounts',
@@ -251,36 +269,43 @@ const adminServiceItems = [
     names: ['SystemLogs'],
     icon: 'mdi-text-box-search-outline',
     label: 'Nhật ký hệ thống',
+    adminOnly: true,
   },
 ]
 
 const overviewItems = computed(() =>
-  isStudent.value ? studentOverviewItems : adminOverviewItems)
+  isStudent.value ? studentOverviewItems : isStaff.value ? staffOverviewItems : adminOverviewItems)
 
 const rubricItems = computed(() =>
-  isStudent.value ? [] : adminRubricItems)
+  isStudent.value
+    ? []
+    : adminRubricItems.filter(canAccessItem))
 
 const serviceItems = computed(() =>
   isStudent.value
     ? []
-    : adminServiceItems.filter((item) => !item.adminOnly || roleKey.value === 'Admin'))
+    : adminServiceItems.filter(canAccessItem))
 
 const overviewSectionTitle = computed(() =>
-  isStudent.value ? 'Tài khoản sinh viên' : 'Tổng quan hệ thống')
+  isStudent.value ? 'Tài khoản sinh viên' : isStaff.value ? 'Không gian nhân viên' : 'Tổng quan hệ thống')
 
 const serviceLabel = computed(() =>
-  isStudent.value ? 'Student Portal' : 'Residence Operations')
+  isStudent.value ? 'Student Portal' : isStaff.value ? 'Employee Operations' : 'Residence Operations')
 
 const appTitle = computed(() =>
   isStudent.value
     ? 'Cổng sinh viên ký túc xá'
-    : 'Quản lý ký túc xá')
+    : isStaff.value ? 'Điều hành công việc' : 'Quản lý ký túc xá')
+
+const workspaceLabel = computed(() =>
+  isStudent.value ? 'Không gian sinh viên' : isStaff.value ? 'Không gian nhân viên' : 'Bảng điều hành')
 
 const pageTitle = computed(() =>
   titleByRoute[route.name] || 'Nghiệp vụ Contract & Student Service')
 
 const routeBadge = computed(() => {
   if (isStudent.value) return 'Sinh viên'
+  if (isStaff.value) return 'Nhân viên'
   if (['RoomDashboard'].includes(route.name)) return 'Nhóm 1'
   if (['IncidentManage', 'BillingManagement', 'SystemLogs', 'AccountManage'].includes(route.name)) return 'Nhóm 3'
   return 'Nhóm 2'
@@ -298,6 +323,10 @@ const logout = async () => {
   localStorage.removeItem('user_home')
   localStorage.removeItem('student_id')
   localStorage.removeItem('student_code')
+  localStorage.removeItem('user_permissions')
+  localStorage.removeItem('employee_code')
+  localStorage.removeItem('employee_department')
+  localStorage.removeItem('employee_area')
   await router.push('/')
 }
 </script>
@@ -306,7 +335,9 @@ const logout = async () => {
 .app-shell {
   display: grid;
   grid-template-columns: 260px minmax(0, 1fr);
+  width: 100%;
   min-height: 100vh;
+  overflow-x: hidden;
   background: var(--app-bg);
   color: var(--ink);
 }
@@ -688,6 +719,7 @@ const logout = async () => {
 
 .page-body {
   width: auto;
+  min-width: 0;
   max-width: 1500px;
   margin: 0 auto;
   padding: 24px 28px 48px;
@@ -705,11 +737,13 @@ const logout = async () => {
 
 @media (max-width: 860px) {
   .app-shell {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .sidebar {
     position: static;
+    min-width: 0;
+    width: 100%;
     height: auto;
   }
 
@@ -763,6 +797,7 @@ const logout = async () => {
   }
 
   .page-body {
+    width: 100%;
     padding: 18px;
   }
 }

@@ -21,6 +21,12 @@ public sealed class BillingStore
             _data.Incidents = SeedIncidents();
             SaveUnsafe();
         }
+
+        if (_data.MaintenancePlans.Count == 0)
+        {
+            _data.MaintenancePlans = SeedMaintenancePlans();
+            SaveUnsafe();
+        }
     }
 
     public T Read<T>(Func<BillingData, T> reader)
@@ -71,33 +77,63 @@ public sealed class BillingStore
 
     private static List<MaintenanceIncident> SeedIncidents() =>
     [
-        new(
-            1,
-            2,
-            "SV20260001",
-            "Nguyễn Văn A",
-            "101",
-            "A",
-            "Electric",
-            "Đèn học bị hỏng, cần kiểm tra lại công tắc và bóng đèn.",
-            "new",
-            DateTime.UtcNow.AddHours(-6),
-            null,
-            null,
-            null),
-        new(
-            2,
-            2,
-            "SV20260001",
-            "Nguyễn Văn A",
-            "101",
-            "A",
-            "Water",
-            "Vòi nước nhà vệ sinh rỉ nước liên tục.",
-            "processing",
-            DateTime.UtcNow.AddDays(-1),
-            DateTime.UtcNow.AddHours(-3),
-            "nhanvien",
-            "Đã tiếp nhận, chờ kỹ thuật xử lý.")
+        new()
+        {
+            Id = 1,
+            StudentId = 2,
+            StudentCode = "SV20260001",
+            StudentName = "Nguyễn Văn A",
+            RoomName = "101",
+            Building = "A",
+            Category = "Electric",
+            Description = "Đèn học bị hỏng, cần kiểm tra lại công tắc và bóng đèn.",
+            Priority = "high",
+            Status = "new",
+            CreatedAt = DateTime.UtcNow.AddHours(-6),
+            Timeline = [new(DateTime.UtcNow.AddHours(-6), "created", "new", "SV20260001", "Sinh viên gửi yêu cầu")]
+        },
+        new()
+        {
+            Id = 2,
+            StudentId = 2,
+            StudentCode = "SV20260001",
+            StudentName = "Nguyễn Văn A",
+            RoomName = "101",
+            Building = "A",
+            Category = "Water",
+            Description = "Vòi nước nhà vệ sinh rỉ nước liên tục.",
+            Priority = "normal",
+            Status = "processing",
+            CreatedAt = DateTime.UtcNow.AddDays(-1),
+            UpdatedAt = DateTime.UtcNow.AddHours(-3),
+            AssignedTo = "nhanvien",
+            AssignedName = "Nhân viên ký túc xá",
+            HandledBy = "nhanvien",
+            StaffNote = "Đã tiếp nhận, chờ kỹ thuật xử lý.",
+            Timeline = [
+                new(DateTime.UtcNow.AddDays(-1), "created", "new", "SV20260001", "Sinh viên gửi yêu cầu"),
+                new(DateTime.UtcNow.AddHours(-3), "status-updated", "processing", "nhanvien", "Đã tiếp nhận, chờ kỹ thuật xử lý.")
+            ]
+        }
+    ];
+
+    private static List<MaintenancePlan> SeedMaintenancePlans() =>
+    [
+        new()
+        {
+            Id = 1,
+            Title = "Kiểm tra bình chữa cháy tầng 1",
+            AssetCode = "PCCC-A-01",
+            AssetName = "Cụm bình chữa cháy",
+            Location = "Tòa A - Tầng 1",
+            Category = "Safety",
+            Frequency = "Monthly",
+            NextDueDate = DateTime.UtcNow.Date.AddDays(5),
+            Status = "scheduled",
+            AssignedTo = "nhanvien",
+            AssignedName = "Nhân viên ký túc xá",
+            Checklist = ["Kiểm tra niêm phong", "Kiểm tra áp suất", "Ghi nhận hạn sử dụng"],
+            CreatedAt = DateTime.UtcNow.AddDays(-10)
+        }
     ];
 }
