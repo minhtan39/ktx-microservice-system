@@ -337,7 +337,7 @@ const logout = async () => {
   grid-template-columns: 260px minmax(0, 1fr);
   width: 100%;
   min-height: 100vh;
-  overflow-x: hidden;
+  overflow-x: clip;
   background: var(--app-bg);
   color: var(--ink);
 }
@@ -345,9 +345,12 @@ const logout = async () => {
 .sidebar {
   position: sticky;
   top: 0;
+  align-self: start;
   display: flex;
   flex-direction: column;
   height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
   padding: 0 12px 14px;
   background: var(--ant-sider);
   color: #f5f7f8;
@@ -429,7 +432,31 @@ const logout = async () => {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 8px 0;
+  scrollbar-color: rgba(255, 255, 255, 0.24) transparent;
+  scrollbar-width: thin;
+}
+
+.nav::-webkit-scrollbar {
+  width: 5px;
+}
+
+.nav::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.nav::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.20);
+}
+
+.nav:hover::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.38);
+}
+
+.nav::-webkit-scrollbar-button {
+  display: none;
 }
 
 .nav-section {
