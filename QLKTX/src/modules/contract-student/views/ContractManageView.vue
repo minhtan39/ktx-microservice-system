@@ -174,14 +174,14 @@
 	                >
 	                  Xem/ký
 	                </v-btn>
-	                <v-btn
-	                  color="success"
-	                  size="small"
-	                  variant="tonal"
-	                  :disabled="contract.status !== 'Active'"
-	                  prepend-icon="mdi-calendar-plus-outline"
-	                  @click="openRenewDialog(contract)"
-	                >
+		                <v-btn
+		                  color="success"
+		                  size="small"
+		                  variant="tonal"
+		                  :disabled="!canRenewContract(contract)"
+		                  prepend-icon="mdi-calendar-plus-outline"
+		                  @click="openRenewDialog(contract)"
+		                >
 	                  Gia hạn
 	                </v-btn>
 	                <v-btn
@@ -297,9 +297,9 @@
 	          <v-btn icon="mdi-close" variant="text" @click="renewDialog = false" />
 	        </v-card-title>
 	        <v-card-text>
-	          <v-alert type="info" variant="tonal" class="mb-4">
-	            Hợp đồng hiện kết thúc ngày {{ formatDate(selectedContract.endDate) }}. Ngày gia hạn mới phải sau ngày này.
-	          </v-alert>
+		          <v-alert :type="selectedContract.status === 'Expired' ? 'warning' : 'info'" variant="tonal" class="mb-4">
+		            {{ renewDialogMessage }}
+		          </v-alert>
 	          <v-text-field v-model="renewForm.endDate" type="date" label="Ngày kết thúc mới" density="compact" />
 	          <v-textarea v-model="renewForm.note" label="Ghi chú gia hạn" rows="3" density="compact" />
 	        </v-card-text>
@@ -401,6 +401,17 @@ const pageStart = computed(() =>
   filteredContracts.value.length === 0 ? 0 : (currentPage.value - 1) * pageSize + 1)
 const pageEnd = computed(() =>
   Math.min(currentPage.value * pageSize, filteredContracts.value.length))
+const renewDialogMessage = computed(() => {
+  if (!selectedContract.value) return ''
+
+  const currentEndDate = formatDate(selectedContract.value.endDate)
+
+  if (selectedContract.value.status === 'Expired') {
+    return `Hợp đồng đã hết hạn ngày ${currentEndDate}. Gia hạn sẽ chuyển hợp đồng về trạng thái hiệu lực và cập nhật sinh viên đang lưu trú.`
+  }
+
+  return `Hợp đồng hiện kết thúc ngày ${currentEndDate}. Ngày gia hạn mới phải sau ngày này và sau ngày hiện tại.`
+})
 
 const showMessage = (text, type = 'success') => {
   message.value = text
@@ -465,7 +476,9 @@ const openContractDialog = (contract) => {
 
 const openRenewDialog = (contract) => {
   selectedContract.value = contract
-  const nextEndDate = new Date(contract.endDate || Date.now())
+  const currentEndDate = new Date(contract.endDate || Date.now())
+  const today = startOfToday()
+  const nextEndDate = currentEndDate > today ? currentEndDate : today
   nextEndDate.setMonth(nextEndDate.getMonth() + 6)
   renewForm.value = {
     endDate: toInputDate(nextEndDate),
@@ -484,7 +497,7 @@ const renewContract = async () => {
       note: renewForm.value.note,
     })
     renewDialog.value = false
-    showMessage('Đã gia hạn hợp đồng và cập nhật lịch sử lưu trú.')
+    showMessage('Đã gia hạn/hồi hiệu lực hợp đồng và cập nhật lịch sử lưu trú.')
     await loadAll()
   } catch (err) {
     showMessage(err.response?.data?.message || 'Không gia hạn được hợp đồng.', 'error')
@@ -551,6 +564,7 @@ const roomLabel = (id) => {
 
 const countByStatus = (status) => contracts.value.filter((contract) => contract.status === status).length
 const statusClass = (status) => String(status || '').toLowerCase()
+const canRenewContract = (contract) => ['Active', 'Expired'].includes(contract?.status)
 const isSignedContract = (contract) =>
   String(contract?.terms || '').toLowerCase().includes('ký điện tử:')
 
@@ -571,6 +585,12 @@ const toInputDate = (date) => {
   const month = String(date.getMonth() + 1).padStart(2, '0')
   const day = String(date.getDate()).padStart(2, '0')
   return `${year}-${month}-${day}`
+}
+
+const startOfToday = () => {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  return today
 }
 
 const formatMoney = (value) => {

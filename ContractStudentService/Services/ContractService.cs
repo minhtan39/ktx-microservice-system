@@ -133,17 +133,24 @@ public class ContractService : IContractService
         if (contract == null)
             return null;
 
-        if (!contract.Status.Equals("Active", StringComparison.OrdinalIgnoreCase))
-            throw new Exception("Chỉ hợp đồng đang hiệu lực mới được gia hạn.");
+        if (!CanRenew(contract.Status))
+            throw new Exception("Chỉ hợp đồng đang hiệu lực hoặc đã hết hạn mới được gia hạn. Hợp đồng đã hủy cần tạo hồ sơ/đơn xếp phòng mới.");
 
         if (dto.EndDate.Date <= contract.EndDate.Date)
             throw new Exception("Ngày gia hạn mới phải sau ngày kết thúc hiện tại.");
 
+        if (dto.EndDate.Date <= DateTime.UtcNow.Date)
+            throw new Exception("Ngày kết thúc mới phải sau ngày hiện tại để hợp đồng có hiệu lực sau gia hạn.");
+
+        await EnsureNoOtherCurrentContractAsync(contract);
+
         var oldEndDate = contract.EndDate;
+        var oldStatus = contract.Status;
         contract.EndDate = dto.EndDate;
+        contract.Status = "Active";
         contract.Terms = AppendContractNote(
             contract.Terms,
-            $"Gia hạn hợp đồng từ {oldEndDate:dd/MM/yyyy} đến {dto.EndDate:dd/MM/yyyy}. {dto.Note}".Trim());
+            BuildRenewalNote(oldStatus, oldEndDate, dto));
 
         var student = await _studentRepository.GetByIdAsync(contract.StudentId);
         if (student != null)
@@ -199,6 +206,42 @@ public class ContractService : IContractService
     private static bool HasOnlineSignature(string terms)
     {
         return terms.Contains("Ký điện tử:", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool CanRenew(string status)
+    {
+        return status.Equals("Active", StringComparison.OrdinalIgnoreCase) ||
+            status.Equals("Expired", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string BuildRenewalNote(
+        string oldStatus,
+        DateTime oldEndDate,
+        RenewContractDto dto)
+    {
+        var action = oldStatus.Equals("Expired", StringComparison.OrdinalIgnoreCase)
+            ? "Gia hạn và hồi hiệu lực hợp đồng"
+            : "Gia hạn hợp đồng";
+        var note = string.IsNullOrWhiteSpace(dto.Note)
+            ? string.Empty
+            : $" {dto.Note.Trim()}";
+
+        return $"{action} từ {oldEndDate:dd/MM/yyyy} đến {dto.EndDate:dd/MM/yyyy}.{note}".Trim();
+    }
+
+    private async Task EnsureNoOtherCurrentContractAsync(Contract contract)
+    {
+        var today = DateTime.UtcNow.Date;
+        var studentContracts = await _contractRepository.GetByStudentIdAsync(contract.StudentId);
+        var hasOtherCurrentContract = studentContracts.Any(existing =>
+            existing.Id != contract.Id &&
+            existing.Status.Equals("Active", StringComparison.OrdinalIgnoreCase) &&
+            existing.EndDate.Date >= today);
+
+        if (hasOtherCurrentContract)
+        {
+            throw new Exception("Sinh viên đã có hợp đồng khác đang hiệu lực. Không thể hồi hiệu lực/gia hạn hợp đồng cũ.");
+        }
     }
 
     private static string AppendContractNote(string terms, string note)
