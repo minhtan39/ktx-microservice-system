@@ -164,7 +164,7 @@
           <div class="profile-section soft">
             <h4>Tài khoản sinh viên</h4>
             <p><span>Tên đăng nhập</span><strong>{{ highlightedStudent.studentCode || '-' }}</strong></p>
-            <p><span>Mật khẩu mặc định</span><strong>{{ highlightedStudent.studentCode || '-' }}</strong></p>
+            <p><span>Kích hoạt</span><strong>Qua email sinh viên</strong></p>
           </div>
 
           <div class="residence-box">
@@ -422,7 +422,7 @@ const selectedStudentFields = computed(() => {
     { label: 'Email', value: selectedStudent.value.email || '-' },
     { label: 'Khoa', value: selectedStudent.value.facultyName || '-' },
     { label: 'Lớp', value: selectedStudent.value.className || '-' },
-    { label: 'Tài khoản mặc định', value: `${selectedStudent.value.studentCode || '-'} / ${selectedStudent.value.studentCode || '-'}` },
+    { label: 'Kích hoạt tài khoản', value: 'Gửi link qua email sinh viên' },
     { label: 'Lịch sử lưu trú', value: selectedStudent.value.residenceHistory || 'Chưa có lịch sử lưu trú' },
   ]
 })
@@ -471,10 +471,10 @@ const createStudent = async () => {
         fullName: createdStudent.fullName || payload.fullName,
       })
 
-      success.value = `Đã tạo hồ sơ và tài khoản sinh viên: ${payload.studentCode}.`
+      success.value = `Đã tạo hồ sơ và tài khoản chờ kích hoạt: ${payload.studentCode}.`
       await sendStudentInvite(createdStudent, { quiet: true })
     } catch (accountError) {
-      success.value = `Đã tạo hồ sơ sinh viên. Tài khoản sẽ dùng mặc định ${payload.studentCode} / ${payload.studentCode} sau khi AuthService được deploy bản mới.`
+      success.value = 'Đã tạo hồ sơ sinh viên. Chưa tạo được tài khoản chờ kích hoạt, hãy thử gửi email kích hoạt sau.'
       console.warn(accountError)
     }
 
@@ -560,7 +560,7 @@ const exportStudents = () => {
       { header: 'Email', value: (student) => student.email },
       { header: 'CCCD', value: (student) => student.cccd },
       { header: 'Trạng thái', value: (student) => statusLabel(student.status) },
-      { header: 'Tài khoản mặc định', value: (student) => student.studentCode },
+      { header: 'Kích hoạt tài khoản', value: () => 'Qua email sinh viên' },
       { header: 'Lịch sử lưu trú', value: (student) => student.residenceHistory || 'Chưa có lịch sử lưu trú' },
     ],
   })

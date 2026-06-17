@@ -34,7 +34,7 @@
           :append-inner-icon="showNewPassword ? 'mdi-eye-off-outline' : 'mdi-eye-outline'"
           autocomplete="new-password"
           density="comfortable"
-          hint="Ít nhất 6 ký tự và khác mật khẩu hiện tại"
+          hint="Ít nhất 8 ký tự, gồm chữ và số, và khác mật khẩu hiện tại"
           persistent-hint
           @click:append-inner="showNewPassword = !showNewPassword"
         />
@@ -100,8 +100,8 @@ const changePassword = async () => {
     return
   }
 
-  if (form.newPassword.length < 6) {
-    error.value = 'Mật khẩu mới phải có ít nhất 6 ký tự.'
+  if (form.newPassword.length < 8 || !/[A-Za-zÀ-ỹ]/.test(form.newPassword) || !/\d/.test(form.newPassword)) {
+    error.value = 'Mật khẩu mới phải có ít nhất 8 ký tự, gồm cả chữ và số.'
     return
   }
 

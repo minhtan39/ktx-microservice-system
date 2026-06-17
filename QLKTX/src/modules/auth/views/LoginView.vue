@@ -142,7 +142,8 @@ const login = async () => {
 
     await router.push(homePath)
   } catch (err) {
-    error.value = 'Không đăng nhập được. Kiểm tra tên đăng nhập, mật khẩu hoặc AuthService.'
+    error.value = err.response?.data?.message ||
+      'Không đăng nhập được. Kiểm tra tên đăng nhập, mật khẩu hoặc AuthService.'
     console.error(err)
   } finally {
     loading.value = false

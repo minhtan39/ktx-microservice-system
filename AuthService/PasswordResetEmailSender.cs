@@ -128,4 +128,68 @@ public sealed class PasswordResetEmailSender
         await smtp.SendMailAsync(message);
         _logger.LogInformation("Student invitation email sent to {Recipient}.", recipientEmail);
     }
+
+    public async Task SendAccountAccessLinkAsync(
+        string recipientEmail,
+        string recipientName,
+        string accessUrl,
+        string username,
+        bool isActivation)
+    {
+        var host = _configuration["Email:SmtpHost"] ?? "smtp.gmail.com";
+        var port = _configuration.GetValue("Email:SmtpPort", 587);
+        var smtpUsername = _configuration["Email:Username"]?.Trim()
+            ?? throw new InvalidOperationException("Email username is not configured.");
+        var configuredPassword = _configuration["Email:Password"]
+            ?? throw new InvalidOperationException("Email password is not configured.");
+        var password = string.Concat(configuredPassword.Where(character => !char.IsWhiteSpace(character)));
+        var fromEmail = _configuration["Email:FromEmail"] ?? smtpUsername;
+        var fromName = _configuration["Email:FromName"] ?? "DormManager";
+
+        var safeName = WebUtility.HtmlEncode(recipientName);
+        var safeUrl = WebUtility.HtmlEncode(accessUrl);
+        var safeUsername = WebUtility.HtmlEncode(username);
+        var title = isActivation
+            ? "Kich hoat tai khoan DormManager"
+            : "Dat lai mat khau DormManager";
+        var action = isActivation
+            ? "Kich hoat tai khoan"
+            : "Dat lai mat khau";
+
+        using var message = new MailMessage
+        {
+            From = new MailAddress(fromEmail, fromName),
+            Subject = title,
+            IsBodyHtml = true,
+            Body = $"""
+                <div style="font-family:Arial,sans-serif;line-height:1.6;color:#111827">
+                  <h2 style="color:#0f7f51">{title}</h2>
+                  <p>Xin chao {safeName},</p>
+                  <p>Quan tri vien DormManager da gui lien ket bao mat cho tai khoan cua ban.</p>
+                  <p><b>Ten dang nhap:</b> {safeUsername}</p>
+                  <p>
+                    <a href="{safeUrl}" style="display:inline-block;padding:12px 18px;background:#169b63;color:#fff;text-decoration:none;border-radius:6px;font-weight:700">
+                      {action}
+                    </a>
+                  </p>
+                  <p>Lien ket co hieu luc trong thoi gian ngan va chi su dung duoc mot lan.</p>
+                  <p>Neu ban khong yeu cau thao tac nay, hay bao lai quan tri vien ky tuc xa.</p>
+                </div>
+                """
+        };
+
+        message.To.Add(new MailAddress(recipientEmail, recipientName));
+
+        using var smtp = new SmtpClient(host, port)
+        {
+            EnableSsl = _configuration.GetValue("Email:EnableSsl", true),
+            UseDefaultCredentials = false,
+            Credentials = new NetworkCredential(smtpUsername, password),
+            DeliveryMethod = SmtpDeliveryMethod.Network,
+            Timeout = 20000
+        };
+
+        await smtp.SendMailAsync(message);
+        _logger.LogInformation("Account access link sent to {Recipient}.", recipientEmail);
+    }
 }

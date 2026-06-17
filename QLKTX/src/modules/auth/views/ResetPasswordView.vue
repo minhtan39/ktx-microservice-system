@@ -12,7 +12,7 @@
         </div>
         <span class="page-kicker">Xác nhận từ email</span>
         <h1>Đặt lại mật khẩu</h1>
-        <p>Tạo mật khẩu mới có ít nhất 6 ký tự cho tài khoản sinh viên.</p>
+        <p>Tạo mật khẩu mới có ít nhất 8 ký tự, gồm cả chữ và số.</p>
 
         <v-progress-linear v-if="validating" indeterminate color="success" class="mb-5" />
 
@@ -95,8 +95,8 @@ const validateToken = async () => {
 }
 
 const resetPassword = async () => {
-  if (form.newPassword.length < 6) {
-    error.value = 'Mật khẩu mới phải có ít nhất 6 ký tự.'
+  if (form.newPassword.length < 8 || !/[A-Za-zÀ-ỹ]/.test(form.newPassword) || !/\d/.test(form.newPassword)) {
+    error.value = 'Mật khẩu mới phải có ít nhất 8 ký tự, gồm cả chữ và số.'
     return
   }
 

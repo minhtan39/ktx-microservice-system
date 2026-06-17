@@ -4,7 +4,7 @@
       <div>
         <span class="page-kicker">AuthService</span>
         <h2>Quản lý tài khoản</h2>
-        <p>Admin tạo nhân viên vận hành, phân khu vực và cấp quyền theo từng nghiệp vụ.</p>
+        <p>Admin quản lý trạng thái, phân quyền và gửi link bảo mật; mật khẩu không hiển thị trong hệ thống.</p>
       </div>
       <div class="head-actions">
         <v-btn variant="outlined" prepend-icon="mdi-refresh" :loading="loading" @click="loadAccounts">Làm mới</v-btn>
@@ -53,9 +53,23 @@
           <div v-if="item.role === 'Staff'" class="permission-summary">{{ item.permissions?.length || 0 }} quyền<small>{{ item.assignedArea || 'Chưa phân khu vực' }}</small></div>
           <span v-else class="muted">Theo hồ sơ sinh viên</span>
         </template>
-        <template #item.password="{ item }"><code>{{ item.password }}</code></template>
+        <template #item.security="{ item }">
+          <div class="security-state">
+            <span :class="['mdi', securityIcon(item)]"></span>
+            <span>{{ securityLabel(item) }}</span>
+          </div>
+        </template>
         <template #item.actions="{ item }">
           <div class="action-row">
+            <v-btn
+              icon="mdi-email-lock-outline"
+              variant="text"
+              color="success"
+              size="small"
+              title="Gửi link kích hoạt hoặc đặt lại mật khẩu"
+              :loading="sendingAccessLink === item.username"
+              @click="sendAccessLink(item)"
+            />
             <v-btn icon="mdi-pencil-outline" variant="text" color="primary" size="small" title="Sửa tài khoản" @click="openEdit(item)" />
             <v-btn icon="mdi-delete-outline" variant="text" color="error" size="small" title="Xóa tài khoản" @click="openDelete(item)" />
           </div>
@@ -70,7 +84,6 @@
           <v-form class="edit-form" @submit.prevent="saveAccount">
             <div class="form-grid">
               <v-text-field v-model="form.username" label="Tên đăng nhập" variant="outlined" density="comfortable" />
-              <v-text-field v-model="form.password" label="Mật khẩu" variant="outlined" density="comfortable" :type="showPassword ? 'text' : 'password'" :append-inner-icon="showPassword ? 'mdi-eye-off-outline' : 'mdi-eye-outline'" @click:append-inner="showPassword = !showPassword" />
               <v-text-field v-model="form.fullName" label="Họ tên" variant="outlined" density="comfortable" />
               <v-text-field v-if="isStaffForm" v-model="form.employeeCode" label="Mã nhân viên" variant="outlined" density="comfortable" />
               <v-text-field v-if="isStaffForm" v-model="form.email" label="Email" type="email" variant="outlined" density="comfortable" />
@@ -80,6 +93,10 @@
               <v-text-field v-if="isStaffForm" v-model="form.assignedArea" label="Khu vực phụ trách" variant="outlined" density="comfortable" />
               <v-select v-if="isStaffForm" v-model="form.accountStatus" :items="staffStatusOptions" item-title="title" item-value="value" label="Trạng thái tài khoản" variant="outlined" density="comfortable" />
             </div>
+
+            <v-alert type="info" variant="tonal" density="compact" class="mt-2">
+              Admin không xem hoặc đặt hộ mật khẩu. Sau khi lưu, hãy gửi link bảo mật để người dùng tự đặt mật khẩu qua email.
+            </v-alert>
 
             <section v-if="isStaffForm" class="permission-panel">
               <div><strong>Quyền nghiệp vụ</strong><p>Chỉ những mục được bật mới xuất hiện trong menu nhân viên.</p></div>
@@ -118,15 +135,15 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import api from '@/services/api'
 import { exportRowsToExcel } from '@/utils/exportExcel'
 
-const loading = ref(false), saving = ref(false), deleting = ref(false)
+const loading = ref(false), saving = ref(false), deleting = ref(false), sendingAccessLink = ref('')
 const error = ref(''), success = ref(''), accounts = ref([]), search = ref('')
 const roleFilter = ref('All'), statusFilter = ref('All'), dialog = ref(false), deleteDialog = ref(false)
-const editing = ref(null), deleteTarget = ref(null), showPassword = ref(false)
+const editing = ref(null), deleteTarget = ref(null)
 
 const headers = [
   { title: 'Tài khoản', key: 'username', sortable: false }, { title: 'Hồ sơ', key: 'profile', sortable: false },
   { title: 'Vai trò', key: 'role', sortable: false }, { title: 'Trạng thái', key: 'accountStatus', sortable: false },
-  { title: 'Phạm vi', key: 'permissions', sortable: false }, { title: 'Mật khẩu', key: 'password', sortable: false },
+  { title: 'Phạm vi', key: 'permissions', sortable: false }, { title: 'Bảo mật', key: 'security', sortable: false },
   { title: '', key: 'actions', sortable: false, align: 'end' },
 ]
 const roleOptions = [{ title: 'Tất cả', value: 'All' }, { title: 'Nhân viên', value: 'Staff' }, { title: 'Sinh viên', value: 'Student' }]
@@ -144,7 +161,7 @@ const permissionOptions = [
   { value: 'confirm_payments', title: 'Xác nhận thanh toán', description: 'Đối soát giao dịch thủ công' },
 ]
 
-const emptyForm = () => ({ username: '', password: '', fullName: '', employeeCode: '', email: '', phone: '', department: 'Kỹ thuật', jobTitle: 'Nhân viên vận hành', assignedArea: '', accountStatus: 'Active', permissions: ['manage_incidents', 'manage_maintenance', 'view_students', 'view_rooms'] })
+const emptyForm = () => ({ username: '', fullName: '', employeeCode: '', email: '', phone: '', department: 'Kỹ thuật', jobTitle: 'Nhân viên vận hành', assignedArea: '', accountStatus: 'Pending', permissions: ['manage_incidents', 'manage_maintenance', 'view_students', 'view_rooms'] })
 const form = reactive(emptyForm())
 const isStaffForm = computed(() => !editing.value || editing.value.role === 'Staff')
 const normalizeList = (data) => Array.isArray(data) ? data : data?.data || []
@@ -159,19 +176,40 @@ const accountMetrics = computed(() => [
 ])
 
 const assignForm = (value) => Object.assign(form, emptyForm(), value, { permissions: [...(value?.permissions || emptyForm().permissions)] })
-const openCreate = () => { editing.value = null; assignForm(null); showPassword.value = false; error.value = ''; dialog.value = true }
-const openEdit = (account) => { editing.value = account; assignForm(account); showPassword.value = false; error.value = ''; dialog.value = true }
+const openCreate = () => { editing.value = null; assignForm(null); error.value = ''; dialog.value = true }
+const openEdit = (account) => { editing.value = account; assignForm(account); error.value = ''; dialog.value = true }
 const openDelete = (account) => { deleteTarget.value = account; deleteDialog.value = true }
 
 const saveAccount = async () => {
-  if (!form.username.trim() || !form.password.trim() || !form.fullName.trim() || (isStaffForm.value && !form.employeeCode.trim())) { error.value = 'Vui lòng nhập đủ tên đăng nhập, mật khẩu, họ tên và mã nhân viên.'; return }
+  if (!form.username.trim() || !form.fullName.trim() || (isStaffForm.value && (!form.employeeCode.trim() || !form.email.trim()))) { error.value = 'Vui lòng nhập đủ tên đăng nhập, họ tên, mã nhân viên và email.'; return }
   try {
     saving.value = true; error.value = ''; success.value = ''
     const payload = { ...form, permissions: [...form.permissions] }
     if (editing.value) await api.put(`/auth/accounts/${encodeURIComponent(editing.value.username)}`, payload)
     else await api.post('/auth/accounts', payload)
-    dialog.value = false; success.value = editing.value ? 'Đã cập nhật tài khoản.' : 'Đã tạo nhân viên vận hành.'; await loadAccounts()
+    dialog.value = false; success.value = editing.value ? 'Đã cập nhật tài khoản.' : 'Đã tạo nhân viên. Hãy gửi link kích hoạt qua email.'; await loadAccounts()
   } catch (err) { error.value = err.response?.data?.message || 'Không lưu được tài khoản.'; console.error(err) } finally { saving.value = false }
+}
+
+const sendAccessLink = async (account) => {
+  if (!account?.username) return
+
+  try {
+    sendingAccessLink.value = account.username
+    error.value = ''
+    success.value = ''
+
+    const response = await api.post(`/auth/accounts/${encodeURIComponent(account.username)}/access-link`)
+    success.value = response.data?.message || 'Đã gửi link bảo mật đến email người dùng.'
+    await loadAccounts()
+  } catch (err) {
+    error.value = err.response?.data?.detail ||
+      err.response?.data?.message ||
+      'Không gửi được link bảo mật. Hãy kiểm tra email tài khoản và cấu hình Gmail.'
+    console.error(err)
+  } finally {
+    sendingAccessLink.value = ''
+  }
 }
 const deleteAccount = async () => {
   if (!deleteTarget.value) return
@@ -212,6 +250,7 @@ const exportAccounts = () => {
       { header: 'Bộ phận', value: (account) => account.department || '-' },
       { header: 'Khu vực phụ trách', value: (account) => account.assignedArea || '-' },
       { header: 'Trạng thái', value: (account) => statusLabel(account.accountStatus) },
+      { header: 'Bảo mật', value: (account) => securityLabel(account) },
       { header: 'Số quyền', value: (account) => account.permissions?.length || 0 },
     ],
   })
@@ -219,6 +258,18 @@ const exportAccounts = () => {
 
 const roleLabel = (role) => role === 'Staff' ? 'Nhân viên' : role === 'Student' ? 'Sinh viên' : role
 const statusLabel = (status) => ({ Active: 'Đang hoạt động', Pending: 'Chờ kích hoạt', Locked: 'Tạm khóa', Inactive: 'Ngừng hoạt động' }[status || 'Active'])
+const securityLabel = (account) => ({
+  PendingActivation: 'Chờ kích hoạt',
+  NeedsPasswordSetup: 'Cần đặt mật khẩu',
+  TemporarilyLocked: 'Tạm khóa đăng nhập',
+  PasswordSet: 'Đã thiết lập',
+}[account.securityState] || (account.passwordConfigured ? 'Đã thiết lập' : 'Cần đặt mật khẩu'))
+const securityIcon = (account) => ({
+  PendingActivation: 'mdi-email-clock-outline',
+  NeedsPasswordSetup: 'mdi-lock-alert-outline',
+  TemporarilyLocked: 'mdi-lock-clock-outline',
+  PasswordSet: 'mdi-shield-check-outline',
+}[account.securityState] || 'mdi-shield-key-outline')
 onMounted(loadAccounts)
 </script>
 
@@ -227,6 +278,6 @@ onMounted(loadAccounts)
 .account-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; } .account-metric { display: grid; grid-template-columns: 46px 1fr; gap: 14px; align-items: center; padding: 18px; border: 1px solid var(--line); border-radius: 8px; background: #fff; } .account-metric > .mdi { display: grid; place-items: center; width: 46px; height: 46px; border-radius: 8px; background: #e6f4ff; color: #1677ff; font-size: 24px; } .account-metric strong, .account-metric small { display: block; } .account-metric strong { font-size: 28px; } .account-metric small { color: var(--muted); }
 .panel { padding: 18px; border: 1px solid var(--line); border-radius: 8px; background: #fff; } .toolbar-row { display: grid; grid-template-columns: minmax(260px, 1fr) 180px 190px auto; gap: 10px; align-items: center; margin-bottom: 16px; } .account-table { border: 1px solid #e8ece9; border-radius: 6px; } .cell-stack strong, .cell-stack small, .permission-summary small { display: block; } .cell-stack small, .permission-summary small, .muted { margin-top: 3px; color: var(--muted); font-size: 12px; }
 .role-pill, .status-pill { display: inline-flex; padding: 5px 9px; border-radius: 999px; font-size: 12px; font-weight: 800; } .role-pill.staff { background: #e6f4ff; color: #0958d9; } .role-pill.student { background: #f6ffed; color: #389e0d; } .status-pill.active { background: #f6ffed; color: #389e0d; } .status-pill.pending { background: #fffbe6; color: #d48806; } .status-pill.locked, .status-pill.inactive { background: #fff1f0; color: #cf1322; }
-code { padding: 5px 8px; border-radius: 5px; background: #f5f5f5; } .action-row { display: flex; justify-content: flex-end; } .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 14px; } .permission-panel { margin-top: 12px; padding-top: 18px; border-top: 1px solid var(--line); } .permission-panel p { margin: 4px 0 14px; color: var(--muted); } .permission-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; } .permission-item { display: grid; grid-template-columns: 42px 1fr; align-items: start; padding: 8px; border: 1px solid #e8ece9; border-radius: 6px; } .permission-item strong, .permission-item small { display: block; } .permission-item small { margin-top: 3px; color: var(--muted); }
+.security-state { display: inline-flex; align-items: center; gap: 6px; font-weight: 800; color: #0f7f51; } .security-state .mdi { font-size: 18px; } .action-row { display: flex; justify-content: flex-end; gap: 4px; } .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 14px; } .permission-panel { margin-top: 12px; padding-top: 18px; border-top: 1px solid var(--line); } .permission-panel p { margin: 4px 0 14px; color: var(--muted); } .permission-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; } .permission-item { display: grid; grid-template-columns: 42px 1fr; align-items: start; padding: 8px; border: 1px solid #e8ece9; border-radius: 6px; } .permission-item strong, .permission-item small { display: block; } .permission-item small { margin-top: 3px; color: var(--muted); }
 @media (max-width: 900px) { .account-metrics { grid-template-columns: repeat(2, 1fr); } .toolbar-row { grid-template-columns: 1fr; } } @media (max-width: 640px) { .page-head, .head-actions { flex-direction: column; } .account-metrics, .form-grid, .permission-grid { grid-template-columns: 1fr; } }
 </style>
