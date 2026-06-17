@@ -450,6 +450,34 @@ app.MapPut("/api/rooms/{roomId:long}", (
     }
 });
 
+app.MapMethods(
+    "/api/rooms/{roomId:long}/status",
+    ["PATCH", "PUT"],
+    (long roomId, RoomStatusRequest request) =>
+    {
+        lock (roomLock)
+        {
+            var room = rooms.FirstOrDefault(item => item.RoomId == roomId);
+
+            if (room == null)
+                return Results.NotFound(new { message = "Room not found." });
+
+            var normalizedStatus = NormalizeRoomStatusUpdate(request.Status);
+
+            if (normalizedStatus.Equals("Maintenance", StringComparison.OrdinalIgnoreCase))
+            {
+                room.Status = "Maintenance";
+            }
+            else
+            {
+                room.Status = "Available";
+                room.RefreshStatus();
+            }
+
+            return Results.Ok(RoomResponse.FromRoom(room, buildings));
+        }
+    });
+
 app.MapDelete("/api/rooms/{roomId:long}", (long roomId) =>
 {
     lock (roomLock)
@@ -722,8 +750,23 @@ static string NormalizeStatus(string? status)
     {
         "" or "available" or "trong" or "trống" or "con cho" or "còn chỗ" => "Available",
         "full" or "day" or "đầy" or "day phong" or "đầy phòng" => "Full",
-        "maintenance" or "repair" or "sua chua" or "sửa chữa" or "dang sua chua" or "đang sửa chữa" => "Maintenance",
+        "maintenance" or "repair" or "bao tri" or "bảo trì" or "dang bao tri" or "đang bảo trì" or
+            "sua chua" or "sửa chữa" or "dang sua chua" or "đang sửa chữa" => "Maintenance",
         _ => throw new ArgumentException("Status must be Available, Full, or Maintenance.")
+    };
+}
+
+static string NormalizeRoomStatusUpdate(string? status)
+{
+    var normalized = (status ?? string.Empty).Trim().ToLowerInvariant();
+
+    return normalized switch
+    {
+        "maintenance" or "repair" or "under-maintenance" or "under maintenance" or
+            "bao tri" or "bao-tri" or "bảo trì" or "dang bao tri" or "đang bảo trì" or
+            "sua chua" or "sửa chữa" or "dang sua chua" or "đang sửa chữa" => "Maintenance",
+        "" or "auto" or "available" or "normal" or "open" or "release" or "done" or "completed" => "Auto",
+        _ => throw new ArgumentException("Status must be Maintenance or Auto.")
     };
 }
 
@@ -869,6 +912,8 @@ public sealed record RoomRequest(
     decimal? MonthlyFee,
     string? Amenities);
 
+public sealed record RoomStatusRequest(string Status);
+
 public sealed record OccupyRoomRequest(
     long StudentId,
     long RegistrationId,
@@ -989,7 +1034,7 @@ public sealed record RoomResponse(
     private static string GetStatusText(DormRoom room)
     {
         if (room.IsMaintenance)
-            return "Đang sửa chữa";
+            return "Đang bảo trì";
 
         if (room.AvailableBeds == 0)
             return "Đầy phòng";

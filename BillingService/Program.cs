@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -21,6 +23,13 @@ builder.Services.AddOpenApi();
 builder.Services.AddSingleton<BillingStore>();
 builder.Services.AddSingleton<BillingEmailSender>();
 builder.Services.AddSingleton<PaymentQrBuilder>();
+builder.Services.AddHttpClient("RoomService", client =>
+{
+    var roomServiceBaseUrl = builder.Configuration["Integration:RoomServiceBaseUrl"]
+        ?? "http://room-service:8080";
+
+    client.BaseAddress = new Uri(roomServiceBaseUrl);
+});
 
 var app = builder.Build();
 
@@ -375,7 +384,12 @@ app.MapPost("/api/incidents", (
 app.MapMethods(
     "/api/incidents/{id:long}/assign",
     ["PATCH", "PUT"],
-    (long id, AssignIncidentRequest request, HttpRequest httpRequest, BillingStore store) =>
+    async Task<IResult> (
+        long id,
+        AssignIncidentRequest request,
+        HttpRequest httpRequest,
+        BillingStore store,
+        IHttpClientFactory httpClientFactory) =>
     {
         var identity = GetRequestIdentity(httpRequest);
 
@@ -390,6 +404,20 @@ app.MapMethods(
         {
             return Results.StatusCode(StatusCodes.Status403Forbidden);
         }
+
+        var existing = store.Read(data => data.Incidents.FirstOrDefault(item => item.Id == id));
+
+        if (existing == null)
+            return Results.NotFound(new { message = "Incident request not found." });
+
+        var roomSyncResult = await SyncRoomForIncidentAsync(
+            existing,
+            "assigned",
+            store,
+            httpClientFactory);
+
+        if (!roomSyncResult.Success)
+            return Results.Problem(roomSyncResult.Message, statusCode: StatusCodes.Status502BadGateway);
 
         var updated = store.Write(data =>
         {
@@ -417,7 +445,12 @@ app.MapMethods(
 app.MapMethods(
     "/api/incidents/{id:long}/status",
     ["PATCH", "PUT"],
-    (long id, UpdateIncidentStatusRequest request, HttpRequest httpRequest, BillingStore store) =>
+    async Task<IResult> (
+        long id,
+        UpdateIncidentStatusRequest request,
+        HttpRequest httpRequest,
+        BillingStore store,
+        IHttpClientFactory httpClientFactory) =>
     {
         var identity = GetRequestIdentity(httpRequest);
 
@@ -446,6 +479,15 @@ app.MapMethods(
         {
             return Results.BadRequest(new { message = "Vui lòng nhập kết quả xử lý trước khi hoàn thành." });
         }
+
+        var roomSyncResult = await SyncRoomForIncidentAsync(
+            existing,
+            nextStatus,
+            store,
+            httpClientFactory);
+
+        if (!roomSyncResult.Success)
+            return Results.Problem(roomSyncResult.Message, statusCode: StatusCodes.Status502BadGateway);
 
         var updated = store.Write(data =>
         {
@@ -482,13 +524,34 @@ app.MapMethods(
             : Results.Ok(updated);
     });
 
-app.MapPost("/api/incidents/{id:long}/confirm", (
+app.MapPost("/api/incidents/{id:long}/confirm", async Task<IResult> (
     long id,
     StudentIncidentActionRequest request,
     HttpRequest httpRequest,
-    BillingStore store) =>
+    BillingStore store,
+    IHttpClientFactory httpClientFactory) =>
 {
     var identity = GetRequestIdentity(httpRequest);
+    var existing = store.Read(data => data.Incidents.FirstOrDefault(item => item.Id == id));
+
+    if (existing == null)
+        return Results.NotFound();
+
+    if (!identity.IsAdmin && !identity.IsStudentOwner(existing))
+        return Results.Unauthorized();
+
+    if (existing.Status != "completed")
+        return Results.BadRequest(new { message = "Yêu cầu chưa ở trạng thái hoàn thành." });
+
+    var roomSyncResult = await SyncRoomForIncidentAsync(
+        existing,
+        "confirmed",
+        store,
+        httpClientFactory);
+
+    if (!roomSyncResult.Success)
+        return Results.Problem(roomSyncResult.Message, statusCode: StatusCodes.Status502BadGateway);
+
     var updated = store.Write(data =>
     {
         var incident = data.Incidents.FirstOrDefault(item => item.Id == id);
@@ -508,13 +571,34 @@ app.MapPost("/api/incidents/{id:long}/confirm", (
     return updated == null ? Results.NotFound() : Results.Ok(updated);
 });
 
-app.MapPost("/api/incidents/{id:long}/reopen", (
+app.MapPost("/api/incidents/{id:long}/reopen", async Task<IResult> (
     long id,
     StudentIncidentActionRequest request,
     HttpRequest httpRequest,
-    BillingStore store) =>
+    BillingStore store,
+    IHttpClientFactory httpClientFactory) =>
 {
     var identity = GetRequestIdentity(httpRequest);
+    var existing = store.Read(data => data.Incidents.FirstOrDefault(item => item.Id == id));
+
+    if (existing == null)
+        return Results.NotFound();
+
+    if (!identity.IsAdmin && !identity.IsStudentOwner(existing))
+        return Results.Unauthorized();
+
+    if (existing.Status is not ("completed" or "confirmed"))
+        return Results.BadRequest(new { message = "Yêu cầu chưa thể mở lại." });
+
+    var roomSyncResult = await SyncRoomForIncidentAsync(
+        existing,
+        "reopened",
+        store,
+        httpClientFactory);
+
+    if (!roomSyncResult.Success)
+        return Results.Problem(roomSyncResult.Message, statusCode: StatusCodes.Status502BadGateway);
+
     var updated = store.Write(data =>
     {
         var incident = data.Incidents.FirstOrDefault(item => item.Id == id);
@@ -588,7 +672,12 @@ app.MapPost("/api/maintenance", (
 app.MapMethods(
     "/api/maintenance/{id:long}",
     ["PATCH", "PUT"],
-    (long id, UpdateMaintenancePlanRequest request, HttpRequest httpRequest, BillingStore store) =>
+    async Task<IResult> (
+        long id,
+        UpdateMaintenancePlanRequest request,
+        HttpRequest httpRequest,
+        BillingStore store,
+        IHttpClientFactory httpClientFactory) =>
     {
         var identity = GetRequestIdentity(httpRequest);
         if (!identity.IsOperational) return Results.Unauthorized();
@@ -602,19 +691,38 @@ app.MapMethods(
             return Results.StatusCode(StatusCodes.Status403Forbidden);
         }
 
+        var nextStatus = NormalizeMaintenanceStatus(request.Status) ?? existing.Status;
+        var nextCompletedItems = request.CompletedItems ?? existing.CompletedItems;
+
+        if (nextStatus == "completed" &&
+            existing.Checklist.Count > 0 &&
+            !existing.Checklist.All(item => nextCompletedItems.Contains(item)))
+        {
+            return Results.BadRequest(new { message = "Vui lòng hoàn thành toàn bộ checklist trước khi kết thúc bảo trì." });
+        }
+
+        var roomSyncResult = await SyncRoomForMaintenanceAsync(
+            existing,
+            nextStatus,
+            store,
+            httpClientFactory);
+
+        if (!roomSyncResult.Success)
+            return Results.Problem(roomSyncResult.Message, statusCode: StatusCodes.Status502BadGateway);
+
         var plan = store.Write(data =>
         {
             var current = data.MaintenancePlans.FirstOrDefault(item => item.Id == id);
             if (current == null) return null;
 
-            current.Status = NormalizeMaintenanceStatus(request.Status) ?? current.Status;
+            current.Status = nextStatus;
             if (identity.IsAdmin)
             {
                 current.AssignedTo = string.IsNullOrWhiteSpace(request.AssignedTo) ? current.AssignedTo : request.AssignedTo.Trim();
                 current.AssignedName = string.IsNullOrWhiteSpace(request.AssignedName) ? current.AssignedName : request.AssignedName.Trim();
             }
             current.NextDueDate = request.NextDueDate ?? current.NextDueDate;
-            current.CompletedItems = request.CompletedItems ?? current.CompletedItems;
+            current.CompletedItems = nextCompletedItems;
             current.Cost = request.Cost ?? current.Cost;
             current.Notes = string.IsNullOrWhiteSpace(request.Notes) ? current.Notes : request.Notes.Trim();
             current.UpdatedAt = DateTime.UtcNow;
@@ -808,6 +916,330 @@ static decimal GetDecimal(JsonElement element, params string[] names)
         : 0;
 }
 
+static async Task<RoomSyncResult> SyncRoomForIncidentAsync(
+    MaintenanceIncident incident,
+    string nextStatus,
+    BillingStore store,
+    IHttpClientFactory httpClientFactory)
+{
+    return await SyncRoomForWorkItemAsync(
+        RoomReferenceFromIncident(incident),
+        nextStatus,
+        store,
+        httpClientFactory,
+        incident.Id,
+        null);
+}
+
+static async Task<RoomSyncResult> SyncRoomForMaintenanceAsync(
+    MaintenancePlan plan,
+    string nextStatus,
+    BillingStore store,
+    IHttpClientFactory httpClientFactory)
+{
+    return await SyncRoomForWorkItemAsync(
+        RoomReferenceFromMaintenance(plan),
+        nextStatus,
+        store,
+        httpClientFactory,
+        null,
+        plan.Id);
+}
+
+static async Task<RoomSyncResult> SyncRoomForWorkItemAsync(
+    RoomWorkReference? reference,
+    string nextStatus,
+    BillingStore store,
+    IHttpClientFactory httpClientFactory,
+    long? currentIncidentId,
+    long? currentMaintenanceId)
+{
+    if (reference == null)
+        return RoomSyncResult.Ok();
+
+    if (!ShouldMarkRoomMaintenance(nextStatus) && !ShouldReleaseRoom(nextStatus))
+        return RoomSyncResult.Ok();
+
+    if (ShouldReleaseRoom(nextStatus) &&
+        HasOtherOpenRoomWork(reference, store, currentIncidentId, currentMaintenanceId))
+    {
+        return RoomSyncResult.Ok();
+    }
+
+    var roomIdResult = await ResolveRoomIdAsync(reference, httpClientFactory);
+
+    if (!roomIdResult.Success)
+        return new RoomSyncResult(false, roomIdResult.Message);
+
+    if (!roomIdResult.RoomId.HasValue)
+        return RoomSyncResult.Ok();
+
+    return await SetRoomStatusAsync(
+        roomIdResult.RoomId.Value,
+        ShouldMarkRoomMaintenance(nextStatus) ? "Maintenance" : "Auto",
+        httpClientFactory);
+}
+
+static bool HasOtherOpenRoomWork(
+    RoomWorkReference reference,
+    BillingStore store,
+    long? currentIncidentId,
+    long? currentMaintenanceId)
+{
+    return store.Read(data =>
+        data.Incidents.Any(item =>
+            item.Id != currentIncidentId &&
+            ShouldMarkRoomMaintenance(item.Status) &&
+            SameRoomReference(RoomReferenceFromIncident(item), reference)) ||
+        data.MaintenancePlans.Any(item =>
+            item.Id != currentMaintenanceId &&
+            ShouldMarkRoomMaintenance(item.Status) &&
+            SameRoomReference(RoomReferenceFromMaintenance(item), reference)));
+}
+
+static bool ShouldMarkRoomMaintenance(string? status)
+{
+    return NormalizeWorkStatus(status) is "accepted" or "assigned" or "processing" or
+        "waiting-materials" or "reopened" or "in-progress";
+}
+
+static bool ShouldReleaseRoom(string? status)
+{
+    return NormalizeWorkStatus(status) is "completed" or "confirmed" or "rejected" or "cancelled" or "scheduled";
+}
+
+static string NormalizeWorkStatus(string? status)
+{
+    return (status ?? string.Empty).Trim().ToLowerInvariant();
+}
+
+static RoomWorkReference? RoomReferenceFromIncident(MaintenanceIncident incident)
+{
+    if (string.IsNullOrWhiteSpace(incident.RoomName))
+        return null;
+
+    return new RoomWorkReference(CleanBuildingToken(incident.Building), incident.RoomName.Trim());
+}
+
+static RoomWorkReference? RoomReferenceFromMaintenance(MaintenancePlan plan)
+{
+    if (string.IsNullOrWhiteSpace(plan.Location))
+        return null;
+
+    var foldedLocation = FoldText(plan.Location);
+    var roomMatch = Regex.Match(
+        foldedLocation,
+        @"\b(?:phong|room)\s*([A-Za-z]?\s*[-_/]?\s*\d{2,5})\b",
+        RegexOptions.IgnoreCase);
+
+    var compactRoomMatch = Regex.Match(
+        foldedLocation,
+        @"\b([A-Za-z])\s*[-_/]\s*(\d{2,5})\b",
+        RegexOptions.IgnoreCase);
+
+    if (!roomMatch.Success && !compactRoomMatch.Success)
+        return null;
+
+    var building = ExtractBuildingToken(foldedLocation);
+    var roomName = string.Empty;
+
+    if (compactRoomMatch.Success)
+    {
+        building = string.IsNullOrWhiteSpace(building) ? compactRoomMatch.Groups[1].Value : building;
+        roomName = compactRoomMatch.Groups[2].Value;
+    }
+    else
+    {
+        roomName = roomMatch.Groups[1].Value;
+    }
+
+    return string.IsNullOrWhiteSpace(roomName)
+        ? null
+        : new RoomWorkReference(CleanBuildingToken(building), CleanRoomToken(roomName));
+}
+
+static async Task<RoomResolveResult> ResolveRoomIdAsync(
+    RoomWorkReference reference,
+    IHttpClientFactory httpClientFactory)
+{
+    var client = httpClientFactory.CreateClient("RoomService");
+    var requestPath = string.IsNullOrWhiteSpace(reference.Building)
+        ? "/api/rooms"
+        : $"/api/rooms?buildingName={Uri.EscapeDataString(reference.Building)}";
+
+    try
+    {
+        using var response = await client.GetAsync(requestPath);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var detail = await response.Content.ReadAsStringAsync();
+            return new RoomResolveResult(false, $"Không đọc được danh sách phòng từ RoomService: {detail}", null);
+        }
+
+        await using var stream = await response.Content.ReadAsStreamAsync();
+        using var document = await JsonDocument.ParseAsync(stream);
+        var matchedRoom = EnumerateRoomElements(document.RootElement)
+            .FirstOrDefault(element => SameRoomElement(element, reference));
+
+        if (matchedRoom.ValueKind == JsonValueKind.Undefined)
+            return new RoomResolveResult(true, string.Empty, null);
+
+        var roomId = GetLong(matchedRoom, "roomId", "id");
+        return roomId > 0
+            ? new RoomResolveResult(true, string.Empty, roomId)
+            : new RoomResolveResult(false, "RoomService trả về phòng nhưng thiếu roomId.", null);
+    }
+    catch (HttpRequestException ex)
+    {
+        return new RoomResolveResult(false, $"Không kết nối được RoomService: {ex.Message}", null);
+    }
+    catch (TaskCanceledException ex)
+    {
+        return new RoomResolveResult(false, $"RoomService phản hồi quá lâu: {ex.Message}", null);
+    }
+}
+
+static async Task<RoomSyncResult> SetRoomStatusAsync(
+    long roomId,
+    string status,
+    IHttpClientFactory httpClientFactory)
+{
+    var client = httpClientFactory.CreateClient("RoomService");
+    using var request = new HttpRequestMessage(HttpMethod.Patch, $"/api/rooms/{roomId}/status")
+    {
+        Content = JsonContent.Create(new { status })
+    };
+
+    try
+    {
+        using var response = await client.SendAsync(request);
+
+        if (response.IsSuccessStatusCode)
+            return RoomSyncResult.Ok();
+
+        var detail = await response.Content.ReadAsStringAsync();
+        return new RoomSyncResult(false, $"RoomService không cập nhật được trạng thái phòng {roomId}: {detail}");
+    }
+    catch (HttpRequestException ex)
+    {
+        return new RoomSyncResult(false, $"Không kết nối được RoomService khi cập nhật phòng {roomId}: {ex.Message}");
+    }
+    catch (TaskCanceledException ex)
+    {
+        return new RoomSyncResult(false, $"RoomService phản hồi quá lâu khi cập nhật phòng {roomId}: {ex.Message}");
+    }
+}
+
+static IEnumerable<JsonElement> EnumerateRoomElements(JsonElement element)
+{
+    if (element.ValueKind == JsonValueKind.Array)
+    {
+        foreach (var child in element.EnumerateArray())
+            yield return child;
+
+        yield break;
+    }
+
+    if (element.ValueKind != JsonValueKind.Object)
+        yield break;
+
+    foreach (var propertyName in new[] { "data", "value", "items", "rooms" })
+    {
+        if (!element.TryGetProperty(propertyName, out var child))
+            continue;
+
+        foreach (var item in EnumerateRoomElements(child))
+            yield return item;
+    }
+}
+
+static bool SameRoomElement(JsonElement element, RoomWorkReference reference)
+{
+    var roomId = GetLong(element, "roomId", "id");
+    var roomNumber = GetString(element, "roomNumber", "roomName", "name");
+    var building = GetString(element, "buildingName", "building", "buildingCode");
+
+    var sameBuilding = string.IsNullOrWhiteSpace(reference.Building) ||
+        SameComparable(CleanBuildingToken(building), reference.Building);
+
+    var sameRoom = SameComparable(CleanRoomToken(roomNumber), CleanRoomToken(reference.RoomName)) ||
+        (long.TryParse(reference.RoomName, NumberStyles.Integer, CultureInfo.InvariantCulture, out var requestedRoomId) &&
+            roomId == requestedRoomId);
+
+    return sameBuilding && sameRoom;
+}
+
+static bool SameRoomReference(RoomWorkReference? first, RoomWorkReference second)
+{
+    if (first == null)
+        return false;
+
+    var sameBuilding = string.IsNullOrWhiteSpace(first.Building) ||
+        string.IsNullOrWhiteSpace(second.Building) ||
+        SameComparable(first.Building, second.Building);
+
+    return sameBuilding && SameComparable(CleanRoomToken(first.RoomName), CleanRoomToken(second.RoomName));
+}
+
+static long GetLong(JsonElement element, params string[] names)
+{
+    var value = GetString(element, names);
+    return long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var number)
+        ? number
+        : 0;
+}
+
+static string ExtractBuildingToken(string value)
+{
+    var match = Regex.Match(value, @"\b(?:toa|building|nha)\s*([A-Za-z0-9]+)\b", RegexOptions.IgnoreCase);
+    return match.Success ? match.Groups[1].Value : string.Empty;
+}
+
+static string CleanBuildingToken(string? value)
+{
+    var normalized = FoldText(value)
+        .Replace("toa", string.Empty, StringComparison.OrdinalIgnoreCase)
+        .Replace("building", string.Empty, StringComparison.OrdinalIgnoreCase)
+        .Trim();
+
+    return normalized is "-" or "." ? string.Empty : normalized;
+}
+
+static string CleanRoomToken(string? value)
+{
+    var normalized = FoldText(value);
+    var match = Regex.Match(normalized, @"\d{1,5}");
+    return match.Success ? match.Value : normalized;
+}
+
+static bool SameComparable(string? first, string? second)
+{
+    return string.Equals(
+        NormalizeComparable(first),
+        NormalizeComparable(second),
+        StringComparison.OrdinalIgnoreCase);
+}
+
+static string NormalizeComparable(string? value)
+{
+    return Regex.Replace(FoldText(value), @"[\s\-_/]", string.Empty).ToLowerInvariant();
+}
+
+static string FoldText(string? value)
+{
+    var normalized = (value ?? string.Empty).Normalize(NormalizationForm.FormD);
+    var builder = new StringBuilder(normalized.Length);
+
+    foreach (var character in normalized)
+    {
+        if (CharUnicodeInfo.GetUnicodeCategory(character) != UnicodeCategory.NonSpacingMark)
+            builder.Append(character);
+    }
+
+    return builder.ToString().Normalize(NormalizationForm.FormC).Trim();
+}
+
 static IResult CreateIncident(CreateIncidentRequest request, RequestIdentity identity, BillingStore store)
 {
     if (request.StudentId <= 0)
@@ -938,6 +1370,15 @@ static RequestIdentity GetRequestIdentity(HttpRequest request)
 }
 
 public sealed record IncomingPayment(decimal Amount, string Content, string ReferenceCode);
+
+public sealed record RoomSyncResult(bool Success, string Message)
+{
+    public static RoomSyncResult Ok() => new(true, string.Empty);
+}
+
+public sealed record RoomResolveResult(bool Success, string Message, long? RoomId);
+
+public sealed record RoomWorkReference(string Building, string RoomName);
 
 public sealed record RequestIdentity(string Username, string Role, string StudentCode)
 {

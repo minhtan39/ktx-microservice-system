@@ -574,7 +574,7 @@ const roomForm = ref(emptyRoomForm())
 const statusOptions = [
   { title: 'Còn giường', value: 'Available' },
   { title: 'Đầy', value: 'Full' },
-  { title: 'Đang sửa chữa', value: 'Maintenance' },
+  { title: 'Đang bảo trì', value: 'Maintenance' },
 ]
 
 const statusFilterOptions = computed(() => [
@@ -767,7 +767,7 @@ const parseGender = (value) => {
 
 const normalizeStatus = (status, availableBeds = 0, occupiedBeds = 0, capacity = 0) => {
   const normalized = String(status || '').toLowerCase()
-  if (normalized.includes('maintenance') || normalized.includes('sửa')) return 'Maintenance'
+  if (normalized.includes('maintenance') || normalized.includes('bảo trì') || normalized.includes('sửa')) return 'Maintenance'
   if (capacity > 0 && occupiedBeds >= capacity) return 'Full'
   return availableBeds > 0 ? 'Available' : 'Full'
 }
@@ -961,11 +961,11 @@ const getStatusColor = (status) => {
 const getStatusText = (status) => {
   if (status === 'Available') return 'Còn giường'
   if (status === 'Full') return 'Đầy'
-  return 'Đang sửa chữa'
+  return 'Đang bảo trì'
 }
 
 const getRoomStatusText = (room) => {
-  if (room.status === 'Maintenance') return 'Đang sửa chữa'
+  if (room.status === 'Maintenance') return 'Đang bảo trì'
   if (room.status === 'Full' || Number(room.availableBeds) <= 0) return 'Đầy'
   return Number(room.occupiedBeds) > 0 ? 'Còn giường' : 'Trống'
 }
