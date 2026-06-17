@@ -178,6 +178,17 @@
           <v-btn block color="primary" variant="flat" prepend-icon="mdi-card-account-details-outline" @click="openStudentDetails(highlightedStudent)">
             Xem hồ sơ đầy đủ
           </v-btn>
+          <v-btn
+            block
+            color="success"
+            variant="tonal"
+            prepend-icon="mdi-email-arrow-right-outline"
+            :loading="inviteSending === highlightedStudent.id"
+            :disabled="!highlightedStudent.email"
+            @click="sendStudentInvite(highlightedStudent)"
+          >
+            Gửi email kích hoạt
+          </v-btn>
         </template>
         <div v-else class="empty-profile">
           <span class="mdi mdi-account-outline"></span>
@@ -215,9 +226,6 @@
                 <v-text-field v-model="form.email" label="Email" density="compact" required />
               </v-col>
               <v-col cols="12" md="3">
-                <v-text-field v-model="form.schoolName" label="Trường" density="compact" required />
-              </v-col>
-              <v-col cols="12" md="3">
                 <v-text-field v-model="form.facultyName" label="Khoa" density="compact" required />
               </v-col>
               <v-col cols="12" md="3">
@@ -239,8 +247,8 @@
         <v-card-actions>
           <v-spacer />
           <v-btn variant="text" @click="createDialog = false">Hủy</v-btn>
-          <v-btn color="success" :loading="saving" prepend-icon="mdi-content-save-outline" @click="createStudent">
-            Lưu & tạo tài khoản
+          <v-btn color="success" :loading="saving" prepend-icon="mdi-email-check-outline" @click="createStudent">
+            Lưu & gửi email kích hoạt
           </v-btn>
         </v-card-actions>
       </v-card>
@@ -301,6 +309,7 @@ const currentPage = ref(1)
 const createDialog = ref(false)
 const detailDialog = ref(false)
 const selectedStudent = ref(null)
+const inviteSending = ref(null)
 const pageSize = 8
 
 const genderOptions = [
@@ -321,7 +330,6 @@ const emptyForm = () => ({
   cccd: '',
   phone: '',
   email: '',
-  schoolName: '',
   facultyName: '',
   className: '',
   gender: true,
@@ -412,7 +420,6 @@ const selectedStudentFields = computed(() => {
     { label: 'CCCD', value: selectedStudent.value.cccd || '-' },
     { label: 'Số điện thoại', value: selectedStudent.value.phone || '-' },
     { label: 'Email', value: selectedStudent.value.email || '-' },
-    { label: 'Trường', value: selectedStudent.value.schoolName || '-' },
     { label: 'Khoa', value: selectedStudent.value.facultyName || '-' },
     { label: 'Lớp', value: selectedStudent.value.className || '-' },
     { label: 'Tài khoản mặc định', value: `${selectedStudent.value.studentCode || '-'} / ${selectedStudent.value.studentCode || '-'}` },
@@ -451,6 +458,7 @@ const createStudent = async () => {
     const payload = {
       ...form.value,
       studentCode: normalizeStudentCode(form.value.studentCode),
+      schoolName: 'Ký túc xá',
     }
 
     const res = await api.post('/students', payload)
@@ -463,7 +471,8 @@ const createStudent = async () => {
         fullName: createdStudent.fullName || payload.fullName,
       })
 
-      success.value = `Đã tạo hồ sơ và tài khoản sinh viên: ${payload.studentCode} / ${payload.studentCode}.`
+      success.value = `Đã tạo hồ sơ và tài khoản sinh viên: ${payload.studentCode}.`
+      await sendStudentInvite(createdStudent, { quiet: true })
     } catch (accountError) {
       success.value = `Đã tạo hồ sơ sinh viên. Tài khoản sẽ dùng mặc định ${payload.studentCode} / ${payload.studentCode} sau khi AuthService được deploy bản mới.`
       console.warn(accountError)
@@ -477,6 +486,41 @@ const createStudent = async () => {
     console.error(err)
   } finally {
     saving.value = false
+  }
+}
+
+const sendStudentInvite = async (student, options = {}) => {
+  if (!student?.email) {
+    error.value = 'Hồ sơ sinh viên chưa có email để gửi thư kích hoạt.'
+    return
+  }
+
+  try {
+    inviteSending.value = student.id
+    error.value = ''
+    const response = await api.post('/auth/student-accounts/invite', {
+      studentId: student.id,
+      studentCode: student.studentCode,
+      fullName: student.fullName,
+      email: student.email,
+    })
+
+    const message = response.data?.message || 'Đã gửi email kích hoạt tài khoản sinh viên.'
+    success.value = options.quiet && success.value
+      ? `${success.value} ${message}`
+      : message
+  } catch (err) {
+    const message = err.response?.data?.detail ||
+      err.response?.data?.message ||
+      'Không gửi được email kích hoạt. Kiểm tra cấu hình email của AuthService.'
+
+    if (options.quiet) {
+      success.value = `${success.value} Chưa gửi được email kích hoạt: ${message}`
+    } else {
+      error.value = message
+    }
+  } finally {
+    inviteSending.value = null
   }
 }
 

@@ -91,6 +91,16 @@
             </div>
           </div>
 
+          <v-alert
+            v-if="registrationBlockedReason"
+            type="info"
+            variant="tonal"
+            density="comfortable"
+            class="mb-4"
+          >
+            {{ registrationBlockedReason }}
+          </v-alert>
+
           <v-form class="registration-form" @submit.prevent="submitRegistration">
             <v-row dense>
               <v-col cols="12" sm="6">
@@ -149,7 +159,7 @@
                 color="success"
                 type="submit"
                 :loading="submitting"
-                :disabled="!student"
+                :disabled="!canSubmitRegistration"
                 prepend-icon="mdi-send-outline"
               >
                 Gửi đăng ký
@@ -356,16 +366,17 @@
                 <th>Mã hợp đồng</th>
                 <th>Phòng</th>
                 <th>Thời hạn</th>
-                <th>Tiền cọc</th>
-                <th>Tiền phòng</th>
-                <th>Trạng thái</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-if="ownContracts.length === 0">
-                <td colspan="6" class="empty-cell">Chưa có hợp đồng nào được tạo.</td>
-              </tr>
-              <tr v-for="contract in ownContracts" :key="contract.id">
+	                <th>Tiền cọc</th>
+	                <th>Tiền phòng</th>
+	                <th>Trạng thái</th>
+	                <th>Thao tác</th>
+	              </tr>
+	            </thead>
+	            <tbody>
+	              <tr v-if="ownContracts.length === 0">
+	                <td colspan="7" class="empty-cell">Chưa có hợp đồng nào được tạo.</td>
+	              </tr>
+	              <tr v-for="contract in ownContracts" :key="contract.id">
                 <td>{{ contract.contractCode }}</td>
                 <td>#{{ contract.roomId }}</td>
                 <td>{{ formatDate(contract.startDate) }} - {{ formatDate(contract.endDate) }}</td>
@@ -374,13 +385,18 @@
                 <td>
                   <span class="status-pill" :class="statusClass(contract.status)">
                     {{ statusLabel(contract.status) }}
-                  </span>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
+	                  </span>
+	                </td>
+	                <td>
+	                  <v-btn size="small" color="success" variant="tonal" @click="openContractDialog(contract)">
+	                    Xem/ký
+	                  </v-btn>
+	                </td>
+	              </tr>
+	            </tbody>
+	          </table>
+	        </div>
+	      </section>
 
       <v-dialog v-model="reopenDialog" max-width="520">
         <v-card>
@@ -393,12 +409,68 @@
             <v-spacer />
             <v-btn variant="text" @click="reopenDialog = false">Hủy</v-btn>
             <v-btn color="warning" :loading="incidentActionLoading === reopenIncidentTarget?.id" @click="submitReopen">Gửi lại yêu cầu</v-btn>
-          </v-card-actions>
-        </v-card>
-      </v-dialog>
-    </template>
-  </section>
-</template>
+	          </v-card-actions>
+	        </v-card>
+	      </v-dialog>
+
+	      <v-dialog v-model="contractDialog" max-width="900">
+	        <v-card v-if="selectedContract" class="dialog-card">
+	          <v-card-title class="dialog-title">
+	            <div>
+	              <span class="page-kicker">Online Contract</span>
+	              <strong>{{ selectedContract.contractCode }}</strong>
+	            </div>
+	            <v-btn icon="mdi-close" variant="text" @click="contractDialog = false" />
+	          </v-card-title>
+	          <v-card-text>
+	            <article class="contract-paper">
+	              <div class="contract-head">
+	                <span>CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</span>
+	                <strong>HỢP ĐỒNG NỘI TRÚ KÝ TÚC XÁ</strong>
+	                <small>Mã hợp đồng: {{ selectedContract.contractCode }}</small>
+	              </div>
+
+	              <div class="contract-grid">
+	                <p><span>Sinh viên</span><strong>{{ displayName }}</strong></p>
+	                <p><span>Phòng</span><strong>#{{ selectedContract.roomId }}</strong></p>
+	                <p><span>Thời hạn</span><strong>{{ formatDate(selectedContract.startDate) }} - {{ formatDate(selectedContract.endDate) }}</strong></p>
+	                <p><span>Tiền phòng tháng</span><strong>{{ money(selectedContract.monthlyFee) }}</strong></p>
+	              </div>
+
+	              <section>
+	                <h4>Điều khoản</h4>
+	                <p class="contract-terms">{{ selectedContract.terms || defaultContractTerms }}</p>
+	              </section>
+
+	              <div class="signature-grid">
+	                <div>
+	                  <span>Đại diện ký túc xá</span>
+	                  <strong>Ban quản lý</strong>
+	                </div>
+	                <div :class="{ signed: isSignedContract(selectedContract) }">
+	                  <span>Sinh viên ký online</span>
+	                  <strong>{{ isSignedContract(selectedContract) ? 'Đã ký điện tử' : 'Chưa ký' }}</strong>
+	                </div>
+	              </div>
+	            </article>
+
+	            <div v-if="selectedContract.status === 'Active' && !isSignedContract(selectedContract)" class="sign-box">
+	              <v-text-field
+	                v-model="contractSignName"
+	                label="Nhập đúng họ tên của bạn để ký"
+	                density="compact"
+	                hide-details
+	              />
+	              <v-btn color="success" :loading="contractSigning" prepend-icon="mdi-draw-pen" @click="signContract">
+	                Ký online
+	              </v-btn>
+	            </div>
+	          </v-card-text>
+	        </v-card>
+	      </v-dialog>
+	    </template>
+	  </section>
+	</template>
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
@@ -417,6 +489,11 @@ const incidentActionLoading = ref(null)
 const reopenDialog = ref(false)
 const reopenIncidentTarget = ref(null)
 const reopenNote = ref('')
+const contractDialog = ref(false)
+const selectedContract = ref(null)
+const contractSignName = ref('')
+const contractSigning = ref(false)
+const defaultContractTerms = 'Sinh viên đóng tiền đúng hạn, tuân thủ nội quy ký túc xá, không tự ý chuyển phòng và bàn giao phòng khi kết thúc hợp đồng.'
 
 const studentId = ref(Number(localStorage.getItem('student_id') || 0))
 const studentCode = ref(
@@ -475,12 +552,37 @@ const incidentForm = reactive({
 })
 
 const currentRoom = computed(() => {
-  const activeContract = ownContracts.value.find((contract) =>
-    String(contract.status || '').toLowerCase() === 'active')
-
-  if (activeContract) return `#${activeContract.roomId}`
+  if (activeContract.value) return `#${activeContract.value.roomId}`
   return student.value?.residenceHistory ? 'Có' : 'Chưa có'
 })
+
+const activeContract = computed(() =>
+  ownContracts.value.find((contract) =>
+    String(contract.status || '').toLowerCase() === 'active' &&
+    (!contract.endDate || new Date(contract.endDate) >= new Date())))
+
+const openRegistration = computed(() =>
+  ownRegistrations.value.find((registration) =>
+    ['pending', 'approved'].includes(String(registration.status || '').toLowerCase())))
+
+const registrationBlockedReason = computed(() => {
+  if (!student.value) return 'Chưa tìm thấy hồ sơ sinh viên nên chưa thể gửi đăng ký nội trú.'
+
+  if (activeContract.value) {
+    return `Bạn đang có hợp đồng còn hiệu lực đến ${formatDate(activeContract.value.endDate)}. Nếu muốn ở tiếp, hãy dùng luồng gia hạn hợp đồng thay vì gửi đơn mới.`
+  }
+
+  if (openRegistration.value) {
+    return String(openRegistration.value.status || '').toLowerCase() === 'pending'
+      ? 'Bạn đã có một đơn đăng ký đang chờ duyệt. Vui lòng chờ cán bộ xử lý trước khi gửi đơn mới.'
+      : 'Bạn đã có đơn đăng ký được duyệt và đang chờ/đã tạo hợp đồng. Không cần gửi thêm đơn mới.'
+  }
+
+  return ''
+})
+
+const canSubmitRegistration = computed(() =>
+  Boolean(student.value) && !activeContract.value && !openRegistration.value)
 
 const setDefaultDates = () => {
   const start = new Date()
@@ -663,9 +765,42 @@ const submitReopen = async () => {
   }
 }
 
+const openContractDialog = (contract) => {
+  selectedContract.value = contract
+  contractSignName.value = student.value?.fullName || displayName.value
+  contractDialog.value = true
+}
+
+const signContract = async () => {
+  if (!selectedContract.value) return
+
+  try {
+    contractSigning.value = true
+    error.value = ''
+    success.value = ''
+    await api.put(`/contracts/${selectedContract.value.id}/sign`, {
+      signerName: contractSignName.value,
+      method: 'StudentPortal',
+    })
+    success.value = 'Bạn đã ký hợp đồng online thành công.'
+    await loadContracts()
+    selectedContract.value = ownContracts.value.find((contract) =>
+      contract.id === selectedContract.value.id) || selectedContract.value
+  } catch (err) {
+    error.value = err.response?.data?.message || 'Không ký online được hợp đồng.'
+  } finally {
+    contractSigning.value = false
+  }
+}
+
 const submitRegistration = async () => {
   if (!student.value) {
     error.value = 'Chưa tìm thấy hồ sơ sinh viên để tạo đơn đăng ký.'
+    return
+  }
+
+  if (!canSubmitRegistration.value) {
+    error.value = registrationBlockedReason.value
     return
   }
 
@@ -695,7 +830,8 @@ const submitRegistration = async () => {
     form.priorityNote = ''
     await loadRegistrations()
   } catch (err) {
-    error.value = 'Không gửi được đơn đăng ký. Kiểm tra dữ liệu sinh viên và service N2.'
+    error.value = err.response?.data?.message ||
+      'Không gửi được đơn đăng ký. Kiểm tra dữ liệu sinh viên và service N2.'
     console.error(err)
   } finally {
     submitting.value = false
@@ -726,6 +862,9 @@ const statusClass = (status) => {
     'status-expired': normalized === 'expired',
   }
 }
+
+const isSignedContract = (contract) =>
+  String(contract?.terms || '').toLowerCase().includes('ký điện tử:')
 
 const incidentStatusLabel = (status) => {
   const normalized = String(status || '').toLowerCase()
@@ -1021,6 +1160,116 @@ td {
   color: #475569;
 }
 
+.dialog-card {
+  background: #ffffff;
+}
+
+.dialog-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.dialog-title strong {
+  display: block;
+  color: var(--ink);
+  font-family: var(--font-heading);
+  font-size: 21px;
+}
+
+.contract-paper {
+  display: grid;
+  gap: 18px;
+  padding: 22px;
+  border: 1px solid #dbe5df;
+  border-radius: 8px;
+  background: #fffdf8;
+}
+
+.contract-head {
+  display: grid;
+  gap: 6px;
+  text-align: center;
+}
+
+.contract-head span {
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.contract-head strong {
+  color: var(--brand-dark);
+  font-family: var(--font-heading);
+  font-size: 23px;
+}
+
+.contract-head small {
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.contract-grid,
+.signature-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.contract-grid p,
+.signature-grid div {
+  margin: 0;
+  padding: 12px;
+  border: 1px solid #e7ece8;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.contract-grid span,
+.signature-grid span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.contract-grid strong,
+.signature-grid strong {
+  display: block;
+  margin-top: 6px;
+  color: var(--ink);
+}
+
+.contract-paper h4 {
+  margin: 0 0 8px;
+}
+
+.contract-terms {
+  margin: 0;
+  white-space: pre-line;
+  line-height: 1.7;
+}
+
+.signature-grid .signed {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.sign-box {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfdfc;
+}
+
 .empty-state,
 .empty-cell {
   color: var(--muted);
@@ -1043,6 +1292,12 @@ td {
 
   .hero-stats {
     min-width: 0;
+  }
+
+  .contract-grid,
+  .signature-grid,
+  .sign-box {
+    grid-template-columns: 1fr;
   }
 }
 

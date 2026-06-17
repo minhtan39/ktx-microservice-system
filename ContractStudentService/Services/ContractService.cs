@@ -125,4 +125,91 @@ public class ContractService : IContractService
 
         return await _contractRepository.UpdateAsync(contract);
     }
+
+    public async Task<Contract?> RenewAsync(long id, RenewContractDto dto)
+    {
+        var contract = await _contractRepository.GetByIdAsync(id);
+
+        if (contract == null)
+            return null;
+
+        if (!contract.Status.Equals("Active", StringComparison.OrdinalIgnoreCase))
+            throw new Exception("Chỉ hợp đồng đang hiệu lực mới được gia hạn.");
+
+        if (dto.EndDate.Date <= contract.EndDate.Date)
+            throw new Exception("Ngày gia hạn mới phải sau ngày kết thúc hiện tại.");
+
+        var oldEndDate = contract.EndDate;
+        contract.EndDate = dto.EndDate;
+        contract.Terms = AppendContractNote(
+            contract.Terms,
+            $"Gia hạn hợp đồng từ {oldEndDate:dd/MM/yyyy} đến {dto.EndDate:dd/MM/yyyy}. {dto.Note}".Trim());
+
+        var student = await _studentRepository.GetByIdAsync(contract.StudentId);
+        if (student != null)
+        {
+            student.Status = "Active";
+            student.ResidenceHistory = string.IsNullOrWhiteSpace(student.ResidenceHistory)
+                ? $"Gia hạn hợp đồng {contract.ContractCode} đến {dto.EndDate:dd/MM/yyyy}"
+                : $"{student.ResidenceHistory}; Gia hạn hợp đồng {contract.ContractCode} đến {dto.EndDate:dd/MM/yyyy}";
+
+            await _studentRepository.UpdateAsync(student);
+        }
+
+        return await _contractRepository.UpdateAsync(contract);
+    }
+
+    public async Task<Contract?> SignAsync(long id, SignContractDto dto)
+    {
+        var contract = await _contractRepository.GetByIdAsync(id);
+
+        if (contract == null)
+            return null;
+
+        if (!contract.Status.Equals("Active", StringComparison.OrdinalIgnoreCase))
+            throw new Exception("Chỉ hợp đồng đang hiệu lực mới được ký online.");
+
+        if (HasOnlineSignature(contract.Terms))
+            throw new Exception("Hợp đồng đã được ký online.");
+
+        var student = await _studentRepository.GetByIdAsync(contract.StudentId);
+
+        if (student == null)
+            throw new Exception("Student không tồn tại.");
+
+        var signerName = dto.SignerName.Trim();
+
+        if (string.IsNullOrWhiteSpace(signerName))
+            throw new Exception("Vui lòng nhập họ tên người ký.");
+
+        if (!signerName.Equals(student.FullName, StringComparison.OrdinalIgnoreCase))
+            throw new Exception("Họ tên người ký phải trùng với họ tên sinh viên trong hồ sơ.");
+
+        var method = string.IsNullOrWhiteSpace(dto.Method)
+            ? "Online"
+            : dto.Method.Trim();
+
+        contract.Terms = AppendContractNote(
+            contract.Terms,
+            $"Ký điện tử: {signerName}, phương thức {method}, thời điểm {DateTime.Now:dd/MM/yyyy HH:mm}.");
+
+        return await _contractRepository.UpdateAsync(contract);
+    }
+
+    private static bool HasOnlineSignature(string terms)
+    {
+        return terms.Contains("Ký điện tử:", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string AppendContractNote(string terms, string note)
+    {
+        if (string.IsNullOrWhiteSpace(note))
+            return terms;
+
+        var baseTerms = string.IsNullOrWhiteSpace(terms)
+            ? "Sinh viên đóng tiền đúng hạn, tuân thủ nội quy ký túc xá và bàn giao phòng khi kết thúc hợp đồng."
+            : terms.Trim();
+
+        return $"{baseTerms}\n\n[{DateTime.Now:dd/MM/yyyy HH:mm}] {note}";
+    }
 }

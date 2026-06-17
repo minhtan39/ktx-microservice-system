@@ -20,4 +20,8 @@ public interface IContractService
     Task<Contract?> CancelAsync(long id);
 
     Task<Contract?> ExpireAsync(long id);
+
+    Task<Contract?> RenewAsync(long id, RenewContractDto dto);
+
+    Task<Contract?> SignAsync(long id, SignContractDto dto);
 }

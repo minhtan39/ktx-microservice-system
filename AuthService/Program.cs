@@ -332,6 +332,101 @@ app.MapPost("/api/auth/student-accounts", (StudentAccountRequest request) =>
     });
 });
 
+app.MapPost("/api/auth/student-accounts/invite", async (
+    StudentAccountInviteRequest request,
+    IHttpClientFactory httpClientFactory,
+    PasswordResetTokenStore passwordResetTokens,
+    PasswordResetEmailSender emailSender) =>
+{
+    var studentCode = request.StudentCode.Trim();
+
+    if (string.IsNullOrWhiteSpace(studentCode))
+        return Results.BadRequest(new { message = "StudentCode is required." });
+
+    await SynchronizeStudentAccountsAsync(accountStore, httpClientFactory);
+
+    var account = users.Values.FirstOrDefault(user =>
+        user.Role.Equals("Student", StringComparison.OrdinalIgnoreCase) &&
+        (user.Username.Equals(studentCode, StringComparison.OrdinalIgnoreCase) ||
+         user.StudentCode?.Equals(studentCode, StringComparison.OrdinalIgnoreCase) == true));
+
+    if (account == null)
+    {
+        account = new DemoUser(
+            studentCode,
+            studentCode,
+            "Student",
+            string.IsNullOrWhiteSpace(request.FullName) ? studentCode : request.FullName.Trim(),
+            request.StudentId,
+            studentCode);
+
+        accountStore.Upsert(account);
+    }
+
+    var contact = await TryResolveStudentContactAsync(
+        request.StudentId,
+        studentCode,
+        httpClientFactory);
+
+    var recipientEmail = string.IsNullOrWhiteSpace(request.Email)
+        ? contact?.Email
+        : request.Email.Trim();
+
+    if (string.IsNullOrWhiteSpace(recipientEmail))
+    {
+        return Results.BadRequest(new
+        {
+            message = "Hồ sơ sinh viên chưa có email để gửi thư kích hoạt."
+        });
+    }
+
+    if (!emailSender.IsConfigured)
+    {
+        return Results.Problem(
+            title: "Dịch vụ email chưa được cấu hình",
+            detail: "Admin cần cấu hình Gmail và App Password cho AuthService.",
+            statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+
+    var recipientName = string.IsNullOrWhiteSpace(request.FullName)
+        ? contact?.FullName ?? account.FullName
+        : request.FullName.Trim();
+    var lifetimeMinutes = Math.Clamp(
+        app.Configuration.GetValue("PasswordReset:LifetimeMinutes", 30),
+        5,
+        120);
+    var token = passwordResetTokens.Create(
+        account.Username,
+        TimeSpan.FromMinutes(lifetimeMinutes));
+    var frontendBaseUrl = (app.Configuration["Frontend:BaseUrl"]
+        ?? "http://localhost:5173").TrimEnd('/');
+    var activationUrl = $"{frontendBaseUrl}/reset-password?token={Uri.EscapeDataString(token)}&welcome=1";
+
+    try
+    {
+        await emailSender.SendStudentInvitationAsync(
+            recipientEmail,
+            recipientName,
+            activationUrl,
+            studentCode);
+    }
+    catch (Exception exception)
+    {
+        passwordResetTokens.InvalidateForUsername(account.Username);
+        app.Logger.LogError(exception, "Could not send student invitation email.");
+
+        return Results.Problem(
+            title: "Không gửi được email kích hoạt",
+            detail: GetSafeEmailFailureDetail(exception),
+            statusCode: StatusCodes.Status502BadGateway);
+    }
+
+    return Results.Ok(new
+    {
+        message = $"Đã gửi email kích hoạt tài khoản đến {recipientEmail}."
+    });
+});
+
 app.MapGet("/api/auth/accounts", async (
     HttpRequest request,
     IHttpClientFactory httpClientFactory) =>
@@ -1000,6 +1095,12 @@ public sealed record StudentAccountRequest(
     long StudentId,
     string StudentCode,
     string FullName);
+
+public sealed record StudentAccountInviteRequest(
+    long StudentId,
+    string StudentCode,
+    string FullName,
+    string? Email);
 
 public sealed record UpdateAccountRequest(
     string? Username,

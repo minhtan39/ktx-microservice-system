@@ -98,4 +98,26 @@ public class ContractController : ControllerBase
 
         return Ok(contract);
     }
+
+    [HttpPut("{id}/renew")]
+    public async Task<IActionResult> Renew(long id, RenewContractDto dto)
+    {
+        var contract = await _contractService.RenewAsync(id, dto);
+
+        if (contract == null)
+            return NotFound();
+
+        return Ok(contract);
+    }
+
+    [HttpPut("{id}/sign")]
+    public async Task<IActionResult> Sign(long id, SignContractDto dto)
+    {
+        var contract = await _contractService.SignAsync(id, dto);
+
+        if (contract == null)
+            return NotFound();
+
+        return Ok(contract);
+    }
 }
