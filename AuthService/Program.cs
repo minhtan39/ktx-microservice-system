@@ -738,10 +738,9 @@ app.MapPut("/api/auth/accounts/{username}", (
     return Results.Ok(new { data = ToAccountResponse(updated) });
 });
 
-app.MapDelete("/api/auth/accounts/{username}", async (
+app.MapDelete("/api/auth/accounts/{username}", (
     string username,
     HttpRequest request,
-    IHttpClientFactory httpClientFactory,
     PasswordResetTokenStore passwordResetTokens) =>
 {
     if (!IsAdminRequest(request))
@@ -753,32 +752,27 @@ app.MapDelete("/api/auth/accounts/{username}", async (
         return Results.NotFound(new { message = "Account not found." });
     }
 
-    if (account.Role.Equals("Student", StringComparison.OrdinalIgnoreCase) &&
-        account.StudentId.HasValue)
+    if (NormalizeAccountStatus(account.AccountStatus).Equals("Locked", StringComparison.OrdinalIgnoreCase))
     {
-        var deleteProfileResult = await DeleteStudentProfileAsync(
-            account.StudentId.Value,
-            request,
-            httpClientFactory);
-
-        if (!deleteProfileResult.Success)
+        return Results.Ok(new
         {
-            return Results.Problem(
-                title: "Student profile could not be deleted",
-                detail: deleteProfileResult.Message,
-                statusCode: StatusCodes.Status502BadGateway);
-        }
+            message = "Account is already locked.",
+            data = ToAccountResponse(account),
+            accountLocked = true,
+            profilePreserved = true
+        });
     }
 
-    accountStore.Remove(username);
+    var lockedAccount = account with { AccountStatus = "Locked" };
+    accountStore.Replace(username, lockedAccount);
     passwordResetTokens.InvalidateForUsername(username);
 
     return Results.Ok(new
     {
-        message = "Account deleted successfully.",
-        studentProfileDeleted = account.Role.Equals(
-            "Student",
-            StringComparison.OrdinalIgnoreCase)
+        message = "Account locked successfully.",
+        data = ToAccountResponse(lockedAccount),
+        accountLocked = true,
+        profilePreserved = true
     });
 });
 
@@ -1043,46 +1037,6 @@ static string[] DefaultStaffPermissions() =>
     "issue_billing",
     "confirm_payments"
 ];
-
-static async Task<(bool Success, string Message)> DeleteStudentProfileAsync(
-    long studentId,
-    HttpRequest incomingRequest,
-    IHttpClientFactory httpClientFactory)
-{
-    try
-    {
-        var client = httpClientFactory.CreateClient("Gateway");
-        using var deleteRequest = new HttpRequestMessage(
-            HttpMethod.Delete,
-            $"/api/students/{studentId}");
-
-        var authorization = incomingRequest.Headers.Authorization.ToString();
-
-        if (!string.IsNullOrWhiteSpace(authorization))
-        {
-            deleteRequest.Headers.TryAddWithoutValidation("Authorization", authorization);
-        }
-
-        using var response = await client.SendAsync(deleteRequest);
-
-        if (response.IsSuccessStatusCode ||
-            response.StatusCode == System.Net.HttpStatusCode.NotFound)
-        {
-            return (true, string.Empty);
-        }
-
-        var responseBody = await response.Content.ReadAsStringAsync();
-        return (false, $"ContractStudentService returned {(int)response.StatusCode}: {responseBody}");
-    }
-    catch (HttpRequestException exception)
-    {
-        return (false, exception.Message);
-    }
-    catch (TaskCanceledException exception)
-    {
-        return (false, exception.Message);
-    }
-}
 
 static async Task SynchronizeStudentAccountsAsync(
     AccountStore accountStore,

@@ -71,7 +71,14 @@
               @click="sendAccessLink(item)"
             />
             <v-btn icon="mdi-pencil-outline" variant="text" color="primary" size="small" title="Sửa tài khoản" @click="openEdit(item)" />
-            <v-btn icon="mdi-delete-outline" variant="text" color="error" size="small" title="Xóa tài khoản" @click="openDelete(item)" />
+            <v-btn
+              :icon="isLocked(item) ? 'mdi-lock-open-outline' : 'mdi-lock-outline'"
+              variant="text"
+              :color="isLocked(item) ? 'success' : 'warning'"
+              size="small"
+              :title="isLocked(item) ? 'Mở khóa tài khoản' : 'Khóa tài khoản'"
+              @click="openAccessChange(item)"
+            />
           </div>
         </template>
       </v-data-table>
@@ -115,16 +122,23 @@
       </v-card>
     </v-dialog>
 
-    <v-dialog v-model="deleteDialog" max-width="480">
-      <v-card v-if="deleteTarget">
-        <v-card-title>Xác nhận xóa tài khoản</v-card-title>
+    <v-dialog v-model="accessDialog" max-width="520">
+      <v-card v-if="accessTarget">
+        <v-card-title>{{ isLocked(accessTarget) ? 'Xác nhận mở khóa tài khoản' : 'Xác nhận khóa tài khoản' }}</v-card-title>
         <v-card-text>
-          <p>Bạn sắp xóa tài khoản <strong>{{ deleteTarget.username }}</strong>.</p>
-          <v-alert :type="deleteTarget.role === 'Student' ? 'warning' : 'info'" variant="tonal">
-            {{ deleteTarget.role === 'Student' ? 'Hồ sơ sinh viên tương ứng cũng sẽ bị xóa.' : 'Nên chuyển nhân viên nghỉ việc sang trạng thái Ngừng hoạt động để giữ lịch sử xử lý.' }}
+          <p v-if="isLocked(accessTarget)">Bạn sắp mở khóa tài khoản <strong>{{ accessTarget.username }}</strong>. Người dùng có thể đăng nhập lại nếu mật khẩu còn hợp lệ.</p>
+          <p v-else>Bạn sắp khóa tài khoản <strong>{{ accessTarget.username }}</strong>. Người dùng sẽ không thể đăng nhập cho đến khi được mở khóa.</p>
+          <v-alert type="info" variant="tonal">
+            Hồ sơ sinh viên/nhân viên, hợp đồng, hóa đơn và lịch sử nghiệp vụ vẫn được giữ nguyên. Hệ thống chỉ thay đổi quyền đăng nhập của tài khoản này.
           </v-alert>
         </v-card-text>
-        <v-card-actions><v-spacer /><v-btn variant="text" @click="deleteDialog = false">Hủy</v-btn><v-btn color="error" :loading="deleting" @click="deleteAccount">Xóa tài khoản</v-btn></v-card-actions>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" @click="accessDialog = false">Hủy</v-btn>
+          <v-btn :color="isLocked(accessTarget) ? 'success' : 'warning'" :loading="locking" @click="toggleAccountLock">
+            {{ isLocked(accessTarget) ? 'Mở khóa' : 'Khóa tài khoản' }}
+          </v-btn>
+        </v-card-actions>
       </v-card>
     </v-dialog>
   </section>
@@ -135,10 +149,10 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import api from '@/services/api'
 import { exportRowsToExcel } from '@/utils/exportExcel'
 
-const loading = ref(false), saving = ref(false), deleting = ref(false), sendingAccessLink = ref('')
+const loading = ref(false), saving = ref(false), locking = ref(false), sendingAccessLink = ref('')
 const error = ref(''), success = ref(''), accounts = ref([]), search = ref('')
-const roleFilter = ref('All'), statusFilter = ref('All'), dialog = ref(false), deleteDialog = ref(false)
-const editing = ref(null), deleteTarget = ref(null)
+const roleFilter = ref('All'), statusFilter = ref('All'), dialog = ref(false), accessDialog = ref(false)
+const editing = ref(null), accessTarget = ref(null)
 
 const headers = [
   { title: 'Tài khoản', key: 'username', sortable: false }, { title: 'Hồ sơ', key: 'profile', sortable: false },
@@ -165,6 +179,7 @@ const emptyForm = () => ({ username: '', fullName: '', employeeCode: '', email: 
 const form = reactive(emptyForm())
 const isStaffForm = computed(() => !editing.value || editing.value.role === 'Staff')
 const normalizeList = (data) => Array.isArray(data) ? data : data?.data || []
+const isLocked = (account) => (account?.accountStatus || 'Active') === 'Locked'
 
 const loadAccounts = async () => { try { loading.value = true; error.value = ''; accounts.value = normalizeList((await api.get('/auth/accounts')).data) } catch (err) { error.value = 'Không tải được danh sách tài khoản.'; console.error(err) } finally { loading.value = false } }
 const filteredAccounts = computed(() => { const keyword = search.value.trim().toLowerCase(); return accounts.value.filter((item) => (roleFilter.value === 'All' || item.role === roleFilter.value) && (statusFilter.value === 'All' || (item.accountStatus || 'Active') === statusFilter.value) && (!keyword || [item.username, item.fullName, item.employeeCode, item.studentCode, item.department].join(' ').toLowerCase().includes(keyword))) })
@@ -178,7 +193,7 @@ const accountMetrics = computed(() => [
 const assignForm = (value) => Object.assign(form, emptyForm(), value, { permissions: [...(value?.permissions || emptyForm().permissions)] })
 const openCreate = () => { editing.value = null; assignForm(null); error.value = ''; dialog.value = true }
 const openEdit = (account) => { editing.value = account; assignForm(account); error.value = ''; dialog.value = true }
-const openDelete = (account) => { deleteTarget.value = account; deleteDialog.value = true }
+const openAccessChange = (account) => { accessTarget.value = account; accessDialog.value = true }
 
 const saveAccount = async () => {
   if (!form.username.trim() || !form.fullName.trim() || (isStaffForm.value && (!form.employeeCode.trim() || !form.email.trim()))) { error.value = 'Vui lòng nhập đủ tên đăng nhập, họ tên, mã nhân viên và email.'; return }
@@ -211,28 +226,44 @@ const sendAccessLink = async (account) => {
     sendingAccessLink.value = ''
   }
 }
-const deleteAccount = async () => {
-  if (!deleteTarget.value) return
+const buildAccountPayload = (account, accountStatus) => ({
+  username: account.username,
+  fullName: account.fullName || account.username,
+  employeeCode: account.employeeCode || '',
+  email: account.email || '',
+  phone: account.phone || '',
+  department: account.department || '',
+  jobTitle: account.jobTitle || '',
+  assignedArea: account.assignedArea || '',
+  accountStatus,
+  permissions: [...(account.permissions || [])],
+})
+
+const toggleAccountLock = async () => {
+  if (!accessTarget.value) return
 
   try {
-    deleting.value = true
+    locking.value = true
     error.value = ''
     success.value = ''
 
-    const account = deleteTarget.value
-    await api.delete(`/auth/accounts/${encodeURIComponent(account.username)}`)
+    const account = accessTarget.value
+    const nextStatus = isLocked(account) ? 'Active' : 'Locked'
+    await api.put(`/auth/accounts/${encodeURIComponent(account.username)}`, buildAccountPayload(account, nextStatus))
 
-    deleteDialog.value = false
-    deleteTarget.value = null
-    success.value = account.role === 'Student'
-      ? 'Đã xóa tài khoản và hồ sơ sinh viên.'
-      : 'Đã xóa tài khoản nhân viên.'
+    accessDialog.value = false
+    accessTarget.value = null
+    success.value = nextStatus === 'Locked'
+      ? 'Đã khóa tài khoản. Hồ sơ và dữ liệu nghiệp vụ vẫn được giữ nguyên.'
+      : 'Đã mở khóa tài khoản.'
     await loadAccounts()
   } catch (err) {
-    error.value = err.response?.data?.detail || 'Không xóa được tài khoản.'
+    error.value = err.response?.data?.detail ||
+      err.response?.data?.message ||
+      'Không cập nhật được trạng thái tài khoản.'
     console.error(err)
   } finally {
-    deleting.value = false
+    locking.value = false
   }
 }
 
