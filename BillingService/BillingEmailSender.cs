@@ -78,6 +78,19 @@ public sealed class BillingEmailSender
                  <p>Nội dung chuyển khoản: <strong>{WebUtility.HtmlEncode(invoice.PaymentCode)}</strong></p>
                </div>
                """;
+        var allocationBlock = string.IsNullOrWhiteSpace(invoice.AllocationNote)
+            ? string.Empty
+            : $"""
+              <p style="padding:12px;border:1px dashed #a8d2ba;background:#f4fbf7">
+                <strong>Cách chia:</strong> {WebUtility.HtmlEncode(invoice.AllocationNote)}
+              </p>
+              """;
+        var roomUtilityBlock = invoice.RoomOccupantCount <= 0
+            ? string.Empty
+            : $"""
+              <p><strong>Điện nước cả phòng:</strong> {invoice.RoomElectricityUsage} số điện ({Money(invoice.RoomElectricityAmount)}) · {invoice.RoomWaterUsage} số nước ({Money(invoice.RoomWaterAmount)})</p>
+              <p><strong>Phần của sinh viên:</strong> {invoice.OccupancyDays}/{invoice.BillingDays} ngày trong kỳ, phòng có {invoice.RoomOccupantCount} sinh viên/hợp đồng được phân bổ.</p>
+              """;
 
         return $"""
             <!doctype html>
@@ -88,12 +101,14 @@ public sealed class BillingEmailSender
               <p><strong>Mã phiếu:</strong> {WebUtility.HtmlEncode(invoice.InvoiceCode)}</p>
               <p><strong>Sinh viên:</strong> {WebUtility.HtmlEncode(invoice.StudentName)} ({WebUtility.HtmlEncode(invoice.StudentCode)})</p>
               <p><strong>Phòng:</strong> {WebUtility.HtmlEncode(invoice.RoomName)} &nbsp; <strong>Kỳ:</strong> {WebUtility.HtmlEncode(invoice.BillingPeriod)}</p>
+              {allocationBlock}
+              {roomUtilityBlock}
               <table style="width:100%;border-collapse:collapse;margin-top:20px">
                 <thead><tr style="background:#e9f7ef"><th style="padding:10px;border:1px solid #ccd8d0;text-align:left">Khoản thu</th><th style="padding:10px;border:1px solid #ccd8d0;text-align:right">Thành tiền</th></tr></thead>
                 <tbody>
                   <tr><td style="padding:10px;border:1px solid #ccd8d0">Tiền phòng</td><td style="padding:10px;border:1px solid #ccd8d0;text-align:right">{Money(invoice.RoomFee)}</td></tr>
-                  <tr><td style="padding:10px;border:1px solid #ccd8d0">Điện: {invoice.ElectricityUsage} số x {Money(invoice.ElectricityRate)}</td><td style="padding:10px;border:1px solid #ccd8d0;text-align:right">{Money(invoice.ElectricityAmount)}</td></tr>
-                  <tr><td style="padding:10px;border:1px solid #ccd8d0">Nước: {invoice.WaterUsage} số x {Money(invoice.WaterRate)}</td><td style="padding:10px;border:1px solid #ccd8d0;text-align:right">{Money(invoice.WaterAmount)}</td></tr>
+                  <tr><td style="padding:10px;border:1px solid #ccd8d0">Điện phân bổ: {invoice.ElectricityUsage} số x {Money(invoice.ElectricityRate)}</td><td style="padding:10px;border:1px solid #ccd8d0;text-align:right">{Money(invoice.ElectricityAmount)}</td></tr>
+                  <tr><td style="padding:10px;border:1px solid #ccd8d0">Nước phân bổ: {invoice.WaterUsage} số x {Money(invoice.WaterRate)}</td><td style="padding:10px;border:1px solid #ccd8d0;text-align:right">{Money(invoice.WaterAmount)}</td></tr>
                   <tr style="font-size:18px;font-weight:bold"><td style="padding:12px;border:1px solid #ccd8d0">Tổng cộng</td><td style="padding:12px;border:1px solid #ccd8d0;text-align:right;color:#0f7f51">{Money(invoice.TotalAmount)}</td></tr>
                 </tbody>
               </table>

@@ -178,6 +178,7 @@ app.MapPost("/api/billing/monthly-invoices", async Task<IResult> (
         var waterUsage = request.CurrentWaterReading - request.PreviousWaterReading;
         var paymentCode = BuildPaymentCode(request.BillingPeriod, request.StudentCode, nextId);
         var total = request.RoomFee + electricityUsage * ElectricityRate + waterUsage * WaterRate;
+        var (_, _, billingDays) = GetBillingPeriodRange(request.BillingPeriod);
 
         invoice = new MonthlyInvoice
         {
@@ -192,6 +193,7 @@ app.MapPost("/api/billing/monthly-invoices", async Task<IResult> (
             RoomId = request.RoomId,
             RoomName = request.RoomName?.Trim() ?? request.RoomId.ToString(CultureInfo.InvariantCulture),
             BillingPeriod = request.BillingPeriod,
+            BatchCode = string.Empty,
             RoomFee = request.RoomFee,
             PreviousElectricityReading = request.PreviousElectricityReading,
             CurrentElectricityReading = request.CurrentElectricityReading,
@@ -203,6 +205,15 @@ app.MapPost("/api/billing/monthly-invoices", async Task<IResult> (
             WaterUsage = waterUsage,
             WaterRate = WaterRate,
             WaterAmount = waterUsage * WaterRate,
+            RoomElectricityUsage = electricityUsage,
+            RoomElectricityAmount = electricityUsage * ElectricityRate,
+            RoomWaterUsage = waterUsage,
+            RoomWaterAmount = waterUsage * WaterRate,
+            RoomOccupantCount = 1,
+            OccupancyDays = billingDays,
+            BillingDays = billingDays,
+            AllocationMethod = "Manual",
+            AllocationNote = "Phiếu lập trực tiếp cho từng sinh viên.",
             TotalAmount = total,
             DueDate = request.DueDate?.Date ?? DateTime.UtcNow.Date.AddDays(7),
             Status = "Unpaid",
@@ -235,6 +246,176 @@ app.MapPost("/api/billing/monthly-invoices", async Task<IResult> (
         invoice,
         emailSent = emailResult.Sent,
         emailError = emailResult.Error
+    });
+});
+
+app.MapPost("/api/billing/monthly-invoices/room/preview", (
+    CreateRoomMonthlyInvoicesRequest request) =>
+{
+    var previewResult = BuildRoomInvoicePreview(request);
+
+    return previewResult.Error == null
+        ? Results.Ok(new
+        {
+            roomId = request.RoomId,
+            roomName = NormalizeRoomName(request.RoomName, request.RoomId),
+            billingPeriod = request.BillingPeriod,
+            electricityUsage = previewResult.ElectricityUsage,
+            electricityAmount = previewResult.ElectricityAmount,
+            waterUsage = previewResult.WaterUsage,
+            waterAmount = previewResult.WaterAmount,
+            occupantCount = previewResult.Allocations.Count,
+            totalAmount = previewResult.Allocations.Sum(item => item.TotalAmount),
+            allocationMethod = "OccupancyDays",
+            allocations = previewResult.Allocations
+        })
+        : Results.BadRequest(new { message = previewResult.Error });
+});
+
+app.MapPost("/api/billing/monthly-invoices/room/issue", async Task<IResult> (
+    CreateRoomMonthlyInvoicesRequest request,
+    BillingStore store,
+    PaymentQrBuilder qrBuilder,
+    BillingEmailSender emailSender) =>
+{
+    var previewResult = BuildRoomInvoicePreview(request);
+
+    if (previewResult.Error != null)
+        return Results.BadRequest(new { message = previewResult.Error });
+
+    var roomName = NormalizeRoomName(request.RoomName, request.RoomId);
+    var periodDigits = request.BillingPeriod.Replace("-", string.Empty);
+    var safeRoom = request.RoomId.ToString(CultureInfo.InvariantCulture);
+    var batchCode = $"PB-{periodDigits}-P{safeRoom}";
+    var issuedBy = string.IsNullOrWhiteSpace(request.IssuedBy) ? "Nhân viên" : request.IssuedBy.Trim();
+    var issuedAt = DateTime.UtcNow;
+    var dueDate = request.DueDate?.Date ?? DateTime.UtcNow.Date.AddDays(7);
+    var createdInvoices = new List<MonthlyInvoice>();
+    var returnedInvoices = new List<MonthlyInvoice>();
+
+    store.Write(data =>
+    {
+        var nextId = data.MonthlyInvoices.Count == 0
+            ? 1
+            : data.MonthlyInvoices.Max(item => item.Id) + 1;
+
+        foreach (var allocation in previewResult.Allocations)
+        {
+            var existing = data.MonthlyInvoices.FirstOrDefault(item =>
+                item.ContractId == allocation.ContractId &&
+                item.BillingPeriod.Equals(request.BillingPeriod, StringComparison.OrdinalIgnoreCase));
+
+            if (existing != null)
+            {
+                returnedInvoices.Add(existing);
+                continue;
+            }
+
+            var paymentCode = BuildPaymentCode(request.BillingPeriod, allocation.StudentCode, nextId);
+            var invoice = new MonthlyInvoice
+            {
+                Id = nextId,
+                InvoiceCode = $"PT-{periodDigits}-P{safeRoom}-{nextId:0000}",
+                ContractId = allocation.ContractId,
+                ContractCode = allocation.ContractCode,
+                StudentId = allocation.StudentId,
+                StudentCode = allocation.StudentCode,
+                StudentName = allocation.StudentName,
+                StudentEmail = allocation.StudentEmail,
+                RoomId = request.RoomId,
+                RoomName = roomName,
+                BillingPeriod = request.BillingPeriod,
+                BatchCode = batchCode,
+                RoomFee = allocation.RoomFee,
+                PreviousElectricityReading = request.PreviousElectricityReading,
+                CurrentElectricityReading = request.CurrentElectricityReading,
+                ElectricityUsage = allocation.ElectricityUsage,
+                ElectricityRate = ElectricityRate,
+                ElectricityAmount = allocation.ElectricityAmount,
+                PreviousWaterReading = request.PreviousWaterReading,
+                CurrentWaterReading = request.CurrentWaterReading,
+                WaterUsage = allocation.WaterUsage,
+                WaterRate = WaterRate,
+                WaterAmount = allocation.WaterAmount,
+                RoomElectricityUsage = previewResult.ElectricityUsage,
+                RoomElectricityAmount = previewResult.ElectricityAmount,
+                RoomWaterUsage = previewResult.WaterUsage,
+                RoomWaterAmount = previewResult.WaterAmount,
+                RoomOccupantCount = previewResult.Allocations.Count,
+                OccupancyDays = allocation.OccupancyDays,
+                BillingDays = allocation.BillingDays,
+                AllocationMethod = "OccupancyDays",
+                AllocationNote = allocation.AllocationNote,
+                TotalAmount = allocation.TotalAmount,
+                DueDate = dueDate,
+                Status = "Unpaid",
+                PaymentCode = paymentCode,
+                QrCodeUrl = qrBuilder.Build(allocation.TotalAmount, paymentCode),
+                IssuedBy = issuedBy,
+                IssuedAt = issuedAt
+            };
+
+            data.MonthlyInvoices.Add(invoice);
+            createdInvoices.Add(invoice);
+            returnedInvoices.Add(invoice);
+            nextId++;
+        }
+
+        var invoiceIds = returnedInvoices.Select(item => item.Id).Distinct().OrderBy(id => id).ToList();
+        var existingBatchIndex = data.RoomInvoiceBatches.FindIndex(item =>
+            item.BatchCode.Equals(batchCode, StringComparison.OrdinalIgnoreCase));
+        var batch = new RoomMonthlyInvoiceBatch(
+            existingBatchIndex >= 0 ? data.RoomInvoiceBatches[existingBatchIndex].Id : NextBatchId(data),
+            batchCode,
+            request.RoomId,
+            roomName,
+            request.BillingPeriod,
+            request.PreviousElectricityReading,
+            request.CurrentElectricityReading,
+            previewResult.ElectricityUsage,
+            previewResult.ElectricityAmount,
+            request.PreviousWaterReading,
+            request.CurrentWaterReading,
+            previewResult.WaterUsage,
+            previewResult.WaterAmount,
+            previewResult.Allocations.Count,
+            returnedInvoices.Sum(item => item.TotalAmount),
+            issuedBy,
+            issuedAt,
+            invoiceIds);
+
+        if (existingBatchIndex >= 0)
+            data.RoomInvoiceBatches[existingBatchIndex] = batch;
+        else
+            data.RoomInvoiceBatches.Add(batch);
+
+        return true;
+    });
+
+    var emailResults = new List<object>();
+
+    foreach (var invoice in createdInvoices)
+    {
+        var result = await TrySendInvoiceEmailAsync(invoice, store, emailSender);
+        emailResults.Add(new
+        {
+            invoiceId = invoice.Id,
+            invoiceCode = invoice.InvoiceCode,
+            sent = result.Sent,
+            error = result.Error
+        });
+    }
+
+    return Results.Ok(new
+    {
+        message = createdInvoices.Count == 0
+            ? "Phòng này đã có đủ phiếu thanh toán trong tháng đã chọn."
+            : $"Đã phát hành {createdInvoices.Count} phiếu thanh toán cho phòng {roomName}.",
+        batchCode,
+        created = createdInvoices.Count,
+        skipped = returnedInvoices.Count - createdInvoices.Count,
+        invoices = returnedInvoices.OrderBy(item => item.StudentName).ToList(),
+        emailResults
     });
 });
 
@@ -741,6 +922,194 @@ app.MapMethods(
     });
 
 app.Run();
+
+static RoomPreviewBuildResult BuildRoomInvoicePreview(CreateRoomMonthlyInvoicesRequest request)
+{
+    var validationError = ValidateRoomInvoiceRequest(request);
+
+    if (validationError != null)
+        return new RoomPreviewBuildResult(validationError, 0, 0, 0, 0, []);
+
+    var (periodStart, periodEndExclusive, billingDays) = GetBillingPeriodRange(request.BillingPeriod);
+    var electricityUsage = request.CurrentElectricityReading - request.PreviousElectricityReading;
+    var waterUsage = request.CurrentWaterReading - request.PreviousWaterReading;
+    var electricityAmount = electricityUsage * ElectricityRate;
+    var waterAmount = waterUsage * WaterRate;
+    var normalizedOccupants = request.Occupants!
+        .Where(item => item.ContractId > 0 && item.StudentId > 0)
+        .Select(item =>
+        {
+            var occupancyDays = CalculateOccupancyDays(item.StartDate, item.EndDate, periodStart, periodEndExclusive);
+            return new RoomOccupantAllocationInput(item, occupancyDays);
+        })
+        .Where(item => item.OccupancyDays > 0)
+        .ToList();
+
+    if (normalizedOccupants.Count == 0)
+    {
+        return new RoomPreviewBuildResult(
+            "Không có sinh viên nào ở phòng này trong kỳ thanh toán đã chọn.",
+            electricityUsage,
+            electricityAmount,
+            waterUsage,
+            waterAmount,
+            []);
+    }
+
+    var missingEmail = normalizedOccupants
+        .FirstOrDefault(item => string.IsNullOrWhiteSpace(item.Occupant.StudentEmail));
+
+    if (missingEmail != null)
+    {
+        var name = missingEmail.Occupant.StudentName?.Trim()
+            ?? missingEmail.Occupant.StudentCode?.Trim()
+            ?? missingEmail.Occupant.StudentId.ToString(CultureInfo.InvariantCulture);
+        return new RoomPreviewBuildResult(
+            $"Sinh viên {name} chưa có email để nhận phiếu thanh toán.",
+            electricityUsage,
+            electricityAmount,
+            waterUsage,
+            waterAmount,
+            []);
+    }
+
+    var weights = normalizedOccupants.Select(item => (decimal)item.OccupancyDays).ToList();
+    var electricityShares = SplitAmount(electricityAmount, weights);
+    var waterShares = SplitAmount(waterAmount, weights);
+    var allocations = new List<RoomInvoiceAllocationPreview>();
+
+    for (var index = 0; index < normalizedOccupants.Count; index++)
+    {
+        var input = normalizedOccupants[index];
+        var occupant = input.Occupant;
+        var roomFee = RoundMoney(occupant.RoomFee * input.OccupancyDays / billingDays);
+        var electricityShare = electricityShares[index];
+        var waterShare = waterShares[index];
+        var electricityShareUsage = electricityAmount <= 0
+            ? 0
+            : RoundUsage(electricityShare / ElectricityRate);
+        var waterShareUsage = waterAmount <= 0
+            ? 0
+            : RoundUsage(waterShare / WaterRate);
+        var allocationNote = input.OccupancyDays == billingDays
+            ? $"Ở đủ {billingDays} ngày trong kỳ, chia điện nước theo {normalizedOccupants.Count} người."
+            : $"Ở {input.OccupancyDays}/{billingDays} ngày trong kỳ, điện nước và tiền phòng được phân bổ theo ngày ở.";
+
+        allocations.Add(new RoomInvoiceAllocationPreview(
+            occupant.ContractId,
+            occupant.ContractCode?.Trim() ?? $"HD-{occupant.ContractId}",
+            occupant.StudentId,
+            occupant.StudentCode?.Trim() ?? $"SV{occupant.StudentId}",
+            occupant.StudentName?.Trim() ?? "Sinh viên",
+            occupant.StudentEmail?.Trim() ?? string.Empty,
+            roomFee,
+            input.OccupancyDays,
+            billingDays,
+            electricityShareUsage,
+            electricityShare,
+            waterShareUsage,
+            waterShare,
+            roomFee + electricityShare + waterShare,
+            allocationNote));
+    }
+
+    return new RoomPreviewBuildResult(
+        null,
+        electricityUsage,
+        electricityAmount,
+        waterUsage,
+        waterAmount,
+        allocations);
+}
+
+static string? ValidateRoomInvoiceRequest(CreateRoomMonthlyInvoicesRequest request)
+{
+    if (request.RoomId <= 0)
+        return "Vui lòng chọn phòng cần phát hành hóa đơn.";
+
+    if (!Regex.IsMatch(request.BillingPeriod ?? string.Empty, @"^\d{4}-(0[1-9]|1[0-2])$"))
+        return "Kỳ thanh toán phải có định dạng yyyy-MM.";
+
+    if (request.CurrentElectricityReading < request.PreviousElectricityReading)
+        return "Chỉ số điện mới phải lớn hơn hoặc bằng chỉ số cũ.";
+
+    if (request.CurrentWaterReading < request.PreviousWaterReading)
+        return "Chỉ số nước mới phải lớn hơn hoặc bằng chỉ số cũ.";
+
+    if (request.Occupants == null || request.Occupants.Count == 0)
+        return "Phòng chưa có sinh viên/hợp đồng đang ở để chia hóa đơn.";
+
+    return null;
+}
+
+static (DateTime Start, DateTime EndExclusive, int Days) GetBillingPeriodRange(string period)
+{
+    var start = DateTime.ParseExact($"{period}-01", "yyyy-MM-dd", CultureInfo.InvariantCulture);
+    var endExclusive = start.AddMonths(1);
+    return (start, endExclusive, (int)(endExclusive - start).TotalDays);
+}
+
+static int CalculateOccupancyDays(
+    DateTime? startDate,
+    DateTime? endDate,
+    DateTime periodStart,
+    DateTime periodEndExclusive)
+{
+    var start = (startDate?.Date ?? periodStart) > periodStart
+        ? startDate!.Value.Date
+        : periodStart;
+    var endExclusive = endDate.HasValue
+        ? endDate.Value.Date.AddDays(1)
+        : periodEndExclusive;
+
+    if (endExclusive > periodEndExclusive)
+        endExclusive = periodEndExclusive;
+
+    if (endExclusive <= start)
+        return 0;
+
+    return (int)(endExclusive - start).TotalDays;
+}
+
+static List<decimal> SplitAmount(decimal amount, IReadOnlyList<decimal> weights)
+{
+    if (weights.Count == 0)
+        return [];
+
+    var totalWeight = weights.Sum();
+    if (totalWeight <= 0 || amount <= 0)
+        return weights.Select(_ => 0m).ToList();
+
+    var shares = new List<decimal>(weights.Count);
+    var assigned = 0m;
+
+    for (var index = 0; index < weights.Count; index++)
+    {
+        var share = index == weights.Count - 1
+            ? amount - assigned
+            : RoundMoney(amount * weights[index] / totalWeight);
+        shares.Add(share);
+        assigned += share;
+    }
+
+    return shares;
+}
+
+static decimal RoundMoney(decimal value) =>
+    Math.Round(value, 0, MidpointRounding.AwayFromZero);
+
+static decimal RoundUsage(decimal value) =>
+    Math.Round(value, 2, MidpointRounding.AwayFromZero);
+
+static string NormalizeRoomName(string? roomName, long roomId) =>
+    string.IsNullOrWhiteSpace(roomName)
+        ? roomId.ToString(CultureInfo.InvariantCulture)
+        : roomName.Trim();
+
+static long NextBatchId(BillingData data) =>
+    data.RoomInvoiceBatches.Count == 0
+        ? 1
+        : data.RoomInvoiceBatches.Max(item => item.Id) + 1;
 
 static string? ValidateInvoiceRequest(CreateMonthlyInvoiceRequest request)
 {
@@ -1370,6 +1739,18 @@ static RequestIdentity GetRequestIdentity(HttpRequest request)
 }
 
 public sealed record IncomingPayment(decimal Amount, string Content, string ReferenceCode);
+
+public sealed record RoomOccupantAllocationInput(
+    RoomInvoiceOccupant Occupant,
+    int OccupancyDays);
+
+public sealed record RoomPreviewBuildResult(
+    string? Error,
+    decimal ElectricityUsage,
+    decimal ElectricityAmount,
+    decimal WaterUsage,
+    decimal WaterAmount,
+    List<RoomInvoiceAllocationPreview> Allocations);
 
 public sealed record RoomSyncResult(bool Success, string Message)
 {

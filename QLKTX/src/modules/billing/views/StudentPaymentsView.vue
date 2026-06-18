@@ -54,8 +54,16 @@
 
         <div class="line-items">
           <div><span>Tiền phòng</span><strong>{{ formatMoney(selectedInvoice.roomFee) }}</strong></div>
-          <div><span>Điện ({{ selectedInvoice.electricityUsage }} số × 4.000đ)</span><strong>{{ formatMoney(selectedInvoice.electricityAmount) }}</strong></div>
-          <div><span>Nước ({{ selectedInvoice.waterUsage }} số × 20.000đ)</span><strong>{{ formatMoney(selectedInvoice.waterAmount) }}</strong></div>
+          <div><span>Điện phân bổ ({{ selectedInvoice.electricityUsage }} số × 4.000đ)</span><strong>{{ formatMoney(selectedInvoice.electricityAmount) }}</strong></div>
+          <div><span>Nước phân bổ ({{ selectedInvoice.waterUsage }} số × 20.000đ)</span><strong>{{ formatMoney(selectedInvoice.waterAmount) }}</strong></div>
+          <div v-if="selectedInvoice.roomElectricityUsage || selectedInvoice.roomWaterUsage" class="allocation-row">
+            <span>Điện nước cả phòng</span>
+            <strong>{{ selectedInvoice.roomElectricityUsage || selectedInvoice.electricityUsage }} số điện · {{ selectedInvoice.roomWaterUsage || selectedInvoice.waterUsage }} số nước</strong>
+          </div>
+          <div v-if="selectedInvoice.allocationNote" class="allocation-row">
+            <span>Cách chia</span>
+            <strong>{{ selectedInvoice.allocationNote }}</strong>
+          </div>
           <div class="grand-total"><span>Tổng thanh toán</span><strong>{{ formatMoney(selectedInvoice.totalAmount) }}</strong></div>
         </div>
 
@@ -186,6 +194,8 @@ onMounted(loadPayments)
 .line-items { margin-top: 12px; }
 .line-items > div { display: flex; justify-content: space-between; gap: 16px; padding: 11px 0; }
 .line-items span { color: #65736a; }
+.allocation-row { display: grid !important; gap: 5px !important; padding: 12px !important; border: 1px dashed #b8d8c5; border-radius: 7px; background: #f5fbf7; }
+.allocation-row strong { color: #1d3a2a; font-size: 14px; line-height: 1.5; text-align: right; }
 .grand-total { margin-top: 4px; padding-top: 16px !important; border-top: 2px solid #dce5df; font-size: 20px; }
 .grand-total strong { color: #0f7f51; }
 .qr-box { display: grid; place-items: center; margin-top: 12px; text-align: center; }

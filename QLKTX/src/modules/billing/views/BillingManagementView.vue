@@ -46,8 +46,8 @@
         <div>
           <span class="mdi mdi-receipt-text-plus-outline"></span>
           <div>
-            <h3>Phát hành phiếu tháng</h3>
-            <p>Chỉ số mới phải lớn hơn hoặc bằng chỉ số tháng trước.</p>
+            <h3>Phát hành phiếu theo phòng</h3>
+            <p>Nhập điện nước một lần cho cả phòng, hệ thống chia theo số ngày ở thực tế và tạo phiếu riêng cho từng sinh viên.</p>
           </div>
         </div>
         <span class="rate-note">Điện 4.000đ/số · Nước 20.000đ/số</span>
@@ -55,24 +55,14 @@
 
       <div class="form-grid">
         <v-select
-          v-model="form.studentId"
-          :items="studentOptions"
+          v-model="form.roomId"
+          :items="roomOptions"
           item-title="title"
           item-value="value"
-          label="Sinh viên"
+          label="Phòng cần lập phiếu"
           variant="outlined"
           density="comfortable"
-          @update:model-value="onStudentChanged"
-        />
-        <v-select
-          v-model="form.contractId"
-          :items="contractOptions"
-          item-title="title"
-          item-value="value"
-          label="Hợp đồng"
-          variant="outlined"
-          density="comfortable"
-          @update:model-value="onContractChanged"
+          @update:model-value="onRoomChanged"
         />
         <v-text-field
           v-model="form.billingPeriod"
@@ -85,15 +75,6 @@
           v-model="form.dueDate"
           type="date"
           label="Hạn thanh toán"
-          variant="outlined"
-          density="comfortable"
-        />
-        <v-text-field
-          v-model.number="form.roomFee"
-          type="number"
-          min="0"
-          label="Tiền phòng"
-          suffix="đ"
           variant="outlined"
           density="comfortable"
         />
@@ -133,10 +114,82 @@
         </div>
       </div>
 
+      <div class="occupant-panel">
+        <div class="occupant-head">
+          <div>
+            <strong>{{ occupantRows.length }} sinh viên/hợp đồng trong phòng</strong>
+            <small>Chỉ lấy hợp đồng đang hiệu lực và có ngày ở giao với kỳ {{ form.billingPeriod }}.</small>
+          </div>
+          <v-btn
+            color="primary"
+            variant="tonal"
+            prepend-icon="mdi-calculator-variant-outline"
+            :loading="previewing"
+            :disabled="!canPreview"
+            @click="previewAllocation"
+          >
+            Xem trước phân bổ
+          </v-btn>
+        </div>
+        <v-table density="compact" class="allocation-table">
+          <thead>
+            <tr>
+              <th>Sinh viên</th>
+              <th>Hợp đồng</th>
+              <th>Ngày ở</th>
+              <th>Tiền phòng dự kiến</th>
+              <th>Email</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="occupant in occupantRows" :key="occupant.contractId">
+              <td><strong>{{ occupant.studentName }}</strong><small>{{ occupant.studentCode }}</small></td>
+              <td><strong>{{ occupant.contractCode }}</strong><small>{{ formatDate(occupant.startDate) }} - {{ formatDate(occupant.endDate) }}</small></td>
+              <td>{{ occupant.occupancyDays }}/{{ occupant.billingDays }} ngày</td>
+              <td>{{ formatMoney(occupant.estimatedRoomFee) }}</td>
+              <td :class="{ missing: !occupant.studentEmail }">{{ occupant.studentEmail || 'Thiếu email' }}</td>
+            </tr>
+            <tr v-if="occupantRows.length === 0">
+              <td colspan="5" class="empty-row">Phòng này chưa có hợp đồng hiệu lực trong kỳ thanh toán đã chọn.</td>
+            </tr>
+          </tbody>
+        </v-table>
+      </div>
+
+      <div v-if="roomPreview.length" class="preview-panel">
+        <div class="preview-head">
+          <div>
+            <strong>Phân bổ điện nước dự kiến</strong>
+            <small>Điện nước chia theo số ngày ở, tiền phòng tính theo hợp đồng và số ngày ở trong tháng.</small>
+          </div>
+          <span>{{ roomPreview.length }} phiếu sẽ được tạo</span>
+        </div>
+        <v-table density="compact" class="allocation-table">
+          <thead>
+            <tr>
+              <th>Sinh viên</th>
+              <th>Tiền phòng</th>
+              <th>Điện phân bổ</th>
+              <th>Nước phân bổ</th>
+              <th>Tổng phiếu</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="item in roomPreview" :key="item.contractId">
+              <td><strong>{{ item.studentName }}</strong><small>{{ item.allocationNote }}</small></td>
+              <td>{{ formatMoney(item.roomFee) }}</td>
+              <td>{{ item.electricityUsage }} số · {{ formatMoney(item.electricityAmount) }}</td>
+              <td>{{ item.waterUsage }} số · {{ formatMoney(item.waterAmount) }}</td>
+              <td><strong class="money">{{ formatMoney(item.totalAmount) }}</strong></td>
+            </tr>
+          </tbody>
+        </v-table>
+      </div>
+
       <div class="issue-footer">
-        <div>
-          <span>Tổng phiếu dự kiến</span>
-          <strong>{{ formatMoney(previewTotal) }}</strong>
+        <div class="issue-summary">
+          <div><span>Tổng điện nước phòng</span><strong>{{ formatMoney(utilityTotal) }}</strong></div>
+          <div><span>Tổng các phiếu dự kiến</span><strong>{{ formatMoney(batchPreviewTotal) }}</strong></div>
         </div>
         <v-btn
           color="success"
@@ -347,9 +400,14 @@
             <div class="detail-lines">
               <p><span>Sinh viên</span><strong>{{ selectedInvoice.studentName }} ({{ selectedInvoice.studentCode }})</strong></p>
               <p><span>Kỳ thanh toán</span><strong>{{ selectedInvoice.billingPeriod }}</strong></p>
+              <p v-if="selectedInvoice.batchCode"><span>Đợt phát hành</span><strong>{{ selectedInvoice.batchCode }}</strong></p>
               <p><span>Tiền phòng</span><strong>{{ formatMoney(selectedInvoice.roomFee) }}</strong></p>
-              <p><span>Tiền điện</span><strong>{{ selectedInvoice.electricityUsage }} số · {{ formatMoney(selectedInvoice.electricityAmount) }}</strong></p>
-              <p><span>Tiền nước</span><strong>{{ selectedInvoice.waterUsage }} số · {{ formatMoney(selectedInvoice.waterAmount) }}</strong></p>
+              <p><span>Điện phân bổ</span><strong>{{ selectedInvoice.electricityUsage }} số · {{ formatMoney(selectedInvoice.electricityAmount) }}</strong></p>
+              <p><span>Nước phân bổ</span><strong>{{ selectedInvoice.waterUsage }} số · {{ formatMoney(selectedInvoice.waterAmount) }}</strong></p>
+              <p v-if="selectedInvoice.roomOccupantCount"><span>Cách chia</span><strong>{{ selectedInvoice.occupancyDays }}/{{ selectedInvoice.billingDays }} ngày · {{ selectedInvoice.roomOccupantCount }} sinh viên</strong></p>
+              <p v-if="selectedInvoice.roomElectricityUsage"><span>Điện cả phòng</span><strong>{{ selectedInvoice.roomElectricityUsage }} số · {{ formatMoney(selectedInvoice.roomElectricityAmount) }}</strong></p>
+              <p v-if="selectedInvoice.roomWaterUsage"><span>Nước cả phòng</span><strong>{{ selectedInvoice.roomWaterUsage }} số · {{ formatMoney(selectedInvoice.roomWaterAmount) }}</strong></p>
+              <p v-if="selectedInvoice.allocationNote"><span>Ghi chú phân bổ</span><strong>{{ selectedInvoice.allocationNote }}</strong></p>
               <p class="total"><span>Tổng thanh toán</span><strong>{{ formatMoney(selectedInvoice.totalAmount) }}</strong></p>
               <p><span>Nội dung chuyển khoản</span><strong>{{ selectedInvoice.paymentCode }}</strong></p>
             </div>
@@ -370,7 +428,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import api from '../../../services/api'
 import { exportRowsToExcel } from '@/utils/exportExcel'
 
@@ -378,6 +436,7 @@ const ELECTRICITY_RATE = 4000
 const WATER_RATE = 20000
 const loading = ref(false)
 const issuing = ref(false)
+const previewing = ref(false)
 const error = ref('')
 const success = ref('')
 const students = ref([])
@@ -385,6 +444,8 @@ const contracts = ref([])
 const rooms = ref([])
 const invoices = ref([])
 const history = ref([])
+const roomPreview = ref([])
+const previewSummary = ref(null)
 const statusFilter = ref('')
 const invoiceSearch = ref('')
 const historySearch = ref('')
@@ -418,12 +479,9 @@ const dueDate = new Date(today)
 dueDate.setDate(dueDate.getDate() + 7)
 
 const form = reactive({
-  studentId: null,
-  contractId: null,
+  roomId: null,
   billingPeriod: defaultPeriod,
   dueDate: dueDate.toISOString().slice(0, 10),
-  roomFee: 0,
-  roomId: 0,
   roomName: '',
   previousElectricityReading: 0,
   currentElectricityReading: 0,
@@ -439,24 +497,35 @@ const normalizeList = (payload) => {
   return []
 }
 
-const studentOptions = computed(() => students.value.map((student) => ({
-  title: `${student.studentCode} · ${student.fullName}`,
-  value: Number(student.id),
-})))
-
-const contractOptions = computed(() => contracts.value
-  .filter((contract) => Number(contract.studentId) === Number(form.studentId))
-  .map((contract) => ({
-    title: `${contract.contractCode} · ${statusLabel(contract.status)}`,
-    value: Number(contract.id),
-  })))
+const getRoomId = (room) => Number(room?.roomId ?? room?.id ?? 0)
+const getRoomLabel = (room) => {
+  if (!room) return ''
+  const roomNumber = room.roomNumber || room.name || room.roomName || getRoomId(room)
+  const building = room.buildingName || room.building || room.buildingCode
+  return building ? `Phòng ${roomNumber} - Tòa ${building}` : `Phòng ${roomNumber}`
+}
+const roomMap = computed(() => new Map(rooms.value.map((room) => [getRoomId(room), room])))
+const studentMap = computed(() => new Map(students.value.map((student) => [Number(student.id), student])))
+const roomOptions = computed(() => rooms.value.map((room) => {
+  const roomId = getRoomId(room)
+  const residentCount = activeRoomContracts(roomId).length
+  const capacity = Number(room.capacity || room.totalBeds || room.beds || 0)
+  return {
+    title: `${getRoomLabel(room)} · ${residentCount}${capacity ? `/${capacity}` : ''} sinh viên`,
+    value: roomId,
+  }
+}))
 
 const electricityUsage = computed(() => Math.max(0, Number(form.currentElectricityReading || 0) - Number(form.previousElectricityReading || 0)))
 const waterUsage = computed(() => Math.max(0, Number(form.currentWaterReading || 0) - Number(form.previousWaterReading || 0)))
 const electricityAmount = computed(() => electricityUsage.value * ELECTRICITY_RATE)
 const waterAmount = computed(() => waterUsage.value * WATER_RATE)
-const previewTotal = computed(() => Number(form.roomFee || 0) + electricityAmount.value + waterAmount.value)
-const canIssue = computed(() => form.studentId && form.contractId && form.billingPeriod && form.dueDate && form.currentElectricityReading >= form.previousElectricityReading && form.currentWaterReading >= form.previousWaterReading)
+const utilityTotal = computed(() => electricityAmount.value + waterAmount.value)
+const batchPreviewTotal = computed(() => roomPreview.value.length
+  ? roomPreview.value.reduce((sum, item) => sum + Number(item.totalAmount || 0), 0)
+  : occupantRows.value.reduce((sum, item) => sum + Number(item.estimatedRoomFee || 0), 0) + utilityTotal.value)
+const canPreview = computed(() => form.roomId && form.billingPeriod && form.dueDate && occupantRows.value.length > 0 && form.currentElectricityReading >= form.previousElectricityReading && form.currentWaterReading >= form.previousWaterReading)
+const canIssue = computed(() => canPreview.value && roomPreview.value.length > 0)
 const unpaidInvoices = computed(() => invoices.value.filter((item) => item.status !== 'Paid'))
 const paidInvoices = computed(() => invoices.value.filter((item) => item.status === 'Paid'))
 const unpaidTotal = computed(() => unpaidInvoices.value.reduce((sum, item) => sum + Number(item.totalAmount || 0), 0))
@@ -548,6 +617,50 @@ const paymentMethodLabel = (method) => ({
   BankWebhook: 'Ngân hàng tự động',
   Manual: 'Xác nhận thủ công',
 }[method] || method || 'Không xác định')
+const parseLocalDate = (value, fallback = null) => {
+  if (!value) return fallback
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? fallback : date
+}
+const periodRange = computed(() => {
+  const start = new Date(`${form.billingPeriod || defaultPeriod}-01T00:00:00`)
+  const end = new Date(start)
+  end.setMonth(end.getMonth() + 1)
+  return { start, end, days: Math.round((end - start) / 86400000) }
+})
+const calculateOccupancyDays = (contract) => {
+  const { start, end } = periodRange.value
+  const contractStart = parseLocalDate(contract.startDate, start)
+  const contractEnd = parseLocalDate(contract.endDate, new Date(end.getTime() - 86400000))
+  const activeStart = contractStart > start ? contractStart : start
+  const endExclusive = new Date((contractEnd < end ? contractEnd : new Date(end.getTime() - 86400000)).getTime())
+  endExclusive.setDate(endExclusive.getDate() + 1)
+  if (endExclusive <= activeStart) return 0
+  return Math.round((endExclusive - activeStart) / 86400000)
+}
+const activeRoomContracts = (roomId) => contracts.value.filter((contract) =>
+  Number(contract.roomId) === Number(roomId) &&
+  contract.status === 'Active' &&
+  calculateOccupancyDays(contract) > 0)
+const occupantRows = computed(() => activeRoomContracts(form.roomId).map((contract) => {
+  const student = studentMap.value.get(Number(contract.studentId)) || {}
+  const occupancyDays = calculateOccupancyDays(contract)
+  const billingDays = periodRange.value.days || 1
+  return {
+    contractId: Number(contract.id),
+    contractCode: contract.contractCode,
+    studentId: Number(contract.studentId),
+    studentCode: student.studentCode || `SV${contract.studentId}`,
+    studentName: student.fullName || 'Sinh viên',
+    studentEmail: student.email || '',
+    roomFee: Number(contract.monthlyFee || 0),
+    estimatedRoomFee: Math.round(Number(contract.monthlyFee || 0) * occupancyDays / billingDays),
+    startDate: contract.startDate,
+    endDate: contract.endDate,
+    occupancyDays,
+    billingDays,
+  }
+}))
 
 const loadAll = async () => {
   loading.value = true
@@ -565,6 +678,14 @@ const loadAll = async () => {
     rooms.value = normalizeList(roomResponse.data)
     invoices.value = normalizeList(invoiceResponse.data)
     history.value = normalizeList(historyResponse.data)
+
+    if (!form.roomId && rooms.value.length) {
+      form.roomId = getRoomId(rooms.value[0])
+      onRoomChanged()
+    } else if (form.roomId) {
+      const room = roomMap.value.get(Number(form.roomId))
+      form.roomName = getRoomLabel(room) || form.roomName
+    }
   } catch (err) {
     error.value = err.response?.data?.detail || err.response?.data?.message || 'Không tải được dữ liệu thanh toán.'
   } finally {
@@ -572,29 +693,64 @@ const loadAll = async () => {
   }
 }
 
-const onStudentChanged = () => {
-  const available = contractOptions.value
-  form.contractId = available.length ? available[0].value : null
-  onContractChanged()
+const resetPreview = () => {
+  roomPreview.value = []
+  previewSummary.value = null
 }
 
-const onContractChanged = () => {
-  const contract = contracts.value.find((item) => Number(item.id) === Number(form.contractId))
-  if (!contract) return
-
-  form.roomFee = Number(contract.monthlyFee || 0)
-  form.roomId = Number(contract.roomId || 0)
-  const room = rooms.value.find((item) => Number(item.id) === form.roomId)
-  form.roomName = room?.roomNumber || room?.name || String(form.roomId || '')
+const onRoomChanged = () => {
+  const room = roomMap.value.get(Number(form.roomId))
+  form.roomName = getRoomLabel(room) || String(form.roomId || '')
 
   const latest = invoices.value
-    .filter((item) => Number(item.contractId) === Number(form.contractId))
+    .filter((item) => Number(item.roomId) === Number(form.roomId))
     .sort((first, second) => new Date(second.issuedAt || 0) - new Date(first.issuedAt || 0))[0]
 
   form.previousElectricityReading = Number(latest?.currentElectricityReading || 0)
   form.currentElectricityReading = form.previousElectricityReading
   form.previousWaterReading = Number(latest?.currentWaterReading || 0)
   form.currentWaterReading = form.previousWaterReading
+  resetPreview()
+}
+
+const buildRoomInvoicePayload = () => ({
+  roomId: Number(form.roomId || 0),
+  roomName: form.roomName,
+  billingPeriod: form.billingPeriod,
+  previousElectricityReading: Number(form.previousElectricityReading || 0),
+  currentElectricityReading: Number(form.currentElectricityReading || 0),
+  previousWaterReading: Number(form.previousWaterReading || 0),
+  currentWaterReading: Number(form.currentWaterReading || 0),
+  dueDate: form.dueDate,
+  issuedBy: localStorage.getItem('fullName') || localStorage.getItem('username') || 'Nhân viên',
+  occupants: occupantRows.value.map((item) => ({
+    contractId: item.contractId,
+    contractCode: item.contractCode,
+    studentId: item.studentId,
+    studentCode: item.studentCode,
+    studentName: item.studentName,
+    studentEmail: item.studentEmail,
+    roomFee: item.roomFee,
+    startDate: item.startDate,
+    endDate: item.endDate,
+  })),
+})
+
+const previewAllocation = async () => {
+  previewing.value = true
+  error.value = ''
+  success.value = ''
+  try {
+    const response = await api.post('/billing/monthly-invoices/room/preview', buildRoomInvoicePayload())
+    roomPreview.value = normalizeList(response.data.allocations)
+    previewSummary.value = response.data
+  } catch (err) {
+    roomPreview.value = []
+    previewSummary.value = null
+    error.value = err.response?.data?.message || err.response?.data?.detail || 'Không xem trước được phân bổ hóa đơn.'
+  } finally {
+    previewing.value = false
+  }
 }
 
 const issueAndPrint = async () => {
@@ -604,31 +760,11 @@ const issueAndPrint = async () => {
   success.value = ''
 
   try {
-    const student = students.value.find((item) => Number(item.id) === Number(form.studentId))
-    const contract = contracts.value.find((item) => Number(item.id) === Number(form.contractId))
-    const response = await api.post('/billing/monthly-invoices', {
-      contractId: Number(form.contractId),
-      contractCode: contract?.contractCode,
-      studentId: Number(form.studentId),
-      studentCode: student?.studentCode,
-      studentName: student?.fullName,
-      studentEmail: student?.email,
-      roomId: Number(form.roomId || contract?.roomId || 0),
-      roomName: form.roomName,
-      billingPeriod: form.billingPeriod,
-      roomFee: Number(form.roomFee || 0),
-      previousElectricityReading: Number(form.previousElectricityReading || 0),
-      currentElectricityReading: Number(form.currentElectricityReading || 0),
-      previousWaterReading: Number(form.previousWaterReading || 0),
-      currentWaterReading: Number(form.currentWaterReading || 0),
-      dueDate: form.dueDate,
-      issuedBy: localStorage.getItem('fullName') || localStorage.getItem('username') || 'Nhân viên',
-    })
-
-    const invoice = response.data.invoice
+    const response = await api.post('/billing/monthly-invoices/room/issue', buildRoomInvoicePayload())
+    const createdInvoices = normalizeList(response.data.invoices)
     success.value = response.data.message
     await loadAll()
-    printInvoice(invoice, printWindow)
+    printInvoices(createdInvoices, printWindow)
   } catch (err) {
     printWindow?.close()
     error.value = err.response?.data?.message || err.response?.data?.detail || 'Không phát hành được phiếu thanh toán.'
@@ -691,21 +827,43 @@ const exportInvoices = () => {
 }
 
 const printInvoice = (invoice, targetWindow = null) => {
+  printInvoices([invoice], targetWindow)
+}
+
+const printInvoices = (invoiceList, targetWindow = null) => {
   const popup = targetWindow || window.open('', '_blank')
   if (!popup) {
     error.value = 'Trình duyệt đang chặn cửa sổ in.'
     return
   }
 
-  const qr = invoice.qrCodeUrl
-    ? `<img src="${invoice.qrCodeUrl}" alt="VietQR" style="width:260px;max-width:100%"><p><b>${invoice.paymentCode}</b></p>`
-    : '<p>Chưa cấu hình VietQR.</p>'
+  const body = invoiceList.map((invoice) => {
+    const qr = invoice.qrCodeUrl
+      ? `<img src="${invoice.qrCodeUrl}" alt="VietQR" style="width:220px;max-width:100%"><p><b>${invoice.paymentCode}</b></p>`
+      : '<p>Chưa cấu hình VietQR.</p>'
 
-  popup.document.write(`<!doctype html><html lang="vi"><head><meta charset="utf-8"><title>${invoice.invoiceCode}</title><style>body{font-family:Arial,sans-serif;color:#17201b;max-width:760px;margin:30px auto;padding:0 20px}h1{color:#0f7f51}table{width:100%;border-collapse:collapse;margin:20px 0}th,td{border:1px solid #cfd8d2;padding:11px}th{text-align:left;background:#eaf7ef}.right{text-align:right}.total{font-size:20px;font-weight:700;color:#0f7f51}.qr{text-align:center;margin-top:24px}@media print{button{display:none}}</style></head><body><h1>PHIẾU THANH TOÁN HÀNG THÁNG</h1><p><b>Mã phiếu:</b> ${invoice.invoiceCode}</p><p><b>Sinh viên:</b> ${invoice.studentName} (${invoice.studentCode})</p><p><b>Phòng:</b> ${invoice.roomName} &nbsp; <b>Kỳ:</b> ${invoice.billingPeriod}</p><table><tr><th>Khoản thu</th><th class="right">Thành tiền</th></tr><tr><td>Tiền phòng</td><td class="right">${formatMoney(invoice.roomFee)}</td></tr><tr><td>Điện: ${invoice.electricityUsage} số × 4.000đ</td><td class="right">${formatMoney(invoice.electricityAmount)}</td></tr><tr><td>Nước: ${invoice.waterUsage} số × 20.000đ</td><td class="right">${formatMoney(invoice.waterAmount)}</td></tr><tr class="total"><td>Tổng cộng</td><td class="right">${formatMoney(invoice.totalAmount)}</td></tr></table><p><b>Hạn thanh toán:</b> ${formatDate(invoice.dueDate)}</p><div class="qr">${qr}</div></body></html>`)
+    return `<section class="invoice-print"><h1>PHIẾU THANH TOÁN HÀNG THÁNG</h1><p><b>Mã phiếu:</b> ${invoice.invoiceCode}</p><p><b>Sinh viên:</b> ${invoice.studentName} (${invoice.studentCode})</p><p><b>Phòng:</b> ${invoice.roomName} &nbsp; <b>Kỳ:</b> ${invoice.billingPeriod}</p><p><b>Cách chia:</b> ${invoice.allocationNote || 'Phiếu lập trực tiếp cho sinh viên.'}</p><table><tr><th>Khoản thu</th><th class="right">Thành tiền</th></tr><tr><td>Tiền phòng</td><td class="right">${formatMoney(invoice.roomFee)}</td></tr><tr><td>Điện phân bổ: ${invoice.electricityUsage} số từ ${invoice.roomElectricityUsage || invoice.electricityUsage} số phòng</td><td class="right">${formatMoney(invoice.electricityAmount)}</td></tr><tr><td>Nước phân bổ: ${invoice.waterUsage} số từ ${invoice.roomWaterUsage || invoice.waterUsage} số phòng</td><td class="right">${formatMoney(invoice.waterAmount)}</td></tr><tr class="total"><td>Tổng cộng</td><td class="right">${formatMoney(invoice.totalAmount)}</td></tr></table><p><b>Hạn thanh toán:</b> ${formatDate(invoice.dueDate)}</p><div class="qr">${qr}</div></section>`
+  }).join('')
+
+  popup.document.write(`<!doctype html><html lang="vi"><head><meta charset="utf-8"><title>Phiếu thanh toán</title><style>body{font-family:Arial,sans-serif;color:#17201b;max-width:820px;margin:30px auto;padding:0 20px}h1{color:#0f7f51}table{width:100%;border-collapse:collapse;margin:20px 0}th,td{border:1px solid #cfd8d2;padding:11px}th{text-align:left;background:#eaf7ef}.right{text-align:right}.total{font-size:20px;font-weight:700;color:#0f7f51}.qr{text-align:center;margin-top:24px}.invoice-print{page-break-after:always}.invoice-print:last-child{page-break-after:auto}@media print{button{display:none}}</style></head><body>${body}</body></html>`)
   popup.document.close()
   popup.focus()
   setTimeout(() => popup.print(), 500)
 }
+
+watch(
+  () => [
+    form.roomId,
+    form.billingPeriod,
+    form.previousElectricityReading,
+    form.currentElectricityReading,
+    form.previousWaterReading,
+    form.currentWaterReading,
+    form.dueDate,
+    occupantRows.value.map((item) => `${item.contractId}:${item.occupancyDays}:${item.studentEmail}`).join('|'),
+  ],
+  resetPreview,
+)
 
 onMounted(loadAll)
 </script>
@@ -738,10 +896,26 @@ onMounted(loadAll)
 .meter-title { display: flex; gap: 9px; align-items: center; margin-bottom: 14px; font-size: 18px; }
 .meter-inputs { display: grid; grid-template-columns: 1fr auto 1fr; gap: 10px; align-items: center; }
 .meter-box p { margin: 0; color: #58665e; }
+.occupant-panel, .preview-panel { margin-top: 16px; padding: 16px; border: 1px solid #dce5df; border-radius: 7px; background: #fbfdfb; }
+.occupant-head, .preview-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 12px; }
+.occupant-head > div, .preview-head > div { display: grid; gap: 4px; min-width: 0; }
+.occupant-head strong, .preview-head strong { color: #15271d; font-size: 16px; }
+.occupant-head small, .preview-head small { color: #66736b; overflow-wrap: anywhere; }
+.preview-head > span { display: inline-flex; padding: 6px 10px; border-radius: 999px; background: #e4f8ec; color: #0a7e4c; font-size: 12px; font-weight: 800; white-space: nowrap; }
+.allocation-table { overflow: hidden; border: 1px solid #e1e8e3; border-radius: 6px; background: #fff; }
+.allocation-table :deep(.v-table__wrapper) { overflow-x: auto; }
+.allocation-table table { min-width: 760px; }
+.allocation-table th { background: #f5f7f6; color: #536157; font-size: 12px; font-weight: 900; white-space: nowrap; }
+.allocation-table td { vertical-align: top; }
+.allocation-table td strong, .allocation-table td small { display: block; }
+.allocation-table td small { margin-top: 3px; color: #748078; }
+.allocation-table .missing { color: #c2410c; font-weight: 800; }
 .issue-footer { margin-top: 18px; padding-top: 18px; border-top: 1px solid #e1e8e3; }
 .issue-footer > div { display: grid; gap: 2px; }
 .issue-footer span { color: #647168; }
 .issue-footer strong { color: #0f7f51; font-size: 28px; }
+.issue-summary { grid-template-columns: repeat(2, minmax(0, max-content)); gap: 28px !important; }
+.issue-summary > div { display: grid; gap: 2px; }
 .table-heading { align-items: flex-end; }
 .table-tools { display: grid; grid-template-columns: minmax(220px, 1fr) 170px 230px auto; gap: 10px; width: min(940px, 100%); align-items: center; }
 .history-tools { display: grid; grid-template-columns: minmax(230px, 1fr) 280px; gap: 10px; width: min(630px, 100%); }
@@ -775,5 +949,5 @@ onMounted(loadAll)
 .qr-panel img { width: 280px; max-width: 100%; }
 .qr-missing .mdi { font-size: 64px; color: #9aa49e; }
 @media (max-width: 1100px) { .metric-grid { grid-template-columns: repeat(2, 1fr); } .form-grid { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 720px) { .page-heading, .section-title, .issue-footer { align-items: stretch; flex-direction: column; } .metric-grid, .form-grid, .meter-grid, .invoice-detail { grid-template-columns: 1fr; } .page-heading h2 { font-size: 24px; } .table-tools, .history-tools { grid-template-columns: 1fr; width: 100%; } .ant-table :deep(.v-data-table-footer) { align-items: flex-start; flex-wrap: wrap; padding: 10px 8px; } }
+@media (max-width: 720px) { .page-heading, .section-title, .issue-footer, .occupant-head, .preview-head { align-items: stretch; flex-direction: column; } .metric-grid, .form-grid, .meter-grid, .invoice-detail, .issue-summary { grid-template-columns: 1fr; } .page-heading h2 { font-size: 24px; } .table-tools, .history-tools { grid-template-columns: 1fr; width: 100%; } .ant-table :deep(.v-data-table-footer) { align-items: flex-start; flex-wrap: wrap; padding: 10px 8px; } }
 </style>

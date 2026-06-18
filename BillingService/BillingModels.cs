@@ -2,6 +2,7 @@ public sealed class BillingData
 {
     public List<BillingItem> ContractItems { get; set; } = [];
     public List<MonthlyInvoice> MonthlyInvoices { get; set; } = [];
+    public List<RoomMonthlyInvoiceBatch> RoomInvoiceBatches { get; set; } = [];
     public List<PaymentHistoryEntry> PaymentHistory { get; set; } = [];
     public List<MaintenanceIncident> Incidents { get; set; } = [];
     public List<MaintenancePlan> MaintenancePlans { get; set; } = [];
@@ -40,17 +41,27 @@ public sealed class MonthlyInvoice
     public long RoomId { get; set; }
     public string RoomName { get; set; } = string.Empty;
     public string BillingPeriod { get; set; } = string.Empty;
+    public string BatchCode { get; set; } = string.Empty;
     public decimal RoomFee { get; set; }
     public int PreviousElectricityReading { get; set; }
     public int CurrentElectricityReading { get; set; }
-    public int ElectricityUsage { get; set; }
+    public decimal ElectricityUsage { get; set; }
     public decimal ElectricityRate { get; set; }
     public decimal ElectricityAmount { get; set; }
     public int PreviousWaterReading { get; set; }
     public int CurrentWaterReading { get; set; }
-    public int WaterUsage { get; set; }
+    public decimal WaterUsage { get; set; }
     public decimal WaterRate { get; set; }
     public decimal WaterAmount { get; set; }
+    public decimal RoomElectricityUsage { get; set; }
+    public decimal RoomElectricityAmount { get; set; }
+    public decimal RoomWaterUsage { get; set; }
+    public decimal RoomWaterAmount { get; set; }
+    public int RoomOccupantCount { get; set; }
+    public int OccupancyDays { get; set; }
+    public int BillingDays { get; set; }
+    public string AllocationMethod { get; set; } = "Manual";
+    public string AllocationNote { get; set; } = string.Empty;
     public decimal TotalAmount { get; set; }
     public DateTime DueDate { get; set; }
     public string Status { get; set; } = "Unpaid";
@@ -82,6 +93,66 @@ public sealed record CreateMonthlyInvoiceRequest(
     int CurrentWaterReading,
     DateTime? DueDate,
     string? IssuedBy);
+
+public sealed record RoomInvoiceOccupant(
+    long ContractId,
+    string? ContractCode,
+    long StudentId,
+    string? StudentCode,
+    string? StudentName,
+    string? StudentEmail,
+    decimal RoomFee,
+    DateTime? StartDate,
+    DateTime? EndDate);
+
+public sealed record CreateRoomMonthlyInvoicesRequest(
+    long RoomId,
+    string? RoomName,
+    string BillingPeriod,
+    int PreviousElectricityReading,
+    int CurrentElectricityReading,
+    int PreviousWaterReading,
+    int CurrentWaterReading,
+    DateTime? DueDate,
+    string? IssuedBy,
+    List<RoomInvoiceOccupant>? Occupants);
+
+public sealed record RoomInvoiceAllocationPreview(
+    long ContractId,
+    string ContractCode,
+    long StudentId,
+    string StudentCode,
+    string StudentName,
+    string StudentEmail,
+    decimal RoomFee,
+    int OccupancyDays,
+    int BillingDays,
+    decimal ElectricityUsage,
+    decimal ElectricityAmount,
+    decimal WaterUsage,
+    decimal WaterAmount,
+    decimal TotalAmount,
+    string AllocationNote);
+
+public sealed record RoomMonthlyInvoiceBatch(
+    long Id,
+    string BatchCode,
+    long RoomId,
+    string RoomName,
+    string BillingPeriod,
+    int PreviousElectricityReading,
+    int CurrentElectricityReading,
+    decimal ElectricityUsage,
+    decimal ElectricityAmount,
+    int PreviousWaterReading,
+    int CurrentWaterReading,
+    decimal WaterUsage,
+    decimal WaterAmount,
+    int OccupantCount,
+    decimal TotalAmount,
+    string IssuedBy,
+    DateTime IssuedAt,
+    List<long> InvoiceIds);
 
 public sealed record MarkInvoicePaidRequest(
     decimal? Amount,
