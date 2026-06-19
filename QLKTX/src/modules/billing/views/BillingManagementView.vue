@@ -615,6 +615,7 @@ const formatDateTime = (value) => value ? new Intl.DateTimeFormat('vi-VN', { dat
 const statusLabel = (status) => ({ Paid: 'Đã thanh toán', Unpaid: 'Chưa thanh toán', Active: 'Đang hiệu lực', Expired: 'Hết hạn', Cancelled: 'Đã hủy' }[status] || status || '-')
 const paymentMethodLabel = (method) => ({
   BankWebhook: 'Ngân hàng tự động',
+  WalletAutoPay: 'Ví KTX tự động',
   Manual: 'Xác nhận thủ công',
 }[method] || method || 'Không xác định')
 const parseLocalDate = (value, fallback = null) => {

@@ -17,6 +17,75 @@
       <div><span>Đã hoàn thành</span><strong>{{ paidInvoices.length }}</strong></div>
     </div>
 
+    <section class="wallet-panel">
+      <div class="wallet-main">
+        <div>
+          <span class="eyebrow">VÍ KTX</span>
+          <h3>Số dư ví sinh viên</h3>
+          <strong>{{ formatMoney(wallet?.balance) }}</strong>
+          <p>Ví chỉ dùng để nạp tiền và tự động thanh toán hóa đơn nội trú hàng tháng.</p>
+        </div>
+        <v-switch
+          :model-value="Boolean(wallet?.autoPayEnabled)"
+          color="success"
+          density="comfortable"
+          hide-details
+          :loading="walletSaving"
+          label="Tự động thanh toán khi đủ số dư"
+          @update:model-value="toggleAutoPay"
+        />
+      </div>
+
+      <div class="wallet-grid">
+        <div class="topup-box">
+          <div class="section-title compact">
+            <div><span class="mdi mdi-wallet-plus-outline"></span><div><h3>Nạp tiền vào ví</h3><p>Chọn số tiền rồi quét QR, nội dung chuyển khoản giữ đúng mã ví.</p></div></div>
+          </div>
+          <div class="topup-actions">
+            <v-text-field
+              v-model.number="topUpAmount"
+              type="number"
+              min="10000"
+              step="10000"
+              label="Số tiền muốn nạp"
+              variant="outlined"
+              density="compact"
+              hide-details
+            />
+            <v-btn color="success" prepend-icon="mdi-qrcode" :loading="walletQrLoading" @click="refreshTopUpQr">
+              Tạo QR nạp ví
+            </v-btn>
+          </div>
+          <div class="wallet-transfer">
+            <img v-if="topUpQrCodeUrl" :src="topUpQrCodeUrl" alt="Mã QR nạp ví KTX" />
+            <div v-else class="qr-missing small"><span class="mdi mdi-qrcode-remove"></span><p>Chưa có QR nạp ví.</p></div>
+            <div>
+              <span>Nội dung chuyển khoản ví</span>
+              <strong>{{ topUpCode || '-' }}</strong>
+              <v-btn prepend-icon="mdi-content-copy" variant="tonal" size="small" @click="copyWalletCode">
+                Sao chép mã ví
+              </v-btn>
+            </div>
+          </div>
+        </div>
+
+        <div class="wallet-history">
+          <div class="section-title compact">
+            <div><span class="mdi mdi-clipboard-text-clock-outline"></span><div><h3>Giao dịch ví gần đây</h3><p>Nạp ví và các lần hệ thống tự trừ tiền hóa đơn.</p></div></div>
+          </div>
+          <article v-for="transaction in walletTransactions" :key="transaction.id">
+            <span :class="['mdi', transaction.amount >= 0 ? 'mdi-arrow-down-circle-outline' : 'mdi-lightning-bolt-circle']"></span>
+            <div>
+              <strong>{{ walletTransactionLabel(transaction.type) }}</strong>
+              <small>{{ formatDateTime(transaction.createdAt) }} · {{ transaction.referenceCode }}</small>
+            </div>
+            <b :class="{ debit: transaction.amount < 0 }">{{ formatSignedMoney(transaction.amount) }}</b>
+          </article>
+          <p v-if="walletTransactions.length === 0" class="empty-history wallet-empty">Chưa có giao dịch ví.</p>
+        </div>
+      </div>
+    </section>
+
     <div class="payment-layout">
       <section class="invoice-list">
         <div class="section-title">
@@ -99,7 +168,7 @@
       </div>
     </section>
 
-    <v-snackbar v-model="copied" color="success" timeout="1800">Đã sao chép nội dung chuyển khoản.</v-snackbar>
+    <v-snackbar v-model="copied" color="success" timeout="1800">{{ copyMessage }}</v-snackbar>
   </section>
 </template>
 
@@ -111,8 +180,13 @@ const loading = ref(false)
 const error = ref('')
 const invoices = ref([])
 const history = ref([])
+const walletInfo = ref(null)
+const walletSaving = ref(false)
+const walletQrLoading = ref(false)
+const topUpAmount = ref(500000)
 const selectedInvoice = ref(null)
 const copied = ref(false)
+const copyMessage = ref('Đã sao chép nội dung chuyển khoản.')
 const studentId = Number(localStorage.getItem('student_id') || 0)
 
 const normalizeList = (payload) => {
@@ -125,22 +199,40 @@ const normalizeList = (payload) => {
 const unpaidInvoices = computed(() => invoices.value.filter((item) => item.status !== 'Paid'))
 const paidInvoices = computed(() => invoices.value.filter((item) => item.status === 'Paid'))
 const unpaidTotal = computed(() => unpaidInvoices.value.reduce((sum, item) => sum + Number(item.totalAmount || 0), 0))
+const wallet = computed(() => walletInfo.value?.wallet || null)
+const walletTransactions = computed(() => walletInfo.value?.transactions || [])
+const topUpCode = computed(() => walletInfo.value?.topUpCode || '')
+const topUpQrCodeUrl = computed(() => walletInfo.value?.topUpQrCodeUrl || '')
 const formatMoney = (value) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 }).format(Number(value || 0))
+const formatSignedMoney = (value) => `${Number(value || 0) >= 0 ? '+' : '-'}${formatMoney(Math.abs(Number(value || 0)))}`
 const formatDate = (value) => value ? new Intl.DateTimeFormat('vi-VN').format(new Date(value)) : '-'
 const formatDateTime = (value) => value ? new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value)) : '-'
 const statusLabel = (status) => status === 'Paid' ? 'Đã thanh toán' : 'Chưa thanh toán'
+const walletTransactionLabel = (type) => ({
+  TopUp: 'Nạp ví',
+  AutoPayment: 'Tự động thanh toán hóa đơn',
+  ManualAdjustment: 'Điều chỉnh số dư',
+}[type] || type || 'Giao dịch ví')
+
+const loadWallet = async () => {
+  const amount = Math.max(Number(topUpAmount.value || 0), 0)
+  const response = await api.get(`/billing/wallets/${studentId}?amount=${amount}`)
+  walletInfo.value = response.data
+}
 
 const loadPayments = async () => {
   loading.value = true
   error.value = ''
   try {
     if (!studentId) throw new Error('Tài khoản chưa liên kết với hồ sơ sinh viên.')
-    const [invoiceResponse, historyResponse] = await Promise.all([
+    const [invoiceResponse, historyResponse, walletResponse] = await Promise.all([
       api.get(`/billing/monthly-invoices?studentId=${studentId}`),
       api.get(`/billing/payment-history?studentId=${studentId}`),
+      api.get(`/billing/wallets/${studentId}?amount=${Math.max(Number(topUpAmount.value || 0), 0)}`),
     ])
     invoices.value = normalizeList(invoiceResponse.data)
     history.value = normalizeList(historyResponse.data)
+    walletInfo.value = walletResponse.data
 
     if (!selectedInvoice.value || !invoices.value.some((item) => item.id === selectedInvoice.value.id)) {
       selectedInvoice.value = unpaidInvoices.value[0] || invoices.value[0] || null
@@ -156,7 +248,42 @@ const loadPayments = async () => {
 
 const copyPaymentCode = async () => {
   await navigator.clipboard.writeText(selectedInvoice.value.paymentCode)
+  copyMessage.value = 'Đã sao chép nội dung chuyển khoản.'
   copied.value = true
+}
+
+const copyWalletCode = async () => {
+  if (!topUpCode.value) return
+  await navigator.clipboard.writeText(topUpCode.value)
+  copyMessage.value = 'Đã sao chép mã nạp ví.'
+  copied.value = true
+}
+
+const refreshTopUpQr = async () => {
+  walletQrLoading.value = true
+  error.value = ''
+  try {
+    if (!studentId) throw new Error('Tài khoản chưa liên kết với hồ sơ sinh viên.')
+    if (Number(topUpAmount.value || 0) <= 0) throw new Error('Vui lòng nhập số tiền nạp ví lớn hơn 0.')
+    await loadWallet()
+  } catch (err) {
+    error.value = err.response?.data?.detail || err.response?.data?.message || err.message || 'Không tạo được QR nạp ví.'
+  } finally {
+    walletQrLoading.value = false
+  }
+}
+
+const toggleAutoPay = async (enabled) => {
+  walletSaving.value = true
+  error.value = ''
+  try {
+    await api.put(`/billing/wallets/${studentId}/auto-pay`, { enabled })
+    await loadPayments()
+  } catch (err) {
+    error.value = err.response?.data?.detail || err.response?.data?.message || 'Không cập nhật được tự động thanh toán.'
+  } finally {
+    walletSaving.value = false
+  }
 }
 
 onMounted(loadPayments)
@@ -176,6 +303,32 @@ onMounted(loadPayments)
 .summary-band div:last-child { border-right: 0; }
 .summary-band span { color: #68766e; }
 .summary-band strong { color: #0f7f51; font-size: 28px; }
+.wallet-panel { display: grid; gap: 18px; padding: 22px; border: 1px solid #dce5df; border-radius: 8px; background: #fff; }
+.wallet-main { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 18px; border-radius: 8px; background: linear-gradient(135deg, #f0fbf5, #eef6ff); }
+.wallet-main > div { min-width: 0; }
+.wallet-main h3 { margin: 5px 0 4px; color: #14261c; font-size: 22px; }
+.wallet-main strong { display: block; color: #0f7f51; font-size: 34px; line-height: 1.15; }
+.wallet-main p { max-width: 620px; margin: 6px 0 0; color: #607068; }
+.wallet-grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(320px, .9fr); gap: 16px; }
+.topup-box, .wallet-history { padding: 18px; border: 1px solid #e0e8e3; border-radius: 8px; background: #fbfdfb; }
+.section-title.compact { margin-bottom: 14px; }
+.topup-actions { display: grid; grid-template-columns: minmax(180px, 1fr) auto; gap: 12px; align-items: center; }
+.wallet-transfer { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 16px; align-items: center; margin-top: 14px; padding: 14px; border: 1px dashed #acd3bd; border-radius: 8px; background: #f4fbf7; }
+.wallet-transfer img { width: 150px; max-width: 100%; }
+.wallet-transfer > div { display: grid; gap: 8px; min-width: 0; }
+.wallet-transfer span { color: #66746b; }
+.wallet-transfer strong { color: #0f7f51; font-size: 20px; overflow-wrap: anywhere; }
+.qr-missing.small { display: grid; place-items: center; min-height: 130px; color: #8a9690; text-align: center; }
+.qr-missing.small .mdi { font-size: 42px; }
+.wallet-history article { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 12px 0; border-bottom: 1px solid #e3e9e5; }
+.wallet-history article:last-of-type { border-bottom: 0; }
+.wallet-history article > .mdi { color: #0f8b5a; font-size: 25px; }
+.wallet-history article > div { display: grid; gap: 3px; min-width: 0; }
+.wallet-history strong, .wallet-history small { overflow: hidden; text-overflow: ellipsis; }
+.wallet-history small { color: #748078; }
+.wallet-history b { color: #0f7f51; white-space: nowrap; }
+.wallet-history b.debit { color: #b45309; }
+.wallet-empty { padding: 20px 0 4px !important; }
 .payment-layout { display: grid; grid-template-columns: minmax(320px, .85fr) minmax(430px, 1.15fr); gap: 18px; align-items: start; }
 .invoice-list, .invoice-detail, .history-panel { padding: 22px; border: 1px solid #dce5df; border-radius: 8px; background: #fff; }
 .section-title { margin-bottom: 18px; }
@@ -216,6 +369,6 @@ onMounted(loadPayments)
 .history-grid b { color: #0f7f51; }
 .empty-state, .empty-history { padding: 36px 10px; color: #738077; text-align: center; }
 .empty-state .mdi { font-size: 52px; }
-@media (max-width: 900px) { .payment-layout { grid-template-columns: 1fr; } }
-@media (max-width: 620px) { .page-heading { align-items: stretch; flex-direction: column; } .summary-band { grid-template-columns: 1fr; } .summary-band div { border-right: 0; border-bottom: 1px solid #e3e9e5; } .page-heading h2 { font-size: 24px; } }
+@media (max-width: 900px) { .payment-layout, .wallet-grid { grid-template-columns: 1fr; } }
+@media (max-width: 620px) { .page-heading, .wallet-main { align-items: stretch; flex-direction: column; } .summary-band, .topup-actions, .wallet-transfer { grid-template-columns: 1fr; } .summary-band div { border-right: 0; border-bottom: 1px solid #e3e9e5; } .page-heading h2 { font-size: 24px; } }
 </style>

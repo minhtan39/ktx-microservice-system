@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -224,6 +225,7 @@ app.MapPost("/api/billing/monthly-invoices", async Task<IResult> (
         };
 
         data.MonthlyInvoices.Add(invoice);
+        TryAutoPayStudentInvoices(data, invoice.StudentId);
         return true;
     });
 
@@ -389,6 +391,9 @@ app.MapPost("/api/billing/monthly-invoices/room/issue", async Task<IResult> (
         else
             data.RoomInvoiceBatches.Add(batch);
 
+        foreach (var studentId in createdInvoices.Select(item => item.StudentId).Distinct())
+            TryAutoPayStudentInvoices(data, studentId);
+
         return true;
     });
 
@@ -467,6 +472,102 @@ app.MapGet("/api/billing/payment-history", (long? studentId, BillingStore store)
     return Results.Ok(history);
 });
 
+app.MapGet("/api/billing/wallets", (long? studentId, BillingStore store) =>
+{
+    var wallets = store.Write(data =>
+    {
+        var knownStudentIds = data.StudentWallets
+            .Select(item => item.StudentId)
+            .Concat(data.MonthlyInvoices.Select(item => item.StudentId))
+            .Where(id => id > 0)
+            .Distinct()
+            .Where(id => !studentId.HasValue || id == studentId.Value)
+            .OrderBy(id => id)
+            .ToList();
+
+        return knownStudentIds
+            .Select(id => EnsureWallet(data, id))
+            .OrderBy(item => item.StudentName)
+            .ThenBy(item => item.StudentCode)
+            .ToList();
+    });
+
+    return Results.Ok(wallets);
+});
+
+app.MapGet("/api/billing/wallets/{studentId:long}", (
+    long studentId,
+    decimal? amount,
+    BillingStore store,
+    PaymentQrBuilder qrBuilder) =>
+{
+    if (studentId <= 0)
+        return Results.BadRequest(new { message = "studentId is required." });
+
+    var result = store.Write(data =>
+    {
+        var wallet = EnsureWallet(data, studentId);
+        var topUpAmount = amount.HasValue && amount.Value > 0 ? RoundMoney(amount.Value) : 0m;
+        var topUpCode = BuildWalletTopUpCode(studentId);
+        var transactions = data.WalletTransactions
+            .Where(item => item.StudentId == studentId)
+            .OrderByDescending(item => item.CreatedAt)
+            .Take(30)
+            .ToList();
+        var unpaidInvoices = data.MonthlyInvoices
+            .Where(item => item.StudentId == studentId &&
+                !item.Status.Equals("Paid", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(item => item.DueDate)
+            .ThenBy(item => item.Id)
+            .ToList();
+
+        return new
+        {
+            wallet,
+            transactions,
+            unpaidInvoices,
+            topUpCode,
+            topUpQrCodeUrl = topUpAmount > 0 ? qrBuilder.Build(topUpAmount, topUpCode) : string.Empty
+        };
+    });
+
+    return Results.Ok(result);
+});
+
+app.MapPut("/api/billing/wallets/{studentId:long}/auto-pay", (
+    long studentId,
+    WalletAutoPayRequest request,
+    BillingStore store) =>
+{
+    if (studentId <= 0)
+        return Results.BadRequest(new { message = "studentId is required." });
+
+    var result = store.Write(data =>
+    {
+        var wallet = EnsureWallet(data, studentId);
+        wallet.AutoPayEnabled = request.Enabled;
+        wallet.UpdatedAt = DateTime.UtcNow;
+        var paidInvoices = request.Enabled
+            ? TryAutoPayStudentInvoices(data, studentId)
+            : [];
+
+        return new
+        {
+            wallet,
+            paidInvoices
+        };
+    });
+
+    return Results.Ok(new
+    {
+        message = request.Enabled
+            ? "Đã bật tự động thanh toán bằng ví KTX."
+            : "Đã tắt tự động thanh toán bằng ví KTX.",
+        result.wallet,
+        result.paidInvoices
+    });
+});
+
 app.MapPost("/api/billing/webhooks/payment", async Task<IResult> (
     HttpRequest request,
     BillingStore store,
@@ -491,6 +592,8 @@ app.MapPost("/api/billing/webhooks/payment", async Task<IResult> (
     using var body = await JsonDocument.ParseAsync(request.Body);
     var payments = ExtractIncomingPayments(body.RootElement).ToList();
     var completed = new List<MonthlyInvoice>();
+    var walletTopUps = new List<WalletTransaction>();
+    var walletPaidInvoices = new List<MonthlyInvoice>();
 
     store.Write(data =>
     {
@@ -502,13 +605,21 @@ app.MapPost("/api/billing/webhooks/payment", async Task<IResult> (
                 payment.Amount >= item.TotalAmount);
 
             if (invoice == null)
+            {
+                var walletResult = ApplyWalletTopUpFromPayment(data, payment);
+
+                if (walletResult.Transaction != null)
+                    walletTopUps.Add(walletResult.Transaction);
+
+                walletPaidInvoices.AddRange(walletResult.PaidInvoices);
                 continue;
+            }
 
             var paidInvoice = CompleteInvoicePayment(
                 data,
                 invoice.Id,
                 payment.Amount,
-                payment.ReferenceCode,
+                NormalizeIncomingPaymentReference(payment),
                 "BankWebhook",
                 "Ngân hàng");
 
@@ -523,7 +634,9 @@ app.MapPost("/api/billing/webhooks/payment", async Task<IResult> (
     {
         success = true,
         received = payments.Count,
-        completed = completed.Select(item => item.InvoiceCode).ToList()
+        completed = completed.Select(item => item.InvoiceCode).ToList(),
+        walletTopUps = walletTopUps.Select(item => item.ReferenceCode).ToList(),
+        walletAutoPaid = walletPaidInvoices.Select(item => item.InvoiceCode).ToList()
     });
 });
 
@@ -1231,6 +1344,211 @@ static MonthlyInvoice? CompleteInvoicePayment(
     return invoice;
 }
 
+static StudentWallet EnsureWallet(
+    BillingData data,
+    long studentId,
+    string? studentCode = null,
+    string? studentName = null)
+{
+    var wallet = data.StudentWallets.FirstOrDefault(item => item.StudentId == studentId);
+    var latestInvoice = data.MonthlyInvoices
+        .Where(item => item.StudentId == studentId)
+        .OrderByDescending(item => item.IssuedAt)
+        .FirstOrDefault();
+    var resolvedCode = FirstNonBlank(studentCode, wallet?.StudentCode, latestInvoice?.StudentCode, $"SV{studentId}");
+    var resolvedName = FirstNonBlank(studentName, wallet?.StudentName, latestInvoice?.StudentName, "Sinh viên");
+
+    if (wallet == null)
+    {
+        wallet = new StudentWallet
+        {
+            StudentId = studentId,
+            StudentCode = resolvedCode,
+            StudentName = resolvedName,
+            Balance = 0,
+            AutoPayEnabled = false,
+            UpdatedAt = DateTime.UtcNow
+        };
+        data.StudentWallets.Add(wallet);
+        return wallet;
+    }
+
+    if (string.IsNullOrWhiteSpace(wallet.StudentCode) ||
+        wallet.StudentCode.StartsWith("SV", StringComparison.OrdinalIgnoreCase))
+    {
+        wallet.StudentCode = resolvedCode;
+    }
+
+    if (string.IsNullOrWhiteSpace(wallet.StudentName) ||
+        wallet.StudentName.Equals("Sinh viên", StringComparison.OrdinalIgnoreCase))
+    {
+        wallet.StudentName = resolvedName;
+    }
+
+    return wallet;
+}
+
+static WalletTransaction AddWalletTransaction(
+    BillingData data,
+    StudentWallet wallet,
+    string type,
+    decimal amount,
+    string referenceCode,
+    long? invoiceId,
+    string? invoiceCode,
+    string description,
+    string createdBy)
+{
+    wallet.Balance = RoundMoney(wallet.Balance + amount);
+    wallet.UpdatedAt = DateTime.UtcNow;
+
+    var nextId = data.WalletTransactions.Count == 0
+        ? 1
+        : data.WalletTransactions.Max(item => item.Id) + 1;
+    var transaction = new WalletTransaction(
+        nextId,
+        wallet.StudentId,
+        wallet.StudentCode,
+        wallet.StudentName,
+        type,
+        RoundMoney(amount),
+        wallet.Balance,
+        referenceCode,
+        invoiceId,
+        invoiceCode,
+        description,
+        createdBy,
+        DateTime.UtcNow);
+
+    data.WalletTransactions.Add(transaction);
+    return transaction;
+}
+
+static List<MonthlyInvoice> TryAutoPayStudentInvoices(BillingData data, long studentId)
+{
+    var wallet = data.StudentWallets.FirstOrDefault(item => item.StudentId == studentId);
+
+    if (wallet == null || !wallet.AutoPayEnabled || wallet.Balance <= 0)
+        return [];
+
+    var paidInvoices = new List<MonthlyInvoice>();
+    var unpaidInvoices = data.MonthlyInvoices
+        .Where(item => item.StudentId == studentId &&
+            !item.Status.Equals("Paid", StringComparison.OrdinalIgnoreCase))
+        .OrderBy(item => item.DueDate)
+        .ThenBy(item => item.IssuedAt)
+        .ThenBy(item => item.Id)
+        .ToList();
+
+    foreach (var invoice in unpaidInvoices)
+    {
+        var amount = RoundMoney(invoice.TotalAmount);
+
+        if (amount <= 0)
+            continue;
+
+        if (wallet.Balance < amount)
+            break;
+
+        var reference = $"WALLET-{invoice.InvoiceCode}-{DateTime.UtcNow:yyyyMMddHHmmss}";
+        AddWalletTransaction(
+            data,
+            wallet,
+            "AutoPayment",
+            -amount,
+            reference,
+            invoice.Id,
+            invoice.InvoiceCode,
+            $"Tự động thanh toán phiếu {invoice.InvoiceCode}",
+            "Ví KTX");
+
+        var paidInvoice = CompleteInvoicePayment(
+            data,
+            invoice.Id,
+            amount,
+            reference,
+            "WalletAutoPay",
+            "Ví KTX");
+
+        if (paidInvoice != null)
+            paidInvoices.Add(paidInvoice);
+    }
+
+    return paidInvoices;
+}
+
+static WalletTopUpApplyResult ApplyWalletTopUpFromPayment(BillingData data, IncomingPayment payment)
+{
+    var studentId = TryParseWalletStudentId(payment.Content);
+
+    if (!studentId.HasValue)
+        return new WalletTopUpApplyResult(
+            new StudentWallet(),
+            null,
+            [],
+            false);
+
+    var wallet = EnsureWallet(data, studentId.Value);
+    var reference = NormalizeIncomingPaymentReference(payment);
+    var duplicate = data.WalletTransactions.Any(item =>
+        item.Type.Equals("TopUp", StringComparison.OrdinalIgnoreCase) &&
+        item.StudentId == studentId.Value &&
+        item.ReferenceCode.Equals(reference, StringComparison.OrdinalIgnoreCase));
+
+    if (duplicate)
+    {
+        return new WalletTopUpApplyResult(
+            wallet,
+            null,
+            [],
+            true);
+    }
+
+    var transaction = AddWalletTransaction(
+        data,
+        wallet,
+        "TopUp",
+        RoundMoney(payment.Amount),
+        reference,
+        null,
+        null,
+        "Nạp ví qua chuyển khoản ngân hàng",
+        "Ngân hàng");
+    var paidInvoices = TryAutoPayStudentInvoices(data, studentId.Value);
+
+    return new WalletTopUpApplyResult(
+        wallet,
+        transaction,
+        paidInvoices,
+        false);
+}
+
+static string BuildWalletTopUpCode(long studentId) =>
+    $"KTXWALLET{studentId}";
+
+static long? TryParseWalletStudentId(string content)
+{
+    var match = Regex.Match(content ?? string.Empty, @"KTXWALLET\s*(\d+)", RegexOptions.IgnoreCase);
+
+    return match.Success &&
+        long.TryParse(match.Groups[1].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var studentId)
+        ? studentId
+        : null;
+}
+
+static string NormalizeIncomingPaymentReference(IncomingPayment payment)
+{
+    if (!string.IsNullOrWhiteSpace(payment.ReferenceCode))
+        return payment.ReferenceCode.Trim();
+
+    var payload = $"{payment.Amount:0}|{payment.Content.Trim().ToUpperInvariant()}";
+    var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(payload)));
+    return $"BANK-{hash[..16]}";
+}
+
+static string FirstNonBlank(params string?[] values) =>
+    values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim() ?? string.Empty;
+
 static IEnumerable<IncomingPayment> ExtractIncomingPayments(JsonElement element)
 {
     if (element.ValueKind == JsonValueKind.Array)
@@ -1739,6 +2057,12 @@ static RequestIdentity GetRequestIdentity(HttpRequest request)
 }
 
 public sealed record IncomingPayment(decimal Amount, string Content, string ReferenceCode);
+
+public sealed record WalletTopUpApplyResult(
+    StudentWallet Wallet,
+    WalletTransaction? Transaction,
+    List<MonthlyInvoice> PaidInvoices,
+    bool Duplicate);
 
 public sealed record RoomOccupantAllocationInput(
     RoomInvoiceOccupant Occupant,

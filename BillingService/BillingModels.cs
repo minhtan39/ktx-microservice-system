@@ -4,6 +4,8 @@ public sealed class BillingData
     public List<MonthlyInvoice> MonthlyInvoices { get; set; } = [];
     public List<RoomMonthlyInvoiceBatch> RoomInvoiceBatches { get; set; } = [];
     public List<PaymentHistoryEntry> PaymentHistory { get; set; } = [];
+    public List<StudentWallet> StudentWallets { get; set; } = [];
+    public List<WalletTransaction> WalletTransactions { get; set; } = [];
     public List<MaintenanceIncident> Incidents { get; set; } = [];
     public List<MaintenancePlan> MaintenancePlans { get; set; } = [];
 }
@@ -172,6 +174,33 @@ public sealed record PaymentHistoryEntry(
     string ReferenceCode,
     string ConfirmedBy,
     DateTime PaidAt);
+
+public sealed class StudentWallet
+{
+    public long StudentId { get; set; }
+    public string StudentCode { get; set; } = string.Empty;
+    public string StudentName { get; set; } = string.Empty;
+    public decimal Balance { get; set; }
+    public bool AutoPayEnabled { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}
+
+public sealed record WalletTransaction(
+    long Id,
+    long StudentId,
+    string StudentCode,
+    string StudentName,
+    string Type,
+    decimal Amount,
+    decimal BalanceAfter,
+    string ReferenceCode,
+    long? InvoiceId,
+    string? InvoiceCode,
+    string Description,
+    string CreatedBy,
+    DateTime CreatedAt);
+
+public sealed record WalletAutoPayRequest(bool Enabled);
 
 public sealed record CreateIncidentRequest(
     long StudentId,
