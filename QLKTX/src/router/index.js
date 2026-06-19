@@ -5,6 +5,22 @@ const ADMIN_ROLES = ['Admin', 'Staff']
 const ADMIN_ONLY_ROLES = ['Admin']
 const STUDENT_ROLES = ['Student']
 
+const clearAuthSession = () => {
+  [
+    'user_token',
+    'user_role',
+    'fullName',
+    'username',
+    'user_home',
+    'student_id',
+    'student_code',
+    'user_permissions',
+    'employee_code',
+    'employee_department',
+    'employee_area',
+  ].forEach((key) => localStorage.removeItem(key))
+}
+
 const routes = [
   {
     path: '/',
@@ -164,6 +180,11 @@ const router = createRouter({
 router.beforeEach((to) => {
   const token = localStorage.getItem('user_token')
   const role = normalizeRole(localStorage.getItem('user_role'))
+
+  if (token && !role) {
+    clearAuthSession()
+    return to.name === 'Login' ? true : '/login'
+  }
 
   if (to.name === 'Login' && token) {
     return defaultHomeForRole(role)

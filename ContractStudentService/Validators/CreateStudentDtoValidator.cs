@@ -27,9 +27,6 @@ public class CreateStudentDtoValidator : AbstractValidator<CreateStudentDto>
             .NotEmpty()
             .EmailAddress();
 
-        RuleFor(x => x.SchoolName)
-            .NotEmpty();
-
         RuleFor(x => x.ClassName)
             .NotEmpty()
             .MaximumLength(50);
@@ -37,5 +34,8 @@ public class CreateStudentDtoValidator : AbstractValidator<CreateStudentDto>
         RuleFor(x => x.FacultyName)
             .NotEmpty()
             .MaximumLength(100);
+
+        RuleFor(x => x.ResidenceHistory)
+            .MaximumLength(1000);
     }
 }

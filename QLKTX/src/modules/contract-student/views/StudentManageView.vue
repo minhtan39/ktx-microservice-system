@@ -28,6 +28,18 @@
 
     <v-alert v-if="error" type="error" variant="tonal" class="mb-4">{{ error }}</v-alert>
     <v-alert v-if="success" type="success" variant="tonal" class="mb-4">{{ success }}</v-alert>
+    <v-snackbar
+      v-model="toastVisible"
+      :color="toastColor"
+      location="top right"
+      timeout="4500"
+      multi-line
+    >
+      {{ toastText }}
+      <template #actions>
+        <v-btn variant="text" @click="clearToast">Đóng</v-btn>
+      </template>
+    </v-snackbar>
 
     <div class="student-workspace">
       <section class="roster-panel">
@@ -164,7 +176,7 @@
           <div class="profile-section soft">
             <h4>Tài khoản sinh viên</h4>
             <p><span>Tên đăng nhập</span><strong>{{ highlightedStudent.studentCode || '-' }}</strong></p>
-            <p><span>Kích hoạt</span><strong>Qua email sinh viên</strong></p>
+            <p><span>Mật khẩu mặc định</span><strong>{{ highlightedStudent.studentCode || '-' }}</strong></p>
           </div>
 
           <div class="residence-box">
@@ -178,16 +190,8 @@
           <v-btn block color="primary" variant="flat" prepend-icon="mdi-card-account-details-outline" @click="openStudentDetails(highlightedStudent)">
             Xem hồ sơ đầy đủ
           </v-btn>
-          <v-btn
-            block
-            color="success"
-            variant="tonal"
-            prepend-icon="mdi-email-arrow-right-outline"
-            :loading="inviteSending === highlightedStudent.id"
-            :disabled="!highlightedStudent.email"
-            @click="sendStudentInvite(highlightedStudent)"
-          >
-            Gửi email kích hoạt
+          <v-btn block color="success" variant="tonal" prepend-icon="mdi-account-edit-outline" @click="openEditDialog(highlightedStudent)">
+            Cập nhật hồ sơ
           </v-btn>
         </template>
         <div v-else class="empty-profile">
@@ -241,14 +245,88 @@
                   density="compact"
                 />
               </v-col>
+              <v-col cols="12">
+                <v-textarea
+                  v-model="form.residenceHistory"
+                  label="Lịch sử lưu trú"
+                  rows="3"
+                  density="compact"
+                  placeholder="Ví dụ: Chưa lưu trú, đang chờ xếp phòng hoặc ghi chú lịch sử trước đây"
+                />
+              </v-col>
             </v-row>
           </v-form>
         </v-card-text>
         <v-card-actions>
           <v-spacer />
           <v-btn variant="text" @click="createDialog = false">Hủy</v-btn>
-          <v-btn color="success" :loading="saving" prepend-icon="mdi-email-check-outline" @click="createStudent">
-            Lưu & gửi email kích hoạt
+          <v-btn color="success" :loading="saving" prepend-icon="mdi-content-save-outline" @click="createStudent">
+            Lưu & tạo tài khoản
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <v-dialog v-model="editDialog" max-width="980">
+      <v-card class="dialog-card">
+        <v-card-title class="dialog-title">
+          <div>
+            <span class="page-kicker">Update Student</span>
+            <strong>Cập nhật hồ sơ sinh viên</strong>
+          </div>
+          <v-btn icon="mdi-close" variant="text" @click="editDialog = false" />
+        </v-card-title>
+        <v-card-text>
+          <v-form @submit.prevent="updateStudent">
+            <v-row>
+              <v-col cols="12" md="3">
+                <v-text-field v-model="editForm.studentCode" label="Mã sinh viên" density="compact" disabled />
+              </v-col>
+              <v-col cols="12" md="3">
+                <v-text-field v-model="editForm.fullName" label="Họ tên" density="compact" required />
+              </v-col>
+              <v-col cols="12" md="3">
+                <v-text-field v-model="editForm.cccd" label="CCCD" density="compact" required />
+              </v-col>
+              <v-col cols="12" md="3">
+                <v-text-field v-model="editForm.phone" label="Số điện thoại" density="compact" required />
+              </v-col>
+              <v-col cols="12" md="3">
+                <v-text-field v-model="editForm.email" label="Email" density="compact" required />
+              </v-col>
+              <v-col cols="12" md="3">
+                <v-text-field v-model="editForm.facultyName" label="Khoa" density="compact" required />
+              </v-col>
+              <v-col cols="12" md="3">
+                <v-text-field v-model="editForm.className" label="Lớp" density="compact" required />
+              </v-col>
+              <v-col cols="12" md="3">
+                <v-select
+                  v-model="editForm.gender"
+                  :items="genderOptions"
+                  item-title="title"
+                  item-value="value"
+                  label="Giới tính"
+                  density="compact"
+                />
+              </v-col>
+              <v-col cols="12">
+                <v-textarea
+                  v-model="editForm.residenceHistory"
+                  label="Lịch sử lưu trú"
+                  rows="4"
+                  density="compact"
+                  placeholder="Ghi nhận phòng, tòa, thời gian ở hoặc lịch sử chuyển phòng"
+                />
+              </v-col>
+            </v-row>
+          </v-form>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" @click="editDialog = false">Hủy</v-btn>
+          <v-btn color="success" :loading="saving" prepend-icon="mdi-content-save-outline" @click="updateStudent">
+            Lưu cập nhật
           </v-btn>
         </v-card-actions>
       </v-card>
@@ -307,10 +385,11 @@ const facultyFilter = ref('All')
 const statusFilter = ref('All')
 const currentPage = ref(1)
 const createDialog = ref(false)
+const editDialog = ref(false)
 const detailDialog = ref(false)
 const selectedStudent = ref(null)
-const inviteSending = ref(null)
 const pageSize = 8
+const managedSchoolName = 'Trường quản lý ký túc xá'
 
 const genderOptions = [
   { title: 'Nam', value: true },
@@ -320,6 +399,7 @@ const genderOptions = [
 const studentStatusOptions = [
   { title: 'Tất cả trạng thái', value: 'All' },
   { title: 'Đang lưu trú', value: 'Active' },
+  { title: 'Chờ ký hợp đồng', value: 'PendingSignature' },
   { title: 'Chờ đăng ký', value: 'Pending' },
   { title: 'Khác', value: 'Other' },
 ]
@@ -330,12 +410,28 @@ const emptyForm = () => ({
   cccd: '',
   phone: '',
   email: '',
+  schoolName: managedSchoolName,
   facultyName: '',
   className: '',
+  residenceHistory: '',
   gender: true,
 })
 
 const form = ref(emptyForm())
+const editForm = ref({ ...emptyForm(), id: null })
+
+const toastVisible = computed({
+  get: () => Boolean(error.value || success.value),
+  set: (visible) => {
+    if (!visible) clearToast()
+  },
+})
+const toastText = computed(() => error.value || success.value)
+const toastColor = computed(() => error.value ? 'error' : 'success')
+const clearToast = () => {
+  error.value = ''
+  success.value = ''
+}
 
 const activeStudents = computed(() => students.value.filter((student) => student.status === 'Active').length)
 const pendingStudents = computed(() => students.value.filter((student) => student.status !== 'Active').length)
@@ -390,7 +486,7 @@ const filteredStudents = computed(() => {
     const matchesStatus =
       statusFilter.value === 'All' ||
       student.status === statusFilter.value ||
-      (statusFilter.value === 'Other' && !['Active', 'Pending'].includes(student.status))
+      (statusFilter.value === 'Other' && !['Active', 'Pending', 'PendingSignature'].includes(student.status))
 
     return matchesSearch && matchesFaculty && matchesStatus
   })
@@ -422,7 +518,7 @@ const selectedStudentFields = computed(() => {
     { label: 'Email', value: selectedStudent.value.email || '-' },
     { label: 'Khoa', value: selectedStudent.value.facultyName || '-' },
     { label: 'Lớp', value: selectedStudent.value.className || '-' },
-    { label: 'Kích hoạt tài khoản', value: 'Gửi link qua email sinh viên' },
+    { label: 'Tài khoản mặc định', value: `${selectedStudent.value.studentCode || '-'} / ${selectedStudent.value.studentCode || '-'}` },
     { label: 'Lịch sử lưu trú', value: selectedStudent.value.residenceHistory || 'Chưa có lịch sử lưu trú' },
   ]
 })
@@ -455,10 +551,18 @@ const createStudent = async () => {
     success.value = ''
     saving.value = true
 
+    const normalizedStudentCode = normalizeStudentCode(form.value.studentCode)
+
+    if (students.value.some((student) =>
+      normalizeStudentCode(student.studentCode) === normalizedStudentCode)) {
+      error.value = `MSSV ${normalizedStudentCode} đã tồn tại. Không thể tạo trùng hồ sơ hoặc tài khoản.`
+      return
+    }
+
     const payload = {
       ...form.value,
-      studentCode: normalizeStudentCode(form.value.studentCode),
-      schoolName: 'Ký túc xá',
+      studentCode: normalizedStudentCode,
+      schoolName: managedSchoolName,
     }
 
     const res = await api.post('/students', payload)
@@ -471,10 +575,14 @@ const createStudent = async () => {
         fullName: createdStudent.fullName || payload.fullName,
       })
 
-      success.value = `Đã tạo hồ sơ và tài khoản chờ kích hoạt: ${payload.studentCode}.`
-      await sendStudentInvite(createdStudent, { quiet: true })
+      success.value = `Đã tạo hồ sơ và tài khoản sinh viên: ${payload.studentCode} / ${payload.studentCode}.`
     } catch (accountError) {
-      success.value = 'Đã tạo hồ sơ sinh viên. Chưa tạo được tài khoản chờ kích hoạt, hãy thử gửi email kích hoạt sau.'
+      const accountMessage = accountError.response?.data?.message
+      if (accountError.response?.status === 409) {
+        success.value = `Đã tạo hồ sơ sinh viên ${payload.studentCode}. Tài khoản đăng nhập MSSV này đã tồn tại nên hệ thống không tạo trùng.`
+      } else {
+        success.value = `Đã tạo hồ sơ sinh viên. Chưa tạo được tài khoản đăng nhập: ${accountMessage || 'AuthService chưa sẵn sàng.'}`
+      }
       console.warn(accountError)
     }
 
@@ -482,45 +590,46 @@ const createStudent = async () => {
     createDialog.value = false
     await loadStudents()
   } catch (err) {
-    error.value = 'Không lưu được sinh viên. Kiểm tra MSSV, CCCD, email và các trường bắt buộc.'
+    error.value = err.response?.data?.message || 'Không lưu được sinh viên. Kiểm tra MSSV, CCCD, email và các trường bắt buộc.'
     console.error(err)
   } finally {
     saving.value = false
   }
 }
 
-const sendStudentInvite = async (student, options = {}) => {
-  if (!student?.email) {
-    error.value = 'Hồ sơ sinh viên chưa có email để gửi thư kích hoạt.'
-    return
-  }
+const updateStudent = async () => {
+  if (!editForm.value.id) return
 
   try {
-    inviteSending.value = student.id
     error.value = ''
-    const response = await api.post('/auth/student-accounts/invite', {
-      studentId: student.id,
-      studentCode: student.studentCode,
-      fullName: student.fullName,
-      email: student.email,
-    })
+    success.value = ''
+    saving.value = true
 
-    const message = response.data?.message || 'Đã gửi email kích hoạt tài khoản sinh viên.'
-    success.value = options.quiet && success.value
-      ? `${success.value} ${message}`
-      : message
-  } catch (err) {
-    const message = err.response?.data?.detail ||
-      err.response?.data?.message ||
-      'Không gửi được email kích hoạt. Kiểm tra cấu hình email của AuthService.'
-
-    if (options.quiet) {
-      success.value = `${success.value} Chưa gửi được email kích hoạt: ${message}`
-    } else {
-      error.value = message
+    const payload = {
+      fullName: editForm.value.fullName,
+      cccd: editForm.value.cccd,
+      phone: editForm.value.phone,
+      email: editForm.value.email,
+      schoolName: managedSchoolName,
+      facultyName: editForm.value.facultyName,
+      className: editForm.value.className,
+      residenceHistory: editForm.value.residenceHistory,
+      gender: editForm.value.gender,
     }
+
+    const res = await api.put(`/students/${editForm.value.id}`, payload)
+    const updatedStudent = res.data?.data || res.data
+    const updatedId = Number(updatedStudent?.id || editForm.value.id)
+
+    success.value = `Đã cập nhật hồ sơ sinh viên ${editForm.value.studentCode}.`
+    editDialog.value = false
+    await loadStudents()
+    selectedStudent.value = students.value.find((student) => Number(student.id) === updatedId) || null
+  } catch (err) {
+    error.value = err.response?.data?.message || 'Không cập nhật được hồ sơ. Kiểm tra CCCD, email và các trường bắt buộc.'
+    console.error(err)
   } finally {
-    inviteSending.value = null
+    saving.value = false
   }
 }
 
@@ -528,6 +637,15 @@ const openCreateDialog = () => {
   form.value = emptyForm()
   error.value = ''
   createDialog.value = true
+}
+
+const openEditDialog = (student) => {
+  if (!student) return
+
+  editForm.value = mapStudentToForm(student)
+  error.value = ''
+  success.value = ''
+  editDialog.value = true
 }
 
 const selectStudent = (student) => {
@@ -560,11 +678,25 @@ const exportStudents = () => {
       { header: 'Email', value: (student) => student.email },
       { header: 'CCCD', value: (student) => student.cccd },
       { header: 'Trạng thái', value: (student) => statusLabel(student.status) },
-      { header: 'Kích hoạt tài khoản', value: () => 'Qua email sinh viên' },
+      { header: 'Tài khoản mặc định', value: (student) => student.studentCode },
       { header: 'Lịch sử lưu trú', value: (student) => student.residenceHistory || 'Chưa có lịch sử lưu trú' },
     ],
   })
 }
+
+const mapStudentToForm = (student) => ({
+  id: student.id,
+  studentCode: student.studentCode || '',
+  fullName: student.fullName || '',
+  cccd: student.cccd || '',
+  phone: student.phone || '',
+  email: student.email || '',
+  schoolName: student.schoolName || managedSchoolName,
+  facultyName: student.facultyName || '',
+  className: student.className || '',
+  residenceHistory: student.residenceHistory || '',
+  gender: Boolean(student.gender),
+})
 
 const normalizeStudentCode = (value) => String(value || '').trim().toUpperCase()
 
@@ -580,6 +712,7 @@ const initials = (name) => {
 
 const statusLabel = (status) => {
   if (status === 'Active') return 'Đang lưu trú'
+  if (status === 'PendingSignature') return 'Chờ ký hợp đồng'
   if (status === 'Pending') return 'Chờ đăng ký'
   return status || 'Chưa xác định'
 }
@@ -830,6 +963,11 @@ onMounted(loadStudents)
 .status-pill.active {
   background: #dcfce7;
   color: #15803d !important;
+}
+
+.status-pill.pendingsignature {
+  background: #dbeafe;
+  color: #1d4ed8 !important;
 }
 
 .empty-state {

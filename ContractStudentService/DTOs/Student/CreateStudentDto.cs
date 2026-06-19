@@ -18,5 +18,7 @@ public class CreateStudentDto
 
     public string FacultyName { get; set; } = string.Empty;
 
+    public string ResidenceHistory { get; set; } = string.Empty;
+
     public bool Gender { get; set; }
 }

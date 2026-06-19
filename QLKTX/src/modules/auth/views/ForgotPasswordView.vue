@@ -28,6 +28,19 @@
           {{ success }}
         </v-alert>
 
+        <v-snackbar
+          v-model="toastVisible"
+          :color="toastColor"
+          location="top right"
+          timeout="4500"
+          multi-line
+        >
+          {{ toastText }}
+          <template #actions>
+            <v-btn variant="text" @click="clearToast">Đóng</v-btn>
+          </template>
+        </v-snackbar>
+
         <v-form @submit.prevent="submitRequest">
           <v-text-field
             v-model="studentCode"
@@ -60,13 +73,26 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import api from '@/services/api'
 
 const studentCode = ref('')
 const loading = ref(false)
 const error = ref('')
 const success = ref('')
+const toastVisible = computed({
+  get: () => Boolean(error.value || success.value),
+  set: (visible) => {
+    if (!visible) clearToast()
+  },
+})
+const toastText = computed(() => error.value || success.value)
+const toastColor = computed(() => error.value ? 'error' : 'success')
+
+const clearToast = () => {
+  error.value = ''
+  success.value = ''
+}
 
 const submitRequest = async () => {
   if (!studentCode.value.trim()) {

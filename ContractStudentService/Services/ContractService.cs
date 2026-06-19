@@ -1,6 +1,8 @@
 ﻿using ContractStudentService.DTOs.Contract;
 using ContractStudentService.Entities;
 using ContractStudentService.Interfaces;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace ContractStudentService.Services;
 
@@ -8,13 +10,16 @@ public class ContractService : IContractService
 {
     private readonly IContractRepository _contractRepository;
     private readonly IStudentRepository _studentRepository;
+    private readonly IRoomGatewayClient _roomGatewayClient;
 
     public ContractService(
         IContractRepository contractRepository,
-        IStudentRepository studentRepository)
+        IStudentRepository studentRepository,
+        IRoomGatewayClient roomGatewayClient)
     {
         _contractRepository = contractRepository;
         _studentRepository = studentRepository;
+        _roomGatewayClient = roomGatewayClient;
     }
 
     public async Task<IEnumerable<Contract>> GetAllAsync()
@@ -53,7 +58,7 @@ public class ContractService : IContractService
             Terms = string.IsNullOrWhiteSpace(dto.Terms)
                 ? "Sinh viên đóng tiền đúng hạn, tuân thủ nội quy ký túc xá và bàn giao phòng khi kết thúc hợp đồng."
                 : dto.Terms,
-            Status = "Active"
+            Status = "PendingSignature"
         };
 
         return await _contractRepository.CreateAsync(contract);
@@ -91,12 +96,24 @@ public class ContractService : IContractService
         if (contract == null)
             return null;
 
+        if (!IsActiveOrPendingSignature(contract.Status))
+            throw new InvalidOperationException("Chỉ được hủy hợp đồng đang hiệu lực hoặc đang chờ ký.");
+
+        await _roomGatewayClient.ReleaseRoomAsync(
+            contract.RoomId,
+            contract.StudentId,
+            contract.ContractCode);
+
         contract.Status = "Cancelled";
 
         var student = await _studentRepository.GetByIdAsync(contract.StudentId);
         if (student != null)
         {
             student.Status = "Pending";
+            student.ResidenceHistory = string.IsNullOrWhiteSpace(student.ResidenceHistory)
+                ? $"Đã hủy hợp đồng {contract.ContractCode}"
+                : $"{student.ResidenceHistory}; Đã hủy hợp đồng {contract.ContractCode}";
+
             await _studentRepository.UpdateAsync(student);
         }
 
@@ -109,6 +126,14 @@ public class ContractService : IContractService
 
         if (contract == null)
             return null;
+
+        if (!contract.Status.Equals("Active", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Chỉ được kết thúc hợp đồng đang hiệu lực.");
+
+        await _roomGatewayClient.ReleaseRoomAsync(
+            contract.RoomId,
+            contract.StudentId,
+            contract.ContractCode);
 
         contract.Status = "Expired";
 
@@ -133,126 +158,100 @@ public class ContractService : IContractService
         if (contract == null)
             return null;
 
-        if (!CanRenew(contract.Status))
-            throw new Exception("Chỉ hợp đồng đang hiệu lực hoặc đã hết hạn mới được gia hạn. Hợp đồng đã hủy cần tạo hồ sơ/đơn xếp phòng mới.");
+        if (!contract.Status.Equals("Active", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Chỉ được gia hạn hợp đồng đang hiệu lực.");
 
-        if (dto.EndDate.Date <= contract.EndDate.Date)
-            throw new Exception("Ngày gia hạn mới phải sau ngày kết thúc hiện tại.");
+        if (dto.NewEndDate.Date <= contract.EndDate.Date)
+            throw new InvalidOperationException("Ngày kết thúc mới phải sau ngày kết thúc hiện tại.");
 
-        if (dto.EndDate.Date <= DateTime.UtcNow.Date)
-            throw new Exception("Ngày kết thúc mới phải sau ngày hiện tại để hợp đồng có hiệu lực sau gia hạn.");
-
-        await EnsureNoOtherCurrentContractAsync(contract);
-
-        var oldEndDate = contract.EndDate;
-        var oldStatus = contract.Status;
-        contract.EndDate = dto.EndDate;
-        contract.Status = "Active";
-        contract.Terms = AppendContractNote(
-            contract.Terms,
-            BuildRenewalNote(oldStatus, oldEndDate, dto));
-
-        var student = await _studentRepository.GetByIdAsync(contract.StudentId);
-        if (student != null)
-        {
-            student.Status = "Active";
-            student.ResidenceHistory = string.IsNullOrWhiteSpace(student.ResidenceHistory)
-                ? $"Gia hạn hợp đồng {contract.ContractCode} đến {dto.EndDate:dd/MM/yyyy}"
-                : $"{student.ResidenceHistory}; Gia hạn hợp đồng {contract.ContractCode} đến {dto.EndDate:dd/MM/yyyy}";
-
-            await _studentRepository.UpdateAsync(student);
-        }
+        contract.EndDate = dto.NewEndDate.Date;
+        contract.RenewalCount++;
+        contract.LastRenewedAt = DateTime.UtcNow;
+        contract.RenewalNote = string.IsNullOrWhiteSpace(dto.Note)
+            ? $"Gia hạn lần {contract.RenewalCount}"
+            : dto.Note.Trim();
+        contract.Terms = string.IsNullOrWhiteSpace(contract.Terms)
+            ? $"Hợp đồng được gia hạn đến ngày {contract.EndDate:dd/MM/yyyy}."
+            : $"{contract.Terms} Gia hạn lần {contract.RenewalCount} đến ngày {contract.EndDate:dd/MM/yyyy}.";
 
         return await _contractRepository.UpdateAsync(contract);
     }
 
-    public async Task<Contract?> SignAsync(long id, SignContractDto dto)
+    public async Task<Contract?> SignAsync(
+        long id,
+        SignContractDto dto,
+        string ipAddress)
     {
         var contract = await _contractRepository.GetByIdAsync(id);
 
         if (contract == null)
             return null;
 
-        if (!contract.Status.Equals("Active", StringComparison.OrdinalIgnoreCase))
-            throw new Exception("Chỉ hợp đồng đang hiệu lực mới được ký online.");
+        if (!IsActiveOrPendingSignature(contract.Status))
+            throw new InvalidOperationException("Chỉ được ký hợp đồng đang hiệu lực hoặc đang chờ ký.");
 
-        if (HasOnlineSignature(contract.Terms))
-            throw new Exception("Hợp đồng đã được ký online.");
+        if (contract.SignedAt.HasValue)
+            throw new InvalidOperationException("Hợp đồng này đã được ký online.");
+
+        if (!dto.AcceptedTerms)
+            throw new InvalidOperationException("Sinh viên phải xác nhận đã đọc và đồng ý điều khoản hợp đồng.");
+
+        if (string.IsNullOrWhiteSpace(dto.FullName) ||
+            string.IsNullOrWhiteSpace(dto.StudentCode))
+        {
+            throw new InvalidOperationException("Vui lòng nhập đầy đủ họ tên và MSSV để ký hợp đồng.");
+        }
 
         var student = await _studentRepository.GetByIdAsync(contract.StudentId);
+        var submittedStudentCode = dto.StudentCode.Trim();
 
-        if (student == null)
-            throw new Exception("Student không tồn tại.");
+        if (student == null ||
+            !string.Equals(
+                student.StudentCode.Trim(),
+                submittedStudentCode,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("MSSV ký hợp đồng không khớp với hồ sơ sinh viên.");
+        }
 
-        var signerName = dto.SignerName.Trim();
+        var signedAt = DateTime.UtcNow;
 
-        if (string.IsNullOrWhiteSpace(signerName))
-            throw new Exception("Vui lòng nhập họ tên người ký.");
+        contract.SignatureFullName = dto.FullName.Trim();
+        contract.SignatureStudentCode = submittedStudentCode.ToUpperInvariant();
+        contract.SignatureIpAddress = ipAddress;
+        contract.SignedAt = signedAt;
+        contract.SignatureHash = BuildSignatureHash(contract, signedAt);
+        contract.Status = "Active";
 
-        if (!signerName.Equals(student.FullName, StringComparison.OrdinalIgnoreCase))
-            throw new Exception("Họ tên người ký phải trùng với họ tên sinh viên trong hồ sơ.");
+        var updatedContract = await _contractRepository.UpdateAsync(contract);
 
-        var method = string.IsNullOrWhiteSpace(dto.Method)
-            ? "Online"
-            : dto.Method.Trim();
+        student.Status = "Active";
+        await _studentRepository.UpdateAsync(student);
 
-        contract.Terms = AppendContractNote(
-            contract.Terms,
-            $"Ký điện tử: {signerName}, phương thức {method}, thời điểm {DateTime.Now:dd/MM/yyyy HH:mm}.");
-
-        return await _contractRepository.UpdateAsync(contract);
+        return updatedContract;
     }
 
-    private static bool HasOnlineSignature(string terms)
-    {
-        return terms.Contains("Ký điện tử:", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static bool CanRenew(string status)
+    private static bool IsActiveOrPendingSignature(string status)
     {
         return status.Equals("Active", StringComparison.OrdinalIgnoreCase) ||
-            status.Equals("Expired", StringComparison.OrdinalIgnoreCase);
+            status.Equals("PendingSignature", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static string BuildRenewalNote(
-        string oldStatus,
-        DateTime oldEndDate,
-        RenewContractDto dto)
+    private static string BuildSignatureHash(
+        Contract contract,
+        DateTime signedAt)
     {
-        var action = oldStatus.Equals("Expired", StringComparison.OrdinalIgnoreCase)
-            ? "Gia hạn và hồi hiệu lực hợp đồng"
-            : "Gia hạn hợp đồng";
-        var note = string.IsNullOrWhiteSpace(dto.Note)
-            ? string.Empty
-            : $" {dto.Note.Trim()}";
+        var raw = string.Join(
+            "|",
+            contract.Id,
+            contract.ContractCode,
+            contract.StudentId,
+            contract.SignatureStudentCode,
+            signedAt.ToString("O"),
+            contract.EndDate.ToString("O"));
 
-        return $"{action} từ {oldEndDate:dd/MM/yyyy} đến {dto.EndDate:dd/MM/yyyy}.{note}".Trim();
-    }
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(raw));
 
-    private async Task EnsureNoOtherCurrentContractAsync(Contract contract)
-    {
-        var today = DateTime.UtcNow.Date;
-        var studentContracts = await _contractRepository.GetByStudentIdAsync(contract.StudentId);
-        var hasOtherCurrentContract = studentContracts.Any(existing =>
-            existing.Id != contract.Id &&
-            existing.Status.Equals("Active", StringComparison.OrdinalIgnoreCase) &&
-            existing.EndDate.Date >= today);
-
-        if (hasOtherCurrentContract)
-        {
-            throw new Exception("Sinh viên đã có hợp đồng khác đang hiệu lực. Không thể hồi hiệu lực/gia hạn hợp đồng cũ.");
-        }
-    }
-
-    private static string AppendContractNote(string terms, string note)
-    {
-        if (string.IsNullOrWhiteSpace(note))
-            return terms;
-
-        var baseTerms = string.IsNullOrWhiteSpace(terms)
-            ? "Sinh viên đóng tiền đúng hạn, tuân thủ nội quy ký túc xá và bàn giao phòng khi kết thúc hợp đồng."
-            : terms.Trim();
-
-        return $"{baseTerms}\n\n[{DateTime.Now:dd/MM/yyyy HH:mm}] {note}";
+        return Convert.ToHexString(bytes);
     }
 }

@@ -19,6 +19,7 @@ public class ContractController : ControllerBase
     }
 
     [HttpGet]
+    [Authorize(Roles = "Admin,Staff")]
     public async Task<IActionResult> GetAll()
     {
         var contracts = await _contractService.GetAllAsync();
@@ -33,17 +34,30 @@ public class ContractController : ControllerBase
         if (contract == null)
             return NotFound();
 
+        if (!User.IsOperationsUser() &&
+            User.CurrentStudentId() != contract.StudentId)
+        {
+            return Forbid();
+        }
+
         return Ok(contract);
     }
 
     [HttpGet("student/{studentId}")]
     public async Task<IActionResult> GetByStudentId(long studentId)
     {
+        if (!User.IsOperationsUser() &&
+            User.CurrentStudentId() != studentId)
+        {
+            return Forbid();
+        }
+
         var contracts = await _contractService.GetByStudentIdAsync(studentId);
 
         return Ok(contracts);
     }
 
+    [Authorize(Roles = "Admin,Staff")]
     [HttpPost]
     public async Task<IActionResult> Create(CreateContractDto dto)
     {
@@ -52,6 +66,7 @@ public class ContractController : ControllerBase
         return Ok(createdContract);
     }
 
+    [Authorize(Roles = "Admin,Staff")]
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(long id, UpdateContractDto dto)
     {
@@ -63,6 +78,7 @@ public class ContractController : ControllerBase
         return Ok(updatedContract);
     }
 
+    [Authorize(Roles = "Admin,Staff")]
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(long id)
     {
@@ -77,6 +93,7 @@ public class ContractController : ControllerBase
         });
     }
 
+    [Authorize(Roles = "Admin,Staff")]
     [HttpPut("{id}/cancel")]
     public async Task<IActionResult> Cancel(long id)
     {
@@ -88,6 +105,7 @@ public class ContractController : ControllerBase
         return Ok(contract);
     }
 
+    [Authorize(Roles = "Admin,Staff")]
     [HttpPut("{id}/expire")]
     public async Task<IActionResult> Expire(long id)
     {
@@ -99,8 +117,11 @@ public class ContractController : ControllerBase
         return Ok(contract);
     }
 
+    [Authorize(Roles = "Admin,Staff")]
     [HttpPut("{id}/renew")]
-    public async Task<IActionResult> Renew(long id, RenewContractDto dto)
+    public async Task<IActionResult> Renew(
+        long id,
+        RenewContractDto dto)
     {
         var contract = await _contractService.RenewAsync(id, dto);
 
@@ -110,13 +131,24 @@ public class ContractController : ControllerBase
         return Ok(contract);
     }
 
-    [HttpPut("{id}/sign")]
-    public async Task<IActionResult> Sign(long id, SignContractDto dto)
+    [HttpPost("{id}/sign")]
+    public async Task<IActionResult> Sign(
+        long id,
+        SignContractDto dto)
     {
-        var contract = await _contractService.SignAsync(id, dto);
+        var existing = await _contractService.GetByIdAsync(id);
 
-        if (contract == null)
+        if (existing == null)
             return NotFound();
+
+        if (!User.IsOperationsUser() &&
+            User.CurrentStudentId() != existing.StudentId)
+        {
+            return Forbid();
+        }
+
+        var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString() ?? string.Empty;
+        var contract = await _contractService.SignAsync(id, dto, ipAddress);
 
         return Ok(contract);
     }

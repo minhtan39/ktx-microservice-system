@@ -16,5 +16,5 @@ public interface IRoomRegistrationService
 
     Task<RoomRegistration?> ApproveAsync(long id, long? roomId);
 
-    Task<RoomRegistration?> RejectAsync(long id);
+    Task<RoomRegistration?> RejectAsync(long id, string reason);
 }

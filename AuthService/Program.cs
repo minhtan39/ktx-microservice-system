@@ -1,5 +1,8 @@
 using System.Text;
 using System.Text.Json;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -23,6 +26,11 @@ builder.Services.AddHttpClient("Gateway", client =>
         ?? "http://api-gateway:8080";
 
     client.BaseAddress = new Uri(gatewayBaseUrl);
+
+    var internalServiceKey = builder.Configuration["InternalService:ApiKey"];
+
+    if (!string.IsNullOrWhiteSpace(internalServiceKey))
+        client.DefaultRequestHeaders.Add("X-Internal-Service-Key", internalServiceKey);
 });
 
 var app = builder.Build();
@@ -39,34 +47,15 @@ var users = accountStore.Users;
 
 if (users.IsEmpty)
 {
-    users["admin"] = new(
-        "admin",
-        PasswordHasher.Hash("admin123"),
+    var adminUsername = app.Configuration["AdminBootstrap:Username"] ?? "admin";
+    var adminPassword = app.Configuration["AdminBootstrap:Password"] ?? "admin123";
+    var adminFullName = app.Configuration["AdminBootstrap:FullName"] ?? "Quản trị hệ thống";
+
+    users[adminUsername] = new(
+        adminUsername,
+        adminPassword,
         "Admin",
-        "Quản trị hệ thống");
-
-    users["nhanvien"] = new(
-        "nhanvien",
-        PasswordHasher.Hash("staff123"),
-        "Staff",
-        "Nhân viên ký túc xá",
-        EmployeeCode: "NV001",
-        Email: "nhanvien@dormmanager.local",
-        Department: "Kỹ thuật",
-        JobTitle: "Nhân viên vận hành",
-        AssignedArea: "Tòa A",
-        AccountStatus: "Active",
-        Permissions: DefaultStaffPermissions(),
-        PasswordChangedAt: DateTimeOffset.UtcNow);
-
-    users["SV20260001"] = new(
-        "SV20260001",
-        PasswordHasher.HashTemporaryPassword(),
-        "Student",
-        "Nguyễn Văn A",
-        2,
-        "SV20260001",
-        AccountStatus: "Pending");
+        adminFullName);
 
     accountStore.Persist();
 }
@@ -82,54 +71,40 @@ app.MapPost("/api/auth/login", async (
     IHttpClientFactory httpClientFactory) =>
 {
     var username = request.Username.Trim();
-    var password = request.Password;
+    var password = request.Password.Trim();
 
     users.TryGetValue(username, out var user);
 
-    if (user == null)
+    var studentAccountAlreadyExists = users.Values.Any(existing =>
+        existing.Role.Equals("Student", StringComparison.OrdinalIgnoreCase) &&
+        existing.StudentCode?.Equals(username, StringComparison.OrdinalIgnoreCase) == true);
+
+    if (user == null &&
+        !studentAccountAlreadyExists &&
+        username.Equals(password, StringComparison.OrdinalIgnoreCase))
     {
-        await SynchronizeStudentAccountsAsync(accountStore, httpClientFactory);
-        users.TryGetValue(username, out user);
+        user = await TryResolveStudentAccountAsync(username, httpClientFactory);
+
+        if (user != null)
+            accountStore.Upsert(user);
     }
 
-    if (user != null &&
-        user.LockoutUntil.HasValue &&
-        user.LockoutUntil.Value > DateTimeOffset.UtcNow)
+    if (user == null || user.Password != password)
     {
-        return Results.Json(new
-        {
-            message = "Tai khoan dang bi tam khoa do nhap sai mat khau nhieu lan. Vui long thu lai sau."
-        }, statusCode: StatusCodes.Status423Locked);
+        return Results.Unauthorized();
     }
 
-    if (user != null && !user.AccountStatus.Equals("Active", StringComparison.OrdinalIgnoreCase))
+    if (!user.AccountStatus.Equals("Active", StringComparison.OrdinalIgnoreCase))
     {
         return Results.Json(new
         {
             message = user.AccountStatus.Equals("Pending", StringComparison.OrdinalIgnoreCase)
-                ? "Tài khoản đang chờ kích hoạt. Vui lòng mở email để đặt mật khẩu."
+                ? "Tài khoản nhân viên đang chờ kích hoạt."
                 : "Tài khoản đã bị khóa hoặc ngừng hoạt động."
         }, statusCode: StatusCodes.Status403Forbidden);
     }
 
-    if (user == null || !PasswordHasher.Verify(password, user.PasswordHash))
-    {
-        if (user != null)
-            RegisterFailedLogin(accountStore, user);
-
-        return Results.Unauthorized();
-    }
-
-    var signedIn = user with
-    {
-        FailedLoginCount = 0,
-        LockoutUntil = null,
-        LastLoginAt = DateTimeOffset.UtcNow
-    };
-
-    accountStore.Upsert(signedIn);
-
-    return Results.Ok(ToAuthResponse(signedIn));
+    return Results.Ok(ToAuthResponse(user, app.Configuration));
 });
 
 app.MapPost("/api/auth/change-password", (
@@ -137,7 +112,7 @@ app.MapPost("/api/auth/change-password", (
     HttpRequest httpRequest,
     PasswordResetTokenStore passwordResetTokens) =>
 {
-    var user = TryGetAuthenticatedUser(httpRequest, users);
+    var user = TryGetAuthenticatedUser(httpRequest, users, app.Configuration);
 
     if (user == null)
         return Results.Unauthorized();
@@ -152,7 +127,7 @@ app.MapPost("/api/auth/change-password", (
     var currentPassword = request.CurrentPassword.Trim();
     var newPassword = request.NewPassword.Trim();
 
-    if (!PasswordHasher.Verify(currentPassword, user.PasswordHash))
+    if (!user.Password.Equals(currentPassword, StringComparison.Ordinal))
     {
         return Results.BadRequest(new { message = "Mật khẩu hiện tại không đúng." });
     }
@@ -161,11 +136,11 @@ app.MapPost("/api/auth/change-password", (
     {
         return Results.BadRequest(new
         {
-            message = "Mật khẩu mới phải có ít nhất 8 ký tự, gồm cả chữ và số."
+            message = "Mật khẩu mới phải có ít nhất 6 ký tự."
         });
     }
 
-    if (PasswordHasher.Verify(newPassword, user.PasswordHash))
+    if (user.Password.Equals(newPassword, StringComparison.Ordinal))
     {
         return Results.BadRequest(new
         {
@@ -173,14 +148,7 @@ app.MapPost("/api/auth/change-password", (
         });
     }
 
-    accountStore.Upsert(user with
-    {
-        PasswordHash = PasswordHasher.Hash(newPassword),
-        PasswordChangedAt = DateTimeOffset.UtcNow,
-        MustChangePassword = false,
-        FailedLoginCount = 0,
-        LockoutUntil = null
-    });
+    accountStore.Upsert(user with { Password = newPassword });
     passwordResetTokens.InvalidateForUsername(user.Username);
 
     return Results.Ok(new { message = "Đổi mật khẩu thành công." });
@@ -283,7 +251,7 @@ app.MapPost("/api/auth/reset-password", (
     {
         return Results.BadRequest(new
         {
-            message = "Mật khẩu mới phải có ít nhất 8 ký tự, gồm cả chữ và số."
+            message = "Mật khẩu mới phải có ít nhất 6 ký tự."
         });
     }
 
@@ -291,7 +259,7 @@ app.MapPost("/api/auth/reset-password", (
 
     if (username == null ||
         !users.TryGetValue(username, out var user) ||
-        user.Role.Equals("Admin", StringComparison.OrdinalIgnoreCase))
+        !user.Role.Equals("Student", StringComparison.OrdinalIgnoreCase))
     {
         return Results.BadRequest(new
         {
@@ -299,15 +267,7 @@ app.MapPost("/api/auth/reset-password", (
         });
     }
 
-    accountStore.Upsert(user with
-    {
-        PasswordHash = PasswordHasher.Hash(newPassword),
-        AccountStatus = "Active",
-        PasswordChangedAt = DateTimeOffset.UtcNow,
-        MustChangePassword = false,
-        FailedLoginCount = 0,
-        LockoutUntil = null
-    });
+    accountStore.Upsert(user with { Password = newPassword });
 
     return Results.Ok(new { message = "Đặt lại mật khẩu thành công." });
 });
@@ -331,33 +291,39 @@ app.MapGet("/api/auth/student-accounts", async (IHttpClientFactory httpClientFac
     return Results.Ok(new { data = accounts });
 });
 
-app.MapPost("/api/auth/student-accounts", (StudentAccountRequest request) =>
+app.MapPost("/api/auth/student-accounts", (
+    StudentAccountRequest request,
+    HttpRequest httpRequest) =>
 {
-    var studentCode = request.StudentCode.Trim();
+    if (!IsAdminRequest(httpRequest, app.Configuration))
+        return Results.Unauthorized();
+
+    var studentCode = request.StudentCode.Trim().ToUpperInvariant();
 
     if (string.IsNullOrWhiteSpace(studentCode))
         return Results.BadRequest(new { message = "StudentCode is required." });
 
-    var existing = users.Values.FirstOrDefault(user =>
-        user.Role.Equals("Student", StringComparison.OrdinalIgnoreCase) &&
-        ((request.StudentId > 0 && user.StudentId == request.StudentId) ||
-         user.StudentCode?.Equals(studentCode, StringComparison.OrdinalIgnoreCase) == true));
-
-    var user = existing == null
-        ? new DemoUser(
-            studentCode,
-            PasswordHasher.HashTemporaryPassword(),
-            "Student",
-            request.FullName.Trim(),
-            request.StudentId,
-            studentCode,
-            AccountStatus: "Pending")
-        : existing with
+    if (users.ContainsKey(studentCode) ||
+        users.Values.Any(user =>
+            user.Role.Equals("Student", StringComparison.OrdinalIgnoreCase) &&
+            ((request.StudentId > 0 && user.StudentId == request.StudentId) ||
+             user.Username.Equals(studentCode, StringComparison.OrdinalIgnoreCase) ||
+             (!string.IsNullOrWhiteSpace(user.StudentCode) &&
+              user.StudentCode.Equals(studentCode, StringComparison.OrdinalIgnoreCase)))))
+    {
+        return Results.Conflict(new
         {
-            FullName = request.FullName.Trim(),
-            StudentId = request.StudentId,
-            StudentCode = studentCode
-        };
+            message = "Mã sinh viên đã có tài khoản đăng nhập. Không thể tạo trùng."
+        });
+    }
+
+    var user = new DemoUser(
+        studentCode,
+        studentCode,
+        "Student",
+        request.FullName.Trim(),
+        request.StudentId,
+        studentCode);
 
     accountStore.Upsert(user);
 
@@ -366,110 +332,13 @@ app.MapPost("/api/auth/student-accounts", (StudentAccountRequest request) =>
         data = new
         {
             user.Username,
+            defaultPassword = studentCode,
             user.Role,
             user.FullName,
             user.StudentId,
             user.StudentCode,
-            user.AccountStatus,
-            securityState = SecurityState(user),
             homePath = "/student/portal"
         }
-    });
-});
-
-app.MapPost("/api/auth/student-accounts/invite", async (
-    StudentAccountInviteRequest request,
-    IHttpClientFactory httpClientFactory,
-    PasswordResetTokenStore passwordResetTokens,
-    PasswordResetEmailSender emailSender) =>
-{
-    var studentCode = request.StudentCode.Trim();
-
-    if (string.IsNullOrWhiteSpace(studentCode))
-        return Results.BadRequest(new { message = "StudentCode is required." });
-
-    await SynchronizeStudentAccountsAsync(accountStore, httpClientFactory);
-
-    var account = users.Values.FirstOrDefault(user =>
-        user.Role.Equals("Student", StringComparison.OrdinalIgnoreCase) &&
-        (user.Username.Equals(studentCode, StringComparison.OrdinalIgnoreCase) ||
-         user.StudentCode?.Equals(studentCode, StringComparison.OrdinalIgnoreCase) == true));
-
-    if (account == null)
-    {
-        account = new DemoUser(
-            studentCode,
-            PasswordHasher.HashTemporaryPassword(),
-            "Student",
-            string.IsNullOrWhiteSpace(request.FullName) ? studentCode : request.FullName.Trim(),
-            request.StudentId,
-            studentCode,
-            AccountStatus: "Pending");
-
-        accountStore.Upsert(account);
-    }
-
-    var contact = await TryResolveStudentContactAsync(
-        request.StudentId,
-        studentCode,
-        httpClientFactory);
-
-    var recipientEmail = string.IsNullOrWhiteSpace(request.Email)
-        ? contact?.Email
-        : request.Email.Trim();
-
-    if (string.IsNullOrWhiteSpace(recipientEmail))
-    {
-        return Results.BadRequest(new
-        {
-            message = "Hồ sơ sinh viên chưa có email để gửi thư kích hoạt."
-        });
-    }
-
-    if (!emailSender.IsConfigured)
-    {
-        return Results.Problem(
-            title: "Dịch vụ email chưa được cấu hình",
-            detail: "Admin cần cấu hình Gmail và App Password cho AuthService.",
-            statusCode: StatusCodes.Status503ServiceUnavailable);
-    }
-
-    var recipientName = string.IsNullOrWhiteSpace(request.FullName)
-        ? contact?.FullName ?? account.FullName
-        : request.FullName.Trim();
-    var lifetimeMinutes = Math.Clamp(
-        app.Configuration.GetValue("PasswordReset:LifetimeMinutes", 30),
-        5,
-        120);
-    var token = passwordResetTokens.Create(
-        account.Username,
-        TimeSpan.FromMinutes(lifetimeMinutes));
-    var frontendBaseUrl = (app.Configuration["Frontend:BaseUrl"]
-        ?? "http://localhost:5173").TrimEnd('/');
-    var activationUrl = $"{frontendBaseUrl}/reset-password?token={Uri.EscapeDataString(token)}&welcome=1";
-
-    try
-    {
-        await emailSender.SendStudentInvitationAsync(
-            recipientEmail,
-            recipientName,
-            activationUrl,
-            studentCode);
-    }
-    catch (Exception exception)
-    {
-        passwordResetTokens.InvalidateForUsername(account.Username);
-        app.Logger.LogError(exception, "Could not send student invitation email.");
-
-        return Results.Problem(
-            title: "Không gửi được email kích hoạt",
-            detail: GetSafeEmailFailureDetail(exception),
-            statusCode: StatusCodes.Status502BadGateway);
-    }
-
-    return Results.Ok(new
-    {
-        message = $"Đã gửi email kích hoạt tài khoản đến {recipientEmail}."
     });
 });
 
@@ -477,7 +346,7 @@ app.MapGet("/api/auth/accounts", async (
     HttpRequest request,
     IHttpClientFactory httpClientFactory) =>
 {
-    if (!IsAdminRequest(request))
+    if (!IsAdminRequest(request, app.Configuration))
         return Results.Unauthorized();
 
     await SynchronizeStudentAccountsAsync(accountStore, httpClientFactory);
@@ -494,7 +363,7 @@ app.MapGet("/api/auth/accounts", async (
 
 app.MapGet("/api/auth/accounts/{username}", (string username, HttpRequest request) =>
 {
-    if (!IsAdminRequest(request))
+    if (!IsAdminRequest(request, app.Configuration))
         return Results.Unauthorized();
 
     return users.TryGetValue(username, out var user) &&
@@ -503,117 +372,23 @@ app.MapGet("/api/auth/accounts/{username}", (string username, HttpRequest reques
             : Results.NotFound(new { message = "Account not found." });
 });
 
-app.MapPost("/api/auth/accounts/{username}/access-link", async (
-    string username,
-    HttpRequest request,
-    IHttpClientFactory httpClientFactory,
-    PasswordResetTokenStore passwordResetTokens,
-    PasswordResetEmailSender emailSender) =>
-{
-    if (!IsAdminRequest(request))
-        return Results.Unauthorized();
-
-    if (!users.TryGetValue(username, out var account) ||
-        account.Role.Equals("Admin", StringComparison.OrdinalIgnoreCase))
-    {
-        return Results.NotFound(new { message = "Account not found." });
-    }
-
-    var recipientEmail = account.Email;
-    var recipientName = account.FullName;
-
-    if (account.Role.Equals("Student", StringComparison.OrdinalIgnoreCase))
-    {
-        var contact = await TryResolveStudentContactAsync(
-            account.StudentId,
-            account.StudentCode ?? account.Username,
-            httpClientFactory);
-
-        if (contact != null)
-        {
-            recipientEmail = string.IsNullOrWhiteSpace(contact.Email)
-                ? recipientEmail
-                : contact.Email;
-            recipientName = string.IsNullOrWhiteSpace(contact.FullName)
-                ? recipientName
-                : contact.FullName;
-        }
-    }
-
-    if (string.IsNullOrWhiteSpace(recipientEmail))
-    {
-        return Results.BadRequest(new
-        {
-            message = "Tai khoan chua co email de gui link bao mat."
-        });
-    }
-
-    if (!emailSender.IsConfigured)
-    {
-        return Results.Problem(
-            title: "Dich vu email chua duoc cau hinh",
-            detail: "Admin can cau hinh Gmail va App Password cho AuthService.",
-            statusCode: StatusCodes.Status503ServiceUnavailable);
-    }
-
-    var lifetimeMinutes = Math.Clamp(
-        app.Configuration.GetValue("PasswordReset:LifetimeMinutes", 30),
-        5,
-        120);
-    var token = passwordResetTokens.Create(
-        account.Username,
-        TimeSpan.FromMinutes(lifetimeMinutes));
-    var frontendBaseUrl = (app.Configuration["Frontend:BaseUrl"]
-        ?? "http://localhost:5173").TrimEnd('/');
-    var isActivation = account.AccountStatus.Equals("Pending", StringComparison.OrdinalIgnoreCase);
-    var accessUrl = $"{frontendBaseUrl}/reset-password?token={Uri.EscapeDataString(token)}" +
-        (isActivation ? "&welcome=1" : string.Empty);
-
-    try
-    {
-        await emailSender.SendAccountAccessLinkAsync(
-            recipientEmail,
-            recipientName,
-            accessUrl,
-            account.Username,
-            isActivation);
-    }
-    catch (Exception exception)
-    {
-        passwordResetTokens.InvalidateForUsername(account.Username);
-        app.Logger.LogError(exception, "Could not send account access link.");
-
-        return Results.Problem(
-            title: "Khong gui duoc email bao mat",
-            detail: GetSafeEmailFailureDetail(exception),
-            statusCode: StatusCodes.Status502BadGateway);
-    }
-
-    return Results.Ok(new
-    {
-        message = isActivation
-            ? $"Da gui email kich hoat den {recipientEmail}."
-            : $"Da gui link dat lai mat khau den {recipientEmail}."
-    });
-});
-
 app.MapPost("/api/auth/accounts", (
     CreateStaffAccountRequest create,
     HttpRequest request) =>
 {
-    if (!IsAdminRequest(request))
+    if (!IsAdminRequest(request, app.Configuration))
         return Results.Unauthorized();
 
     var username = create.Username.Trim();
+    var password = create.Password.Trim();
     var employeeCode = create.EmployeeCode.Trim();
-    var email = create.Email?.Trim();
 
     if (string.IsNullOrWhiteSpace(username) ||
+        string.IsNullOrWhiteSpace(password) ||
         string.IsNullOrWhiteSpace(employeeCode) ||
-        string.IsNullOrWhiteSpace(create.FullName) ||
-        string.IsNullOrWhiteSpace(email))
+        string.IsNullOrWhiteSpace(create.FullName))
     {
-        return Results.BadRequest(new { message = "Tên đăng nhập, mã nhân viên, họ tên và email là bắt buộc." });
+        return Results.BadRequest(new { message = "Tên đăng nhập, mật khẩu, mã nhân viên và họ tên là bắt buộc." });
     }
 
     if (users.ContainsKey(username))
@@ -628,16 +403,16 @@ app.MapPost("/api/auth/accounts", (
 
     var staff = new DemoUser(
         username,
-        PasswordHasher.HashTemporaryPassword(),
+        password,
         "Staff",
         create.FullName.Trim(),
         EmployeeCode: employeeCode,
-        Email: email,
+        Email: create.Email?.Trim(),
         Phone: create.Phone?.Trim(),
         Department: create.Department?.Trim(),
         JobTitle: create.JobTitle?.Trim(),
         AssignedArea: create.AssignedArea?.Trim(),
-        AccountStatus: NormalizeInitialAccountStatus(create.AccountStatus),
+        AccountStatus: NormalizeAccountStatus(create.AccountStatus),
         Permissions: NormalizePermissions(create.Permissions));
 
     accountStore.Upsert(staff);
@@ -646,7 +421,7 @@ app.MapPost("/api/auth/accounts", (
 
 app.MapGet("/api/auth/staff", (HttpRequest request) =>
 {
-    if (!IsOperationalRequest(request))
+    if (!IsOperationalRequest(request, app.Configuration))
         return Results.Unauthorized();
 
     var staff = users.Values
@@ -673,7 +448,7 @@ app.MapPut("/api/auth/accounts/{username}", (
     HttpRequest request,
     PasswordResetTokenStore passwordResetTokens) =>
 {
-    if (!IsAdminRequest(request))
+    if (!IsAdminRequest(request, app.Configuration))
         return Results.Unauthorized();
 
     if (!users.TryGetValue(username, out var current) ||
@@ -686,21 +461,17 @@ app.MapPut("/api/auth/accounts/{username}", (
         ? current.Username
         : update.Username.Trim();
 
-    if (!string.IsNullOrWhiteSpace(update.Password))
-    {
-        return Results.BadRequest(new
-        {
-            message = "Admin khong duoc dat ho mat khau. Hay gui link dat lai mat khau cho nguoi dung."
-        });
-    }
+    var nextPassword = string.IsNullOrWhiteSpace(update.Password)
+        ? current.Password
+        : update.Password.Trim();
 
     var nextFullName = string.IsNullOrWhiteSpace(update.FullName)
         ? current.FullName
         : update.FullName.Trim();
 
-    if (string.IsNullOrWhiteSpace(nextUsername))
+    if (string.IsNullOrWhiteSpace(nextUsername) || string.IsNullOrWhiteSpace(nextPassword))
     {
-        return Results.BadRequest(new { message = "Username is required." });
+        return Results.BadRequest(new { message = "Username and password are required." });
     }
 
     if (!nextUsername.Equals(username, StringComparison.OrdinalIgnoreCase) &&
@@ -712,7 +483,7 @@ app.MapPut("/api/auth/accounts/{username}", (
     var updated = current with
     {
         Username = nextUsername,
-        PasswordHash = current.PasswordHash,
+        Password = nextPassword,
         FullName = nextFullName,
         StudentCode = current.StudentCode,
         EmployeeCode = current.Role.Equals("Staff", StringComparison.OrdinalIgnoreCase)
@@ -738,12 +509,13 @@ app.MapPut("/api/auth/accounts/{username}", (
     return Results.Ok(new { data = ToAccountResponse(updated) });
 });
 
-app.MapDelete("/api/auth/accounts/{username}", (
+app.MapDelete("/api/auth/accounts/{username}", async (
     string username,
     HttpRequest request,
+    IHttpClientFactory httpClientFactory,
     PasswordResetTokenStore passwordResetTokens) =>
 {
-    if (!IsAdminRequest(request))
+    if (!IsAdminRequest(request, app.Configuration))
         return Results.Unauthorized();
 
     if (!users.TryGetValue(username, out var account) ||
@@ -752,118 +524,109 @@ app.MapDelete("/api/auth/accounts/{username}", (
         return Results.NotFound(new { message = "Account not found." });
     }
 
-    if (NormalizeAccountStatus(account.AccountStatus).Equals("Locked", StringComparison.OrdinalIgnoreCase))
+    if (account.Role.Equals("Student", StringComparison.OrdinalIgnoreCase) &&
+        account.StudentId.HasValue)
     {
-        return Results.Ok(new
+        var deleteProfileResult = await DeleteStudentProfileAsync(
+            account.StudentId.Value,
+            request,
+            httpClientFactory);
+
+        if (!deleteProfileResult.Success)
         {
-            message = "Account is already locked.",
-            data = ToAccountResponse(account),
-            accountLocked = true,
-            profilePreserved = true
-        });
+            return Results.Problem(
+                title: "Student profile could not be deleted",
+                detail: deleteProfileResult.Message,
+                statusCode: StatusCodes.Status502BadGateway);
+        }
     }
 
-    var lockedAccount = account with { AccountStatus = "Locked" };
-    accountStore.Replace(username, lockedAccount);
+    accountStore.Remove(username);
     passwordResetTokens.InvalidateForUsername(username);
 
     return Results.Ok(new
     {
-        message = "Account locked successfully.",
-        data = ToAccountResponse(lockedAccount),
-        accountLocked = true,
-        profilePreserved = true
+        message = "Account deleted successfully.",
+        studentProfileDeleted = account.Role.Equals(
+            "Student",
+            StringComparison.OrdinalIgnoreCase)
     });
 });
 
 app.Run();
 
-static string CreateDemoToken(DemoUser user)
+static string CreateJwtToken(DemoUser user, IConfiguration configuration)
 {
-    var raw = $"{user.Username}:{user.Role}:{user.StudentCode}:{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}";
-    return Convert.ToBase64String(Encoding.UTF8.GetBytes(raw));
+    var claims = new List<Claim>
+    {
+        new(JwtRegisteredClaimNames.Sub, user.Username),
+        new(ClaimTypes.Name, user.Username),
+        new(ClaimTypes.Role, user.Role),
+        new("role", user.Role),
+        new("username", user.Username),
+        new("fullName", user.FullName)
+    };
+
+    if (user.StudentId.HasValue)
+        claims.Add(new Claim("studentId", user.StudentId.Value.ToString()));
+
+    if (!string.IsNullOrWhiteSpace(user.StudentCode))
+        claims.Add(new Claim("studentCode", user.StudentCode));
+
+    if (!string.IsNullOrWhiteSpace(user.EmployeeCode))
+        claims.Add(new Claim("employeeCode", user.EmployeeCode));
+
+    foreach (var permission in EffectivePermissions(user))
+        claims.Add(new Claim("permission", permission));
+
+    var credentials = new SigningCredentials(
+        GetJwtSecurityKey(configuration),
+        SecurityAlgorithms.HmacSha256);
+
+    var token = new JwtSecurityToken(
+        issuer: GetRequiredJwtValue(configuration, "Jwt:Issuer"),
+        audience: GetRequiredJwtValue(configuration, "Jwt:Audience"),
+        claims: claims,
+        expires: DateTime.UtcNow.AddHours(8),
+        signingCredentials: credentials);
+
+    return new JwtSecurityTokenHandler().WriteToken(token);
 }
 
-static bool IsAdminRequest(HttpRequest request)
+static bool IsAdminRequest(HttpRequest request, IConfiguration configuration)
 {
-    var authorization = request.Headers.Authorization.ToString();
-    const string bearerPrefix = "Bearer ";
+    var principal = TryValidateBearerToken(request, configuration);
 
-    if (!authorization.StartsWith(bearerPrefix, StringComparison.OrdinalIgnoreCase))
-        return false;
-
-    var token = authorization[bearerPrefix.Length..].Trim();
-
-    try
-    {
-        var raw = Encoding.UTF8.GetString(Convert.FromBase64String(token));
-        var parts = raw.Split(':');
-
-        return parts.Length >= 2 &&
-            parts[1].Equals("Admin", StringComparison.OrdinalIgnoreCase);
-    }
-    catch
-    {
-        return false;
-    }
+    return principal?.IsInRole("Admin") == true;
 }
 
-static bool IsOperationalRequest(HttpRequest request)
+static bool IsOperationalRequest(HttpRequest request, IConfiguration configuration)
 {
-    var authorization = request.Headers.Authorization.ToString();
-    const string bearerPrefix = "Bearer ";
+    var principal = TryValidateBearerToken(request, configuration);
 
-    if (!authorization.StartsWith(bearerPrefix, StringComparison.OrdinalIgnoreCase))
-        return false;
-
-    try
-    {
-        var token = authorization[bearerPrefix.Length..].Trim();
-        var raw = Encoding.UTF8.GetString(Convert.FromBase64String(token));
-        var parts = raw.Split(':');
-        return parts.Length >= 2 &&
-            (parts[1].Equals("Admin", StringComparison.OrdinalIgnoreCase) ||
-             parts[1].Equals("Staff", StringComparison.OrdinalIgnoreCase));
-    }
-    catch
-    {
-        return false;
-    }
+    return principal?.IsInRole("Admin") == true ||
+        principal?.IsInRole("Staff") == true;
 }
 
 static DemoUser? TryGetAuthenticatedUser(
     HttpRequest request,
-    IReadOnlyDictionary<string, DemoUser> users)
+    IReadOnlyDictionary<string, DemoUser> users,
+    IConfiguration configuration)
 {
-    var authorization = request.Headers.Authorization.ToString();
-    const string bearerPrefix = "Bearer ";
+    var principal = TryValidateBearerToken(request, configuration);
+    var username = principal?.Identity?.Name ??
+        principal?.FindFirstValue("username") ??
+        principal?.FindFirstValue(JwtRegisteredClaimNames.Sub);
 
-    if (!authorization.StartsWith(bearerPrefix, StringComparison.OrdinalIgnoreCase))
-        return null;
-
-    var token = authorization[bearerPrefix.Length..].Trim();
-
-    try
-    {
-        var raw = Encoding.UTF8.GetString(Convert.FromBase64String(token));
-        var parts = raw.Split(':');
-
-        return parts.Length >= 2 && users.TryGetValue(parts[0], out var user)
+    return !string.IsNullOrWhiteSpace(username) &&
+        users.TryGetValue(username, out var user)
             ? user
             : null;
-    }
-    catch
-    {
-        return null;
-    }
 }
 
 static bool IsValidNewPassword(string password)
 {
-    return !string.IsNullOrWhiteSpace(password) &&
-        password.Length >= 8 &&
-        password.Any(char.IsLetter) &&
-        password.Any(char.IsDigit);
+    return !string.IsNullOrWhiteSpace(password) && password.Length >= 6;
 }
 
 static string GetSafeEmailFailureDetail(Exception exception)
@@ -897,13 +660,13 @@ static string GetSafeEmailFailureDetail(Exception exception)
     return "Không gửi được email. Hãy kiểm tra Gmail, App Password và email trong hồ sơ sinh viên.";
 }
 
-static object ToAuthResponse(DemoUser user)
+static object ToAuthResponse(DemoUser user, IConfiguration configuration)
 {
     return new
     {
         data = new
         {
-            token = CreateDemoToken(user),
+            token = CreateJwtToken(user, configuration),
             role = user.Role,
             username = user.Username,
             fullName = user.FullName,
@@ -926,6 +689,51 @@ static object ToAuthResponse(DemoUser user)
     };
 }
 
+static ClaimsPrincipal? TryValidateBearerToken(
+    HttpRequest request,
+    IConfiguration configuration)
+{
+    var authorization = request.Headers.Authorization.ToString();
+    const string bearerPrefix = "Bearer ";
+
+    if (!authorization.StartsWith(bearerPrefix, StringComparison.OrdinalIgnoreCase))
+        return null;
+
+    var token = authorization[bearerPrefix.Length..].Trim();
+
+    try
+    {
+        return new JwtSecurityTokenHandler().ValidateToken(
+            token,
+            CreateTokenValidationParameters(configuration),
+            out _);
+    }
+    catch
+    {
+        return null;
+    }
+}
+
+static TokenValidationParameters CreateTokenValidationParameters(IConfiguration configuration) =>
+    new()
+    {
+        ValidateIssuer = true,
+        ValidateAudience = true,
+        ValidateLifetime = true,
+        ValidateIssuerSigningKey = true,
+        ValidIssuer = GetRequiredJwtValue(configuration, "Jwt:Issuer"),
+        ValidAudience = GetRequiredJwtValue(configuration, "Jwt:Audience"),
+        IssuerSigningKey = GetJwtSecurityKey(configuration),
+        ClockSkew = TimeSpan.FromMinutes(2)
+    };
+
+static SymmetricSecurityKey GetJwtSecurityKey(IConfiguration configuration) =>
+    new(Encoding.UTF8.GetBytes(GetRequiredJwtValue(configuration, "Jwt:Key")));
+
+static string GetRequiredJwtValue(IConfiguration configuration, string key) =>
+    configuration[key] ??
+        throw new InvalidOperationException($"{key} is required for JWT authentication.");
+
 static object ToAccountResponse(DemoUser user)
 {
     return new
@@ -942,13 +750,6 @@ static object ToAccountResponse(DemoUser user)
         user.JobTitle,
         user.AssignedArea,
         user.AccountStatus,
-        user.PasswordChangedAt,
-        user.LastLoginAt,
-        user.FailedLoginCount,
-        user.LockoutUntil,
-        user.MustChangePassword,
-        passwordConfigured = user.PasswordChangedAt.HasValue,
-        securityState = SecurityState(user),
         permissions = EffectivePermissions(user)
     };
 }
@@ -965,42 +766,6 @@ static string NormalizeAccountStatus(string? status)
         "inactive" => "Inactive",
         _ => "Active"
     };
-}
-
-static string NormalizeInitialAccountStatus(string? status)
-{
-    var normalized = NormalizeAccountStatus(status);
-    return normalized.Equals("Active", StringComparison.OrdinalIgnoreCase)
-        ? "Pending"
-        : normalized;
-}
-
-static string SecurityState(DemoUser user)
-{
-    if (user.LockoutUntil.HasValue && user.LockoutUntil.Value > DateTimeOffset.UtcNow)
-        return "TemporarilyLocked";
-
-    if (user.AccountStatus.Equals("Pending", StringComparison.OrdinalIgnoreCase))
-        return "PendingActivation";
-
-    if (!user.PasswordChangedAt.HasValue || user.MustChangePassword)
-        return "NeedsPasswordSetup";
-
-    return "PasswordSet";
-}
-
-static void RegisterFailedLogin(AccountStore accountStore, DemoUser user)
-{
-    var failedCount = user.FailedLoginCount + 1;
-    var lockoutUntil = failedCount >= 5
-        ? DateTimeOffset.UtcNow.AddMinutes(15)
-        : user.LockoutUntil;
-
-    accountStore.Upsert(user with
-    {
-        FailedLoginCount = failedCount,
-        LockoutUntil = lockoutUntil
-    });
 }
 
 static string[] NormalizePermissions(IEnumerable<string>? permissions)
@@ -1038,6 +803,46 @@ static string[] DefaultStaffPermissions() =>
     "confirm_payments"
 ];
 
+static async Task<(bool Success, string Message)> DeleteStudentProfileAsync(
+    long studentId,
+    HttpRequest incomingRequest,
+    IHttpClientFactory httpClientFactory)
+{
+    try
+    {
+        var client = httpClientFactory.CreateClient("Gateway");
+        using var deleteRequest = new HttpRequestMessage(
+            HttpMethod.Delete,
+            $"/api/students/{studentId}");
+
+        var authorization = incomingRequest.Headers.Authorization.ToString();
+
+        if (!string.IsNullOrWhiteSpace(authorization))
+        {
+            deleteRequest.Headers.TryAddWithoutValidation("Authorization", authorization);
+        }
+
+        using var response = await client.SendAsync(deleteRequest);
+
+        if (response.IsSuccessStatusCode ||
+            response.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            return (true, string.Empty);
+        }
+
+        var responseBody = await response.Content.ReadAsStringAsync();
+        return (false, $"ContractStudentService returned {(int)response.StatusCode}: {responseBody}");
+    }
+    catch (HttpRequestException exception)
+    {
+        return (false, exception.Message);
+    }
+    catch (TaskCanceledException exception)
+    {
+        return (false, exception.Message);
+    }
+}
+
 static async Task SynchronizeStudentAccountsAsync(
     AccountStore accountStore,
     IHttpClientFactory httpClientFactory)
@@ -1070,12 +875,11 @@ static async Task SynchronizeStudentAccountsAsync(
 
             missingAccounts.Add(new DemoUser(
                 studentCode,
-                PasswordHasher.HashTemporaryPassword(),
+                studentCode,
                 "Student",
                 string.IsNullOrWhiteSpace(fullName) ? studentCode : fullName,
                 GetInt64(student, "id"),
-                studentCode,
-                AccountStatus: "Pending"));
+                studentCode));
         }
 
         accountStore.AddMissingStudents(missingAccounts);
@@ -1092,6 +896,53 @@ static async Task SynchronizeStudentAccountsAsync(
     {
         // Ignore malformed downstream responses and keep the persisted account file.
     }
+}
+
+static async Task<DemoUser?> TryResolveStudentAccountAsync(
+    string studentCode,
+    IHttpClientFactory httpClientFactory)
+{
+    try
+    {
+        var client = httpClientFactory.CreateClient("Gateway");
+        var response = await client.GetAsync("/api/students");
+
+        if (!response.IsSuccessStatusCode)
+            return null;
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+
+        var students = TryGetStudentArray(document.RootElement);
+
+        if (students.ValueKind != JsonValueKind.Array)
+            return null;
+
+        foreach (var student in students.EnumerateArray())
+        {
+            var code = GetString(student, "studentCode");
+
+            if (!studentCode.Equals(code, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var id = GetInt64(student, "id");
+            var fullName = GetString(student, "fullName");
+
+            return new DemoUser(
+                code,
+                code,
+                "Student",
+                string.IsNullOrWhiteSpace(fullName) ? code : fullName,
+                id,
+                code);
+        }
+    }
+    catch
+    {
+        return null;
+    }
+
+    return null;
 }
 
 static async Task<StudentContact?> TryResolveStudentContactAsync(
@@ -1193,12 +1044,6 @@ public sealed record StudentAccountRequest(
     string StudentCode,
     string FullName);
 
-public sealed record StudentAccountInviteRequest(
-    long StudentId,
-    string StudentCode,
-    string FullName,
-    string? Email);
-
 public sealed record UpdateAccountRequest(
     string? Username,
     string? Password,
@@ -1214,6 +1059,7 @@ public sealed record UpdateAccountRequest(
 
 public sealed record CreateStaffAccountRequest(
     string Username,
+    string Password,
     string EmployeeCode,
     string FullName,
     string? Email,
@@ -1226,7 +1072,7 @@ public sealed record CreateStaffAccountRequest(
 
 public sealed record DemoUser(
     string Username,
-    string PasswordHash,
+    string Password,
     string Role,
     string FullName,
     long? StudentId = null,
@@ -1238,11 +1084,6 @@ public sealed record DemoUser(
     string? JobTitle = null,
     string? AssignedArea = null,
     string AccountStatus = "Active",
-    string[]? Permissions = null,
-    DateTimeOffset? PasswordChangedAt = null,
-    DateTimeOffset? LastLoginAt = null,
-    int FailedLoginCount = 0,
-    DateTimeOffset? LockoutUntil = null,
-    bool MustChangePassword = false);
+    string[]? Permissions = null);
 
 public sealed record StudentContact(string Email, string FullName);

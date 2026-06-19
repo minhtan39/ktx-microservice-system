@@ -1,4 +1,4 @@
-﻿
+
 using ContractStudentService.Entities;
 using ContractStudentService.Interfaces;
 
@@ -44,15 +44,16 @@ public class RoomRegistrationService : IRoomRegistrationService
         if (student == null)
             throw new Exception("Student không tồn tại.");
 
-        if (registration.EndDate <= registration.StartDate)
-            throw new Exception("Ngày kết thúc phải sau ngày bắt đầu.");
-
-        await EnsureStudentCanCreateRegistrationAsync(registration.StudentId);
+        ValidateRegistrationDates(registration.StartDate, registration.EndDate);
+        await EnsureStudentCanRegisterAsync(registration.StudentId);
 
         registration.PriorityScore = CalculatePriorityScore(
             registration.PriorityType,
             student.RiskScore);
         registration.Status = "Pending";
+        registration.AssignedRoomId = null;
+        registration.RejectionReason = string.Empty;
+        registration.RejectedAt = null;
 
         return await _repository.CreateAsync(registration);
     }
@@ -66,15 +67,15 @@ public class RoomRegistrationService : IRoomRegistrationService
         if (existing == null)
             return null;
 
+        if (!existing.Status.Equals("Pending", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Chỉ được cập nhật đơn đang chờ duyệt.");
+
         var student = await _studentRepository.GetByIdAsync(registration.StudentId);
 
         if (student == null)
             throw new Exception("Student không tồn tại.");
 
-        if (registration.EndDate <= registration.StartDate)
-            throw new Exception("Ngày kết thúc phải sau ngày bắt đầu.");
-
-        await EnsureStudentCanCreateRegistrationAsync(registration.StudentId, existing.Id);
+        ValidateRegistrationDates(registration.StartDate, registration.EndDate);
 
         existing.StudentId = registration.StudentId;
         existing.BuildingName = registration.BuildingName;
@@ -105,20 +106,12 @@ public class RoomRegistrationService : IRoomRegistrationService
             return null;
 
         if (!registration.Status.Equals("Pending", StringComparison.OrdinalIgnoreCase))
-            throw new Exception("Chỉ đơn đăng ký đang chờ duyệt mới được xếp phòng.");
+            throw new InvalidOperationException("Chỉ được duyệt đơn đang chờ xử lý.");
 
         var student = await _studentRepository.GetByIdAsync(registration.StudentId);
 
         if (student == null)
             throw new Exception("Student không tồn tại.");
-
-        var contracts = await _contractRepository.GetByStudentIdAsync(student.Id);
-        var hasActiveContract = contracts.Any(contract =>
-            contract.Status.Equals("Active", StringComparison.OrdinalIgnoreCase) &&
-            contract.EndDate.Date >= DateTime.UtcNow.Date);
-
-        if (hasActiveContract)
-            throw new Exception("Sinh viên đang có hợp đồng nội trú còn hiệu lực. Không thể duyệt thêm đơn xếp phòng.");
 
         var assignedRoom = await _roomGatewayClient.FindAvailableRoomAsync(
             registration,
@@ -130,88 +123,114 @@ public class RoomRegistrationService : IRoomRegistrationService
 
         var contractCode = $"HD-{DateTime.Now:yyyyMMddHHmmss}";
 
-        assignedRoom = await _roomGatewayClient.OccupyRoomAsync(
-            assignedRoom.RoomId,
-            student.Id,
-            registration.Id,
-            contractCode);
+        Contract? createdContract = null;
+        var roomOccupied = false;
 
-        registration.Status = "Approved";
-        registration.AssignedRoomId = assignedRoom.RoomId;
-
-        await _repository.UpdateAsync(registration);
-
-        // Tự động tạo Contract
-        var contract = new Contract
+        try
         {
-            ContractCode = contractCode,
-            StudentId = registration.StudentId,
-            RoomId = assignedRoom.RoomId,
-            StartDate = registration.StartDate,
-            EndDate = registration.EndDate,
-            DepositAmount = 500000,
-            MonthlyFee = assignedRoom.MonthlyFee,
-            Terms = BuildDefaultTerms(registration),
-            Status = "Active"
-        };
+            assignedRoom = await _roomGatewayClient.OccupyRoomAsync(
+                assignedRoom.RoomId,
+                student.Id,
+                registration.Id,
+                contractCode);
+            roomOccupied = true;
 
-        var createdContract = await _contractRepository.CreateAsync(contract);
+            var contract = new Contract
+            {
+                ContractCode = contractCode,
+                StudentId = registration.StudentId,
+                RoomId = assignedRoom.RoomId,
+                StartDate = registration.StartDate,
+                EndDate = registration.EndDate,
+                DepositAmount = 500000,
+                MonthlyFee = assignedRoom.MonthlyFee,
+                Terms = BuildDefaultTerms(registration),
+                Status = "PendingSignature"
+            };
 
-        await _billingGatewayClient.CreateContractBillingAsync(createdContract);
+            createdContract = await _contractRepository.CreateAsync(contract);
 
-        student.Status = "Active";
-        student.ResidenceHistory =
-            $"Phòng {assignedRoom.RoomId}, {assignedRoom.BuildingName}, {registration.StartDate:dd/MM/yyyy} - {registration.EndDate:dd/MM/yyyy}";
+            await _billingGatewayClient.CreateContractBillingAsync(createdContract);
 
-        await _studentRepository.UpdateAsync(student);
+            registration.Status = "Approved";
+            registration.AssignedRoomId = assignedRoom.RoomId;
+            await _repository.UpdateAsync(registration);
 
-        return registration;
+            student.Status = "PendingSignature";
+            student.ResidenceHistory =
+                $"Phòng {assignedRoom.RoomId}, {assignedRoom.BuildingName}, {registration.StartDate:dd/MM/yyyy} - {registration.EndDate:dd/MM/yyyy}";
+
+            await _studentRepository.UpdateAsync(student);
+
+            return registration;
+        }
+        catch
+        {
+            if (createdContract != null)
+                await _contractRepository.DeleteAsync(createdContract.Id);
+
+            if (roomOccupied)
+            {
+                await _roomGatewayClient.ReleaseRoomAsync(
+                    assignedRoom.RoomId,
+                    student.Id,
+                    contractCode);
+            }
+
+            throw;
+        }
     }
 
-    public async Task<RoomRegistration?> RejectAsync(long id)
+    public async Task<RoomRegistration?> RejectAsync(long id, string reason)
     {
         var registration = await _repository.GetByIdAsync(id);
 
         if (registration == null)
             return null;
 
+        if (!registration.Status.Equals("Pending", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Chỉ được từ chối đơn đang chờ xử lý.");
+
+        if (string.IsNullOrWhiteSpace(reason))
+            throw new InvalidOperationException("Vui lòng nhập lý do từ chối đơn đăng ký.");
+
         registration.Status = "Rejected";
+        registration.RejectionReason = reason.Trim();
+        registration.RejectedAt = DateTime.UtcNow;
 
         return await _repository.UpdateAsync(registration);
     }
 
-    private async Task EnsureStudentCanCreateRegistrationAsync(
-        long studentId,
-        long? currentRegistrationId = null)
+    private async Task EnsureStudentCanRegisterAsync(long studentId)
     {
         var registrations = await _repository.GetAllAsync();
-        var hasOpenRegistration = registrations.Any(registration =>
-            registration.StudentId == studentId &&
-            registration.Id != currentRegistrationId &&
-            IsOpenRegistrationStatus(registration.Status));
+        var blockingRegistrationStatuses = new HashSet<string>(
+            new[] { "Pending" },
+            StringComparer.OrdinalIgnoreCase);
 
-        if (hasOpenRegistration)
+        if (registrations.Any(item =>
+            item.StudentId == studentId &&
+            blockingRegistrationStatuses.Contains(item.Status)))
         {
-            throw new Exception(
-                "Sinh viên đã có đơn đăng ký nội trú đang chờ xử lý hoặc đã được duyệt. Không thể gửi thêm đơn mới.");
+            throw new InvalidOperationException("Sinh viên đã có đơn đăng ký đang chờ duyệt.");
         }
 
         var contracts = await _contractRepository.GetByStudentIdAsync(studentId);
-        var hasActiveContract = contracts.Any(contract =>
-            contract.Status.Equals("Active", StringComparison.OrdinalIgnoreCase) &&
-            contract.EndDate.Date >= DateTime.UtcNow.Date);
+        var blockingContractStatuses = new HashSet<string>(
+            new[] { "Active", "PendingSignature" },
+            StringComparer.OrdinalIgnoreCase);
 
-        if (hasActiveContract)
+        if (contracts.Any(item =>
+            blockingContractStatuses.Contains(item.Status)))
         {
-            throw new Exception(
-                "Sinh viên đang có hợp đồng nội trú còn hiệu lực. Hãy gia hạn hoặc kết thúc hợp đồng hiện tại thay vì tạo đơn mới.");
+            throw new InvalidOperationException("Sinh viên đang có hợp đồng nội trú hiệu lực.");
         }
     }
 
-    private static bool IsOpenRegistrationStatus(string status)
+    private static void ValidateRegistrationDates(DateTime startDate, DateTime endDate)
     {
-        return status.Equals("Pending", StringComparison.OrdinalIgnoreCase) ||
-            status.Equals("Approved", StringComparison.OrdinalIgnoreCase);
+        if (endDate <= startDate)
+            throw new InvalidOperationException("Ngày kết thúc phải sau ngày bắt đầu.");
     }
 
     private static int CalculatePriorityScore(

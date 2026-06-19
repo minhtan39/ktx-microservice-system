@@ -87,6 +87,25 @@ public class RoomGatewayClient : IRoomGatewayClient
         throw new Exception("RoomService cap nhat trang thai phong that bai.");
     }
 
+    public async Task ReleaseRoomAsync(
+        long roomId,
+        long studentId,
+        string contractCode)
+    {
+        var response = await _httpClient.PostAsJsonAsync(
+            $"/api/rooms/{roomId}/release",
+            new ReleaseRoomRequestDto
+            {
+                StudentId = studentId,
+                ContractCode = contractCode
+            });
+
+        if (response.IsSuccessStatusCode)
+            return;
+
+        throw new Exception("RoomService tra giuong khi ket thuc hop dong that bai.");
+    }
+
     private async Task<AvailableRoomDto?> FindAvailableRoomFromRoomListAsync(
         RoomRegistration registration,
         Student student,

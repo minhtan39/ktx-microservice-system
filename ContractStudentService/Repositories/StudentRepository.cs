@@ -41,6 +41,7 @@ public class StudentRepository : IStudentRepository
             return null;
 
         existingStudent.FullName = student.FullName;
+        existingStudent.CCCD = student.CCCD;
         existingStudent.Phone = student.Phone;
         existingStudent.Email = student.Email;
         existingStudent.SchoolName = student.SchoolName;

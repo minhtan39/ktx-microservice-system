@@ -24,5 +24,9 @@ public class RoomRegistration
 
     public long? AssignedRoomId { get; set; }
 
+    public string RejectionReason { get; set; } = string.Empty;
+
+    public DateTime? RejectedAt { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

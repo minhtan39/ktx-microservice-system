@@ -27,6 +27,13 @@ services:
       PasswordReset__DataFile: "/app/data/password-reset-tokens.json"
       PasswordReset__LifetimeMinutes: "30"
       Frontend__BaseUrl: "${FRONTEND_BASE_URL:-http://103.188.242.37}"
+      AdminBootstrap__Username: "${ADMIN_USERNAME:-admin}"
+      AdminBootstrap__Password: "${ADMIN_PASSWORD:-admin123}"
+      AdminBootstrap__FullName: "${ADMIN_FULL_NAME:-Quản trị hệ thống}"
+      Jwt__Key: "${JWT_KEY:-THIS_IS_SUPER_SECRET_KEY_123456789}"
+      Jwt__Issuer: "${JWT_ISSUER:-SmartDormitory}"
+      Jwt__Audience: "${JWT_AUDIENCE:-SmartDormitoryUsers}"
+      InternalService__ApiKey: "${INTERNAL_SERVICE_KEY:-CHANGE_THIS_INTERNAL_SERVICE_KEY}"
       Email__SmtpHost: "smtp.gmail.com"
       Email__SmtpPort: "587"
       Email__EnableSsl: "true"
@@ -45,6 +52,9 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_URLS: "http://+:8080"
+      RoomData__FilePath: "/app/data/room-data.json"
+    volumes:
+      - room-data:/app/data
 
   billing-service:
     build:
@@ -82,7 +92,11 @@ services:
       ConnectionStrings__DefaultConnection: "Server=sqlserver,1433;Database=SmartDormitory_ContractStudentDB;User Id=sa;Password=${SQL_SA_PASSWORD:-KtxServer@2026Demo!};TrustServerCertificate=True;Encrypt=False"
       Integration__GatewayBaseUrl: "http://api-gateway:8080"
       Database__AutoMigrate: "true"
-      Auth__DisableForLocalDemo: "true"
+      Auth__DisableForLocalDemo: "false"
+      Jwt__Key: "${JWT_KEY:-THIS_IS_SUPER_SECRET_KEY_123456789}"
+      Jwt__Issuer: "${JWT_ISSUER:-SmartDormitory}"
+      Jwt__Audience: "${JWT_AUDIENCE:-SmartDormitoryUsers}"
+      InternalService__ApiKey: "${INTERNAL_SERVICE_KEY:-CHANGE_THIS_INTERNAL_SERVICE_KEY}"
 
   api-gateway:
     build:
@@ -100,6 +114,10 @@ services:
       ServiceRoutes__RoomService: "http://room-service:8080"
       ServiceRoutes__BillingService: "http://billing-service:8080"
       ServiceRoutes__ContractStudentService: "http://contract-student-service:8080"
+      Jwt__Key: "${JWT_KEY:-THIS_IS_SUPER_SECRET_KEY_123456789}"
+      Jwt__Issuer: "${JWT_ISSUER:-SmartDormitory}"
+      Jwt__Audience: "${JWT_AUDIENCE:-SmartDormitoryUsers}"
+      InternalService__ApiKey: "${INTERNAL_SERVICE_KEY:-CHANGE_THIS_INTERNAL_SERVICE_KEY}"
     ports:
       - "8080:8080"
 
@@ -119,3 +137,4 @@ volumes:
   sqlserver-data:
   auth-data:
   billing-data:
+  room-data:

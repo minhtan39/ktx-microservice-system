@@ -23,6 +23,18 @@ public class StudentsController : ControllerBase
     {
         var students = await _studentService.GetAllAsync();
 
+        if (!User.IsOperationsUser())
+        {
+            var studentId = User.CurrentStudentId();
+
+            if (!studentId.HasValue)
+                return Unauthorized();
+
+            students = students
+                .Where(student => student.Id == studentId.Value)
+                .ToList();
+        }
+
         return Ok(new ApiResponse<object>
         {
             Success = true,
@@ -39,9 +51,13 @@ public class StudentsController : ControllerBase
         if (student == null)
             return NotFound();
 
+        if (!User.IsOperationsUser() && User.CurrentStudentId() != id)
+            return Forbid();
+
         return Ok(student);
     }
 
+    [Authorize(Roles = "Admin,Staff")]
     [HttpPost]
     public async Task<IActionResult> Create(CreateStudentDto dto)
     {
@@ -55,6 +71,7 @@ public class StudentsController : ControllerBase
         });
     }
 
+    [Authorize(Roles = "Admin,Staff")]
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(long id, UpdateStudentDto dto)
     {
@@ -66,6 +83,7 @@ public class StudentsController : ControllerBase
         return Ok(updatedStudent);
     }
 
+    [Authorize(Roles = "Admin,Staff")]
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(long id)
     {

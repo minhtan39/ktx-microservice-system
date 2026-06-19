@@ -11,15 +11,16 @@ public class UpdateStudentDtoValidator : AbstractValidator<UpdateStudentDto>
             .NotEmpty()
             .MaximumLength(100);
 
+        RuleFor(x => x.CCCD)
+            .NotEmpty()
+            .Length(12);
+
         RuleFor(x => x.Phone)
             .NotEmpty();
 
         RuleFor(x => x.Email)
             .NotEmpty()
             .EmailAddress();
-
-        RuleFor(x => x.SchoolName)
-            .NotEmpty();
 
         RuleFor(x => x.ClassName)
             .NotEmpty()
@@ -28,5 +29,8 @@ public class UpdateStudentDtoValidator : AbstractValidator<UpdateStudentDto>
         RuleFor(x => x.FacultyName)
             .NotEmpty()
             .MaximumLength(100);
+
+        RuleFor(x => x.ResidenceHistory)
+            .MaximumLength(1000);
     }
 }

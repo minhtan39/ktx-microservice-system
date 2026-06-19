@@ -29,6 +29,19 @@
           {{ success }}
         </v-alert>
 
+        <v-snackbar
+          v-model="toastVisible"
+          :color="toastColor"
+          location="top right"
+          timeout="4500"
+          multi-line
+        >
+          {{ toastText }}
+          <template #actions>
+            <v-btn variant="text" @click="clearToast">Đóng</v-btn>
+          </template>
+        </v-snackbar>
+
         <v-form class="login-form" @submit.prevent="login">
           <v-text-field
             v-model="form.username"
@@ -78,7 +91,7 @@
 </template>
 
 <script setup>
-import { reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
 import { defaultHomeForRole } from '@/utils/auth'
@@ -91,6 +104,19 @@ const success = ref(route.query.passwordChanged === '1'
   ? 'Mật khẩu đã được thay đổi. Vui lòng đăng nhập lại.'
   : '')
 const showPassword = ref(false)
+const toastVisible = computed({
+  get: () => Boolean(error.value || success.value),
+  set: (visible) => {
+    if (!visible) clearToast()
+  },
+})
+const toastText = computed(() => error.value || success.value)
+const toastColor = computed(() => error.value ? 'error' : 'success')
+
+const clearToast = () => {
+  error.value = ''
+  success.value = ''
+}
 
 const form = reactive({
   username: '',

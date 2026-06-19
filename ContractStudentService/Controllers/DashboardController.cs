@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace ContractStudentService.Controllers;
 
-[Authorize]
+[Authorize(Roles = "Admin,Staff")]
 [ApiController]
 [Route("api/[controller]")]
 public class DashboardController : ControllerBase

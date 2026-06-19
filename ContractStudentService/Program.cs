@@ -68,6 +68,11 @@ builder.Services.AddHttpClient("Gateway", client =>
         ?? "http://api-gateway:8080";
 
     client.BaseAddress = new Uri(gatewayBaseUrl);
+
+    var internalServiceKey = builder.Configuration["InternalService:ApiKey"];
+
+    if (!string.IsNullOrWhiteSpace(internalServiceKey))
+        client.DefaultRequestHeaders.Add("X-Internal-Service-Key", internalServiceKey);
 });
 
 var disableAuthForLocalDemo =

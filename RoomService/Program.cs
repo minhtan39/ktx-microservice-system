@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddCors(options =>
@@ -21,9 +23,12 @@ if (app.Environment.IsDevelopment())
 
 app.UseCors("AllowGateway");
 
-var buildings = SeedBuildings();
-var roomTypes = SeedRoomTypes();
-var rooms = SeedRooms();
+var roomDataFilePath = app.Configuration["RoomData:FilePath"]
+    ?? Path.Combine(app.Environment.ContentRootPath, "data", "room-data.json");
+var roomStore = LoadRoomState(roomDataFilePath);
+var buildings = roomStore.Buildings;
+var roomTypes = roomStore.RoomTypes;
+var rooms = roomStore.Rooms;
 var roomLock = new object();
 
 app.MapGet("/health", () => Results.Ok(new
@@ -74,6 +79,7 @@ app.MapPost("/api/buildings", (BuildingRequest request) =>
             request.Description?.Trim() ?? string.Empty);
 
         buildings.Add(building);
+        SaveRoomState(roomDataFilePath, buildings, roomTypes, rooms);
 
         return Results.Created(
             $"/api/buildings/{building.BuildingName}",
@@ -113,6 +119,7 @@ app.MapPut("/api/buildings/{buildingName}", (
         building.DisplayName = CleanOrDefault(request.DisplayName, $"Tòa {building.BuildingName}");
         building.Floors = request.Floors;
         building.Description = request.Description?.Trim() ?? string.Empty;
+        SaveRoomState(roomDataFilePath, buildings, roomTypes, rooms);
 
         return Results.Ok(BuildingResponse.FromBuilding(building, rooms));
     }
@@ -131,6 +138,7 @@ app.MapDelete("/api/buildings/{buildingName}", (string buildingName) =>
             return Results.BadRequest(new { message = "Cannot delete a building that still has rooms." });
 
         buildings.Remove(building);
+        SaveRoomState(roomDataFilePath, buildings, roomTypes, rooms);
 
         return Results.NoContent();
     }
@@ -191,6 +199,7 @@ IResult CreateRoomType(RoomTypeRequest request)
             request.Amenities?.Trim() ?? DefaultAmenities(normalizedType));
 
         roomTypes.Add(roomType);
+        SaveRoomState(roomDataFilePath, buildings, roomTypes, rooms);
 
         return Results.Created(
             $"/api/room-types/{Uri.EscapeDataString(roomType.RoomType)}",
@@ -247,6 +256,7 @@ IResult UpdateRoomType(string roomType, RoomTypeRequest request)
             room.Amenities = existing.Amenities;
             room.RefreshStatus();
         }
+        SaveRoomState(roomDataFilePath, buildings, roomTypes, rooms);
 
         return Results.Ok(RoomTypeResponse.FromRoomType(existing, rooms));
     }
@@ -268,6 +278,7 @@ IResult DeleteRoomType(string roomType)
             return Results.BadRequest(new { message = "Cannot delete a room type that is used by rooms." });
 
         roomTypes.Remove(existing);
+        SaveRoomState(roomDataFilePath, buildings, roomTypes, rooms);
 
         return Results.NoContent();
     }
@@ -401,6 +412,7 @@ app.MapPost("/api/rooms", (RoomRequest request) =>
 
         room.RefreshStatus();
         rooms.Add(room);
+        SaveRoomState(roomDataFilePath, buildings, roomTypes, rooms);
 
         return Results.Created(
             $"/api/rooms/{room.RoomId}",
@@ -445,38 +457,11 @@ app.MapPut("/api/rooms/{roomId:long}", (
         room.MonthlyFee = request.MonthlyFee ?? roomType.MonthlyFee;
         room.Amenities = CleanOrDefault(request.Amenities, roomType.Amenities);
         room.RefreshStatus();
+        SaveRoomState(roomDataFilePath, buildings, roomTypes, rooms);
 
         return Results.Ok(RoomResponse.FromRoom(room, buildings));
     }
 });
-
-app.MapMethods(
-    "/api/rooms/{roomId:long}/status",
-    ["PATCH", "PUT"],
-    (long roomId, RoomStatusRequest request) =>
-    {
-        lock (roomLock)
-        {
-            var room = rooms.FirstOrDefault(item => item.RoomId == roomId);
-
-            if (room == null)
-                return Results.NotFound(new { message = "Room not found." });
-
-            var normalizedStatus = NormalizeRoomStatusUpdate(request.Status);
-
-            if (normalizedStatus.Equals("Maintenance", StringComparison.OrdinalIgnoreCase))
-            {
-                room.Status = "Maintenance";
-            }
-            else
-            {
-                room.Status = "Available";
-                room.RefreshStatus();
-            }
-
-            return Results.Ok(RoomResponse.FromRoom(room, buildings));
-        }
-    });
 
 app.MapDelete("/api/rooms/{roomId:long}", (long roomId) =>
 {
@@ -491,6 +476,7 @@ app.MapDelete("/api/rooms/{roomId:long}", (long roomId) =>
             return Results.BadRequest(new { message = "Cannot delete an occupied room." });
 
         rooms.Remove(room);
+        SaveRoomState(roomDataFilePath, buildings, roomTypes, rooms);
 
         return Results.NoContent();
     }
@@ -538,6 +524,7 @@ app.MapPost("/api/rooms/{roomId:long}/occupy", (
         {
             room.LastContractCode = request.ContractCode;
             room.RefreshStatus();
+            SaveRoomState(roomDataFilePath, buildings, roomTypes, rooms);
 
             return Results.Ok(RoomResponse.FromRoom(room, buildings));
         }
@@ -554,13 +541,30 @@ app.MapPost("/api/rooms/{roomId:long}/occupy", (
 
         room.LastContractCode = request.ContractCode;
         room.RefreshStatus();
+        SaveRoomState(roomDataFilePath, buildings, roomTypes, rooms);
 
         return Results.Ok(RoomResponse.FromRoom(room, buildings));
     }
 });
 
-app.MapPost("/api/rooms/{roomId:long}/release", (long roomId) =>
+app.MapPost("/api/rooms/{roomId:long}/release", async (long roomId, HttpRequest request) =>
 {
+    ReleaseRoomRequest? releaseRequest = null;
+
+    if (request.ContentLength.GetValueOrDefault() > 0)
+    {
+        try
+        {
+            releaseRequest = await JsonSerializer.DeserializeAsync<ReleaseRoomRequest>(
+                request.Body,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        }
+        catch (JsonException)
+        {
+            return Results.BadRequest(new { message = "Invalid release request body." });
+        }
+    }
+
     lock (roomLock)
     {
         var room = rooms.FirstOrDefault(item => item.RoomId == roomId);
@@ -568,19 +572,135 @@ app.MapPost("/api/rooms/{roomId:long}/release", (long roomId) =>
         if (room == null)
             return Results.NotFound(new { message = "Room not found." });
 
-        if (room.OccupancyReferences.Count > 0)
+        var hasSpecificReleaseTarget =
+            releaseRequest?.StudentId > 0 ||
+            releaseRequest?.RegistrationId > 0 ||
+            !string.IsNullOrWhiteSpace(releaseRequest?.ContractCode);
+
+        var reference = room.OccupancyReferences.FirstOrDefault(item =>
+            (releaseRequest?.StudentId > 0 && item.StudentId == releaseRequest.StudentId) ||
+            (releaseRequest?.RegistrationId > 0 && item.RegistrationId == releaseRequest.RegistrationId) ||
+            (!string.IsNullOrWhiteSpace(releaseRequest?.ContractCode) &&
+                item.ContractCode.Equals(releaseRequest.ContractCode, StringComparison.OrdinalIgnoreCase)));
+
+        if (reference != null)
+        {
+            room.OccupancyReferences.Remove(reference);
+        }
+        else if (hasSpecificReleaseTarget)
+        {
+            if (room.OccupiedBeds == 0 && room.OccupancyReferences.Count == 0)
+            {
+                room.RefreshStatus();
+                SaveRoomState(roomDataFilePath, buildings, roomTypes, rooms);
+                return Results.Ok(RoomResponse.FromRoom(room, buildings));
+            }
+
+            return Results.NotFound(new { message = "Occupancy reference not found in this room." });
+        }
+        else if (room.OccupancyReferences.Count > 0)
+        {
             room.OccupancyReferences.RemoveAt(room.OccupancyReferences.Count - 1);
+        }
 
         if (room.OccupiedBeds > 0)
             room.OccupiedBeds--;
 
         room.RefreshStatus();
+        SaveRoomState(roomDataFilePath, buildings, roomTypes, rooms);
 
         return Results.Ok(RoomResponse.FromRoom(room, buildings));
     }
 });
 
 app.Run();
+
+static RoomStoreState LoadRoomState(string filePath)
+{
+    try
+    {
+        if (File.Exists(filePath))
+        {
+            var json = File.ReadAllText(filePath);
+            var state = JsonSerializer.Deserialize<RoomStoreState>(
+                json,
+                RoomJsonOptions());
+
+            if (state is { Buildings.Count: > 0, RoomTypes.Count: > 0, Rooms.Count: > 0 })
+            {
+                NormalizeRoomState(state);
+                return state;
+            }
+        }
+    }
+    catch (JsonException)
+    {
+        // Fall back to seed data if the persisted file is malformed.
+    }
+    catch (IOException)
+    {
+        // Fall back to seed data if the file cannot be read during startup.
+    }
+
+    var seededState = new RoomStoreState
+    {
+        Buildings = SeedBuildings(),
+        RoomTypes = SeedRoomTypes(),
+        Rooms = SeedRooms()
+    };
+
+    SaveRoomState(
+        filePath,
+        seededState.Buildings,
+        seededState.RoomTypes,
+        seededState.Rooms);
+
+    return seededState;
+}
+
+static void SaveRoomState(
+    string filePath,
+    List<DormBuilding> buildings,
+    List<DormRoomType> roomTypes,
+    List<DormRoom> rooms)
+{
+    var directory = Path.GetDirectoryName(filePath);
+
+    if (!string.IsNullOrWhiteSpace(directory))
+        Directory.CreateDirectory(directory);
+
+    var state = new RoomStoreState
+    {
+        Buildings = buildings,
+        RoomTypes = roomTypes,
+        Rooms = rooms
+    };
+
+    File.WriteAllText(
+        filePath,
+        JsonSerializer.Serialize(state, RoomJsonOptions()));
+}
+
+static JsonSerializerOptions RoomJsonOptions()
+{
+    return new JsonSerializerOptions
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        WriteIndented = true
+    };
+}
+
+static void NormalizeRoomState(RoomStoreState state)
+{
+    foreach (var room in state.Rooms)
+    {
+        room.OccupancyReferences ??= new List<RoomOccupancyReference>();
+        room.OccupiedBeds = Math.Min(
+            room.Capacity,
+            Math.Max(room.OccupiedBeds, room.OccupancyReferences.Count));
+        room.RefreshStatus();
+    }
+}
 
 static List<DormBuilding> SeedBuildings()
 {
@@ -750,28 +870,27 @@ static string NormalizeStatus(string? status)
     {
         "" or "available" or "trong" or "trống" or "con cho" or "còn chỗ" => "Available",
         "full" or "day" or "đầy" or "day phong" or "đầy phòng" => "Full",
-        "maintenance" or "repair" or "bao tri" or "bảo trì" or "dang bao tri" or "đang bảo trì" or
-            "sua chua" or "sửa chữa" or "dang sua chua" or "đang sửa chữa" => "Maintenance",
+        "maintenance" or "repair" or "sua chua" or "sửa chữa" or "dang sua chua" or "đang sửa chữa" => "Maintenance",
         _ => throw new ArgumentException("Status must be Available, Full, or Maintenance.")
     };
 }
 
-static string NormalizeRoomStatusUpdate(string? status)
+public sealed class RoomStoreState
 {
-    var normalized = (status ?? string.Empty).Trim().ToLowerInvariant();
+    public List<DormBuilding> Buildings { get; set; } = new();
 
-    return normalized switch
-    {
-        "maintenance" or "repair" or "under-maintenance" or "under maintenance" or
-            "bao tri" or "bao-tri" or "bảo trì" or "dang bao tri" or "đang bảo trì" or
-            "sua chua" or "sửa chữa" or "dang sua chua" or "đang sửa chữa" => "Maintenance",
-        "" or "auto" or "available" or "normal" or "open" or "release" or "done" or "completed" => "Auto",
-        _ => throw new ArgumentException("Status must be Maintenance or Auto.")
-    };
+    public List<DormRoomType> RoomTypes { get; set; } = new();
+
+    public List<DormRoom> Rooms { get; set; } = new();
 }
 
 public sealed class DormBuilding
 {
+    public DormBuilding()
+        : this(string.Empty, string.Empty, 0, string.Empty)
+    {
+    }
+
     public DormBuilding(
         string buildingName,
         string displayName,
@@ -795,6 +914,11 @@ public sealed class DormBuilding
 
 public sealed class DormRoomType
 {
+    public DormRoomType()
+        : this(string.Empty, 0, 0, string.Empty, string.Empty)
+    {
+    }
+
     public DormRoomType(
         string roomType,
         int capacity,
@@ -822,6 +946,11 @@ public sealed class DormRoomType
 
 public sealed class DormRoom
 {
+    public DormRoom()
+        : this(0, string.Empty, string.Empty, 0, string.Empty, true, 0, 0, 0, "Available", string.Empty)
+    {
+    }
+
     public DormRoom(
         long roomId,
         string roomNumber,
@@ -872,7 +1001,7 @@ public sealed class DormRoom
 
     public string LastContractCode { get; set; } = string.Empty;
 
-    public List<RoomOccupancyReference> OccupancyReferences { get; } = new();
+    public List<RoomOccupancyReference> OccupancyReferences { get; set; } = new();
 
     public int AvailableBeds => Math.Max(Capacity - OccupiedBeds, 0);
 
@@ -912,12 +1041,15 @@ public sealed record RoomRequest(
     decimal? MonthlyFee,
     string? Amenities);
 
-public sealed record RoomStatusRequest(string Status);
-
 public sealed record OccupyRoomRequest(
     long StudentId,
     long RegistrationId,
     string ContractCode);
+
+public sealed record ReleaseRoomRequest(
+    long? StudentId,
+    long? RegistrationId,
+    string? ContractCode);
 
 public sealed record BuildingResponse(
     string BuildingName,
@@ -1034,7 +1166,7 @@ public sealed record RoomResponse(
     private static string GetStatusText(DormRoom room)
     {
         if (room.IsMaintenance)
-            return "Đang bảo trì";
+            return "Đang sửa chữa";
 
         if (room.AvailableBeds == 0)
             return "Đầy phòng";

@@ -25,6 +25,10 @@
         <span>Đang hiệu lực</span>
         <strong>{{ countByStatus('Active') }}</strong>
       </div>
+      <div class="metric-chip info">
+        <span>Chờ ký online</span>
+        <strong>{{ countByStatus('PendingSignature') }}</strong>
+      </div>
       <div class="metric-chip danger">
         <span>Hết hạn</span>
         <strong>{{ countByStatus('Expired') }}</strong>
@@ -38,6 +42,19 @@
     <v-alert v-if="message" :type="messageType" variant="tonal" class="mb-4">
       {{ message }}
     </v-alert>
+
+    <v-snackbar
+      v-model="toastVisible"
+      :color="messageType"
+      location="top right"
+      timeout="4500"
+      multi-line
+    >
+      {{ message }}
+      <template #actions>
+        <v-btn variant="text" @click="message = ''">Đóng</v-btn>
+      </template>
+    </v-snackbar>
 
     <v-card class="filter-card">
       <div class="filter-grid">
@@ -131,6 +148,9 @@
             <td>
               <span class="status-pill" :class="statusClass(contract.status)">
                 {{ statusText(contract.status) }}
+              </span>
+              <span class="cell-subtitle">
+                {{ contract.signedAt ? `Đã ký ${formatDate(contract.signedAt)}` : 'Chưa ký online' }}
               </span>
             </td>
             <td>
@@ -264,6 +284,12 @@ import {
 const loading = ref(false)
 const message = ref('')
 const messageType = ref('success')
+const toastVisible = computed({
+  get: () => Boolean(message.value),
+  set: (visible) => {
+    if (!visible) message.value = ''
+  },
+})
 const contracts = ref([])
 const students = ref([])
 const rooms = ref([])
@@ -278,6 +304,7 @@ const pageSize = 8
 const statusOptions = [
   { title: 'Tất cả', value: 'All' },
   { title: 'Đang hiệu lực', value: 'Active' },
+  { title: 'Chờ ký online', value: 'PendingSignature' },
   { title: 'Đã hủy', value: 'Cancelled' },
   { title: 'Hết hạn', value: 'Expired' },
 ]
@@ -334,6 +361,9 @@ const selectedContractFields = computed(() => {
     { label: 'Tiền cọc', value: formatMoney(selectedContract.value.depositAmount) },
     { label: 'Tiền phòng tháng', value: formatMoney(selectedContract.value.monthlyFee) },
     { label: 'Trạng thái', value: statusText(selectedContract.value.status) },
+    { label: 'Ký online', value: selectedContract.value.signedAt ? `Đã ký ${formatDate(selectedContract.value.signedAt)}` : 'Chưa ký online' },
+    { label: 'Người ký', value: selectedContract.value.signatureFullName || '-' },
+    { label: 'Số lần gia hạn', value: selectedContract.value.renewalCount || 0 },
     { label: 'Mã tham chiếu phòng', value: selectedContract.value.roomId || '-' },
   ]
 })
@@ -395,6 +425,8 @@ const exportContracts = () => {
       { header: 'Tiền cọc', value: (contract) => formatMoney(contract.depositAmount) },
       { header: 'Tiền phòng tháng', value: (contract) => formatMoney(contract.monthlyFee) },
       { header: 'Trạng thái', value: (contract) => statusText(contract.status) },
+      { header: 'Ký online', value: (contract) => contract.signedAt ? `Đã ký ${formatDate(contract.signedAt)}` : 'Chưa ký' },
+      { header: 'Số lần gia hạn', value: (contract) => contract.renewalCount || 0 },
       { header: 'Điều khoản', value: (contract) => contract.terms || 'Điều khoản mặc định' },
     ],
   })
@@ -418,6 +450,7 @@ const statusClass = (status) => String(status || '').toLowerCase()
 
 const statusText = (status) => {
   if (status === 'Active') return 'Hiệu lực'
+  if (status === 'PendingSignature') return 'Chờ ký online'
   if (status === 'Expired') return 'Hết hạn'
   if (status === 'Cancelled') return 'Đã hủy'
   return status

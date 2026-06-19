@@ -24,6 +24,18 @@ public class RoomRegistrationController : ControllerBase
     {
         var registrations = await _service.GetAllAsync();
 
+        if (!User.IsOperationsUser())
+        {
+            var studentId = User.CurrentStudentId();
+
+            if (!studentId.HasValue)
+                return Unauthorized();
+
+            registrations = registrations
+                .Where(registration => registration.StudentId == studentId.Value)
+                .ToList();
+        }
+
         return Ok(registrations);
     }
 
@@ -35,6 +47,12 @@ public class RoomRegistrationController : ControllerBase
         if (registration == null)
             return NotFound();
 
+        if (!User.IsOperationsUser() &&
+            User.CurrentStudentId() != registration.StudentId)
+        {
+            return Forbid();
+        }
+
         return Ok(registration);
     }
 
@@ -42,12 +60,23 @@ public class RoomRegistrationController : ControllerBase
     public async Task<IActionResult> Create(
         RoomRegistration registration)
     {
+        if (!User.IsOperationsUser())
+        {
+            var studentId = User.CurrentStudentId();
+
+            if (!studentId.HasValue)
+                return Unauthorized();
+
+            registration.StudentId = studentId.Value;
+        }
+
         var created =
             await _service.CreateAsync(registration);
 
         return Ok(created);
     }
 
+    [Authorize(Roles = "Admin,Staff")]
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(
         long id,
@@ -62,6 +91,7 @@ public class RoomRegistrationController : ControllerBase
         return Ok(updated);
     }
 
+    [Authorize(Roles = "Admin,Staff")]
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(long id)
     {
@@ -76,6 +106,7 @@ public class RoomRegistrationController : ControllerBase
         });
     }
 
+    [Authorize(Roles = "Admin,Staff")]
     [HttpPut("{id}/approve")]
     public async Task<IActionResult> Approve(
         long id,
@@ -90,11 +121,14 @@ public class RoomRegistrationController : ControllerBase
         return Ok(registration);
     }
 
+    [Authorize(Roles = "Admin,Staff")]
     [HttpPut("{id}/reject")]
-    public async Task<IActionResult> Reject(long id)
+    public async Task<IActionResult> Reject(
+        long id,
+        RejectRoomRegistrationRequest request)
     {
         var registration =
-            await _service.RejectAsync(id);
+            await _service.RejectAsync(id, request.Reason);
 
         if (registration == null)
             return NotFound();
@@ -102,3 +136,5 @@ public class RoomRegistrationController : ControllerBase
         return Ok(registration);
     }
 }
+
+public sealed record RejectRoomRegistrationRequest(string Reason);

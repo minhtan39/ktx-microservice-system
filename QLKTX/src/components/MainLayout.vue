@@ -60,6 +60,11 @@
         </router-link>
       </nav>
 
+      <button class="mobile-nav-logout" type="button" @click="logout">
+        <span class="mdi mdi-logout"></span>
+        <span>Đăng xuất</span>
+      </button>
+
       <div v-if="!isStudent" class="sidebar-note">
         <span class="mdi mdi-clipboard-check-outline"></span>
         <div>
@@ -105,6 +110,15 @@
             </div>
             <div class="user-avatar">{{ userInitial }}</div>
           </div>
+          <v-btn
+            class="topbar-logout"
+            color="error"
+            variant="tonal"
+            prepend-icon="mdi-logout"
+            @click="logout"
+          >
+            Đăng xuất
+          </v-btn>
         </div>
       </header>
 
@@ -112,6 +126,11 @@
         <router-view />
       </div>
     </main>
+
+    <button class="mobile-floating-logout" type="button" @click="logout">
+      <span class="mdi mdi-logout"></span>
+      <span>Đăng xuất</span>
+    </button>
   </div>
 </template>
 
@@ -682,6 +701,20 @@ const logout = async () => {
   flex: 0 0 auto;
 }
 
+.topbar-logout {
+  min-height: 50px;
+  border-radius: 8px;
+  font-weight: 900;
+}
+
+.mobile-floating-logout {
+  display: none;
+}
+
+.mobile-nav-logout {
+  display: none;
+}
+
 .term-chip {
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr);
@@ -818,6 +851,57 @@ const logout = async () => {
     justify-content: flex-start;
   }
 
+  .topbar-logout {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .mobile-floating-logout {
+    position: fixed;
+    right: 16px;
+    bottom: calc(16px + env(safe-area-inset-bottom));
+    z-index: 80;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 46px;
+    padding: 0 16px;
+    border: 1px solid rgba(220, 38, 38, 0.18);
+    border-radius: 999px;
+    background: #dc2626;
+    color: #ffffff;
+    box-shadow: 0 14px 30px rgba(127, 29, 29, 0.28);
+    font: inherit;
+    font-size: 14px;
+    font-weight: 900;
+  }
+
+  .mobile-floating-logout .mdi {
+    font-size: 20px;
+  }
+
+  .mobile-nav-logout {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    min-height: 42px;
+    margin-top: 10px;
+    border: 1px solid rgba(220, 38, 38, 0.2);
+    border-radius: 8px;
+    background: #fff1f2;
+    color: #b91c1c;
+    font: inherit;
+    font-size: 14px;
+    font-weight: 900;
+  }
+
+  .mobile-nav-logout .mdi {
+    font-size: 19px;
+  }
+
   .user-chip strong,
   .user-chip span {
     text-align: left;
@@ -825,7 +909,7 @@ const logout = async () => {
 
   .page-body {
     width: 100%;
-    padding: 18px;
+    padding: 18px 18px 88px;
   }
 }
 </style>

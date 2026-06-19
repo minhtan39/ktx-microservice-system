@@ -33,6 +33,18 @@
     <v-alert v-if="success" type="success" variant="tonal" class="mb-4">
       {{ success }}
     </v-alert>
+    <v-snackbar
+      v-model="toastVisible"
+      :color="toastColor"
+      location="top right"
+      timeout="4500"
+      multi-line
+    >
+      {{ toastText }}
+      <template #actions>
+        <v-btn variant="text" @click="clearToast">Đóng</v-btn>
+      </template>
+    </v-snackbar>
 
     <div v-if="loading" class="loading-state">
       <v-progress-circular indeterminate color="success" />
@@ -91,17 +103,16 @@
             </div>
           </div>
 
-          <v-alert
-            v-if="registrationBlockedReason"
-            type="info"
-            variant="tonal"
-            density="comfortable"
-            class="mb-4"
-          >
-            {{ registrationBlockedReason }}
-          </v-alert>
-
           <v-form class="registration-form" @submit.prevent="submitRegistration">
+            <v-alert
+              v-if="registrationBlockReason"
+              type="warning"
+              variant="tonal"
+              class="mb-4"
+            >
+              {{ registrationBlockReason }}
+            </v-alert>
+
             <v-row dense>
               <v-col cols="12" sm="6">
                 <v-select
@@ -342,6 +353,9 @@
                   <span class="status-pill" :class="statusClass(registration.status)">
                     {{ statusLabel(registration.status) }}
                   </span>
+                  <small v-if="registration.rejectionReason" class="table-note">
+                    {{ registration.rejectionReason }}
+                  </small>
                 </td>
                 <td>{{ registration.assignedRoomId ? `#${registration.assignedRoomId}` : 'Chưa xếp' }}</td>
               </tr>
@@ -366,17 +380,17 @@
                 <th>Mã hợp đồng</th>
                 <th>Phòng</th>
                 <th>Thời hạn</th>
-	                <th>Tiền cọc</th>
-	                <th>Tiền phòng</th>
-	                <th>Trạng thái</th>
-	                <th>Thao tác</th>
-	              </tr>
-	            </thead>
-	            <tbody>
-	              <tr v-if="ownContracts.length === 0">
-	                <td colspan="7" class="empty-cell">Chưa có hợp đồng nào được tạo.</td>
-	              </tr>
-	              <tr v-for="contract in ownContracts" :key="contract.id">
+                <th>Tiền cọc</th>
+                <th>Tiền phòng</th>
+                <th>Trạng thái</th>
+                <th>Ký online</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-if="ownContracts.length === 0">
+                <td colspan="7" class="empty-cell">Chưa có hợp đồng nào được tạo.</td>
+              </tr>
+              <tr v-for="contract in ownContracts" :key="contract.id">
                 <td>{{ contract.contractCode }}</td>
                 <td>#{{ contract.roomId }}</td>
                 <td>{{ formatDate(contract.startDate) }} - {{ formatDate(contract.endDate) }}</td>
@@ -385,18 +399,133 @@
                 <td>
                   <span class="status-pill" :class="statusClass(contract.status)">
                     {{ statusLabel(contract.status) }}
-	                  </span>
-	                </td>
-	                <td>
-	                  <v-btn size="small" color="success" variant="tonal" @click="openContractDialog(contract)">
-	                    Xem/ký
-	                  </v-btn>
-	                </td>
-	              </tr>
-	            </tbody>
-	          </table>
-	        </div>
-	      </section>
+                  </span>
+                </td>
+                <td>
+                  <div class="contract-sign-cell">
+                    <strong>{{ contract.signedAt ? 'Đã ký online' : 'Chưa ký' }}</strong>
+                    <small class="table-note">
+                      {{ contract.signedAt ? formatDateTime(contract.signedAt) : 'Cần ký để xác nhận điều khoản' }}
+                    </small>
+                    <v-btn
+                      v-if="canSignContract(contract)"
+                      size="small"
+                      color="success"
+                      variant="tonal"
+                      @click="openSignDialog(contract)"
+                    >
+                      Xem & ký
+                    </v-btn>
+                    <v-btn
+                      v-else
+                      size="small"
+                      variant="text"
+                      color="primary"
+                      @click="openSignDialog(contract)"
+                    >
+                      Xem hợp đồng
+                    </v-btn>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <v-dialog v-model="signDialog" max-width="860">
+        <v-card v-if="signTarget" class="contract-sign-dialog">
+          <v-card-title class="dialog-title">
+            <div>
+              <span class="page-kicker">Online Contract</span>
+              <strong>Hợp đồng nội trú {{ signTarget.contractCode }}</strong>
+            </div>
+            <v-btn icon="mdi-close" variant="text" @click="signDialog = false" />
+          </v-card-title>
+          <v-card-text>
+            <section class="contract-paper">
+              <div class="contract-paper-head">
+                <div>
+                  <span>Ký túc xá sinh viên</span>
+                  <h3>HỢP ĐỒNG THUÊ PHÒNG Ở KÝ TÚC XÁ</h3>
+                </div>
+                <strong>{{ signTarget.contractCode }}</strong>
+              </div>
+
+              <div class="contract-paper-grid">
+                <div>
+                  <span>Bên A</span>
+                  <strong>Ban quản lý ký túc xá</strong>
+                </div>
+                <div>
+                  <span>Bên B</span>
+                  <strong>{{ student?.fullName || displayName }}</strong>
+                  <small>MSSV: {{ student?.studentCode || studentCode }}</small>
+                </div>
+                <div>
+                  <span>Phòng ở</span>
+                  <strong>#{{ signTarget.roomId }}</strong>
+                </div>
+                <div>
+                  <span>Thời hạn</span>
+                  <strong>{{ formatDate(signTarget.startDate) }} - {{ formatDate(signTarget.endDate) }}</strong>
+                </div>
+                <div>
+                  <span>Tiền cọc</span>
+                  <strong>{{ money(signTarget.depositAmount) }}</strong>
+                </div>
+                <div>
+                  <span>Tiền phòng tháng</span>
+                  <strong>{{ money(signTarget.monthlyFee) }}</strong>
+                </div>
+              </div>
+
+              <div class="contract-terms">
+                <strong>Điều khoản chính</strong>
+                <p>{{ signTarget.terms || 'Sinh viên sử dụng phòng đúng thời hạn, đóng tiền đúng hạn, tuân thủ nội quy ký túc xá và bàn giao phòng khi kết thúc hợp đồng.' }}</p>
+              </div>
+
+              <div v-if="signTarget.signedAt" class="signature-proof">
+                <span class="mdi mdi-shield-check-outline"></span>
+                <div>
+                  <strong>Đã ký online lúc {{ formatDateTime(signTarget.signedAt) }}</strong>
+                  <small>Người ký: {{ signTarget.signatureFullName || displayName }} - {{ signTarget.signatureStudentCode || studentCode }}</small>
+                  <small v-if="signTarget.signatureHash">Mã xác thực: {{ signTarget.signatureHash }}</small>
+                </div>
+              </div>
+
+              <div v-else class="signature-form">
+                <v-checkbox
+                  v-model="signAccepted"
+                  label="Tôi đã đọc, hiểu và đồng ý với toàn bộ điều khoản hợp đồng nội trú."
+                  color="success"
+                />
+                <v-row dense>
+                  <v-col cols="12" sm="6">
+                    <v-text-field v-model="signForm.fullName" label="Họ tên người ký" density="comfortable" />
+                  </v-col>
+                  <v-col cols="12" sm="6">
+                    <v-text-field v-model="signForm.studentCode" label="Mã sinh viên" density="comfortable" />
+                  </v-col>
+                </v-row>
+              </div>
+            </section>
+          </v-card-text>
+          <v-card-actions>
+            <v-spacer />
+            <v-btn variant="text" @click="signDialog = false">Đóng</v-btn>
+            <v-btn
+              v-if="!signTarget.signedAt"
+              color="success"
+              :loading="signing"
+              :disabled="!signAccepted"
+              @click="submitSignContract"
+            >
+              Ký hợp đồng online
+            </v-btn>
+          </v-card-actions>
+        </v-card>
+      </v-dialog>
 
       <v-dialog v-model="reopenDialog" max-width="520">
         <v-card>
@@ -409,68 +538,12 @@
             <v-spacer />
             <v-btn variant="text" @click="reopenDialog = false">Hủy</v-btn>
             <v-btn color="warning" :loading="incidentActionLoading === reopenIncidentTarget?.id" @click="submitReopen">Gửi lại yêu cầu</v-btn>
-	          </v-card-actions>
-	        </v-card>
-	      </v-dialog>
-
-	      <v-dialog v-model="contractDialog" max-width="900">
-	        <v-card v-if="selectedContract" class="dialog-card">
-	          <v-card-title class="dialog-title">
-	            <div>
-	              <span class="page-kicker">Online Contract</span>
-	              <strong>{{ selectedContract.contractCode }}</strong>
-	            </div>
-	            <v-btn icon="mdi-close" variant="text" @click="contractDialog = false" />
-	          </v-card-title>
-	          <v-card-text>
-	            <article class="contract-paper">
-	              <div class="contract-head">
-	                <span>CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</span>
-	                <strong>HỢP ĐỒNG NỘI TRÚ KÝ TÚC XÁ</strong>
-	                <small>Mã hợp đồng: {{ selectedContract.contractCode }}</small>
-	              </div>
-
-	              <div class="contract-grid">
-	                <p><span>Sinh viên</span><strong>{{ displayName }}</strong></p>
-	                <p><span>Phòng</span><strong>#{{ selectedContract.roomId }}</strong></p>
-	                <p><span>Thời hạn</span><strong>{{ formatDate(selectedContract.startDate) }} - {{ formatDate(selectedContract.endDate) }}</strong></p>
-	                <p><span>Tiền phòng tháng</span><strong>{{ money(selectedContract.monthlyFee) }}</strong></p>
-	              </div>
-
-	              <section>
-	                <h4>Điều khoản</h4>
-	                <p class="contract-terms">{{ selectedContract.terms || defaultContractTerms }}</p>
-	              </section>
-
-	              <div class="signature-grid">
-	                <div>
-	                  <span>Đại diện ký túc xá</span>
-	                  <strong>Ban quản lý</strong>
-	                </div>
-	                <div :class="{ signed: isSignedContract(selectedContract) }">
-	                  <span>Sinh viên ký online</span>
-	                  <strong>{{ isSignedContract(selectedContract) ? 'Đã ký điện tử' : 'Chưa ký' }}</strong>
-	                </div>
-	              </div>
-	            </article>
-
-	            <div v-if="selectedContract.status === 'Active' && !isSignedContract(selectedContract)" class="sign-box">
-	              <v-text-field
-	                v-model="contractSignName"
-	                label="Nhập đúng họ tên của bạn để ký"
-	                density="compact"
-	                hide-details
-	              />
-	              <v-btn color="success" :loading="contractSigning" prepend-icon="mdi-draw-pen" @click="signContract">
-	                Ký online
-	              </v-btn>
-	            </div>
-	          </v-card-text>
-	        </v-card>
-	      </v-dialog>
-	    </template>
-	  </section>
-	</template>
+          </v-card-actions>
+        </v-card>
+      </v-dialog>
+    </template>
+  </section>
+</template>
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
@@ -481,6 +554,18 @@ const loading = ref(true)
 const submitting = ref(false)
 const error = ref('')
 const success = ref('')
+const toastVisible = computed({
+  get: () => Boolean(error.value || success.value),
+  set: (visible) => {
+    if (!visible) clearToast()
+  },
+})
+const toastText = computed(() => error.value || success.value)
+const toastColor = computed(() => error.value ? 'error' : 'success')
+const clearToast = () => {
+  error.value = ''
+  success.value = ''
+}
 const student = ref(null)
 const ownRegistrations = ref([])
 const ownContracts = ref([])
@@ -489,11 +574,14 @@ const incidentActionLoading = ref(null)
 const reopenDialog = ref(false)
 const reopenIncidentTarget = ref(null)
 const reopenNote = ref('')
-const contractDialog = ref(false)
-const selectedContract = ref(null)
-const contractSignName = ref('')
-const contractSigning = ref(false)
-const defaultContractTerms = 'Sinh viên đóng tiền đúng hạn, tuân thủ nội quy ký túc xá, không tự ý chuyển phòng và bàn giao phòng khi kết thúc hợp đồng.'
+const signDialog = ref(false)
+const signTarget = ref(null)
+const signing = ref(false)
+const signAccepted = ref(false)
+const signForm = reactive({
+  fullName: '',
+  studentCode: '',
+})
 
 const studentId = ref(Number(localStorage.getItem('student_id') || 0))
 const studentCode = ref(
@@ -552,37 +640,39 @@ const incidentForm = reactive({
 })
 
 const currentRoom = computed(() => {
-  if (activeContract.value) return `#${activeContract.value.roomId}`
+  const activeContract = ownContracts.value.find((contract) =>
+    ['active', 'pendingsignature'].includes(String(contract.status || '').toLowerCase()))
+
+  if (activeContract) return `#${activeContract.roomId}`
   return student.value?.residenceHistory ? 'Có' : 'Chưa có'
 })
 
-const activeContract = computed(() =>
-  ownContracts.value.find((contract) =>
-    String(contract.status || '').toLowerCase() === 'active' &&
-    (!contract.endDate || new Date(contract.endDate) >= new Date())))
-
-const openRegistration = computed(() =>
+const activeRegistration = computed(() =>
   ownRegistrations.value.find((registration) =>
-    ['pending', 'approved'].includes(String(registration.status || '').toLowerCase())))
+    String(registration.status || '').toLowerCase() === 'pending'))
 
-const registrationBlockedReason = computed(() => {
-  if (!student.value) return 'Chưa tìm thấy hồ sơ sinh viên nên chưa thể gửi đăng ký nội trú.'
+const activeHousingContract = computed(() =>
+  ownContracts.value.find((contract) =>
+    ['active', 'pendingsignature'].includes(String(contract.status || '').toLowerCase())))
 
-  if (activeContract.value) {
-    return `Bạn đang có hợp đồng còn hiệu lực đến ${formatDate(activeContract.value.endDate)}. Nếu muốn ở tiếp, hãy dùng luồng gia hạn hợp đồng thay vì gửi đơn mới.`
+const registrationBlockReason = computed(() => {
+  if (!student.value) return 'Chưa tìm thấy hồ sơ sinh viên nên chưa thể gửi đăng ký.'
+
+  if (activeHousingContract.value) {
+    return `Bạn đang có hợp đồng ${activeHousingContract.value.contractCode} còn hiệu lực, không thể gửi thêm đơn đăng ký nội trú.`
   }
 
-  if (openRegistration.value) {
-    return String(openRegistration.value.status || '').toLowerCase() === 'pending'
-      ? 'Bạn đã có một đơn đăng ký đang chờ duyệt. Vui lòng chờ cán bộ xử lý trước khi gửi đơn mới.'
-      : 'Bạn đã có đơn đăng ký được duyệt và đang chờ/đã tạo hợp đồng. Không cần gửi thêm đơn mới.'
+  if (activeRegistration.value) {
+    return `Bạn đã có đơn #${activeRegistration.value.id} đang chờ xử lý. Vui lòng chờ cán bộ xử lý trước khi gửi đơn mới.`
   }
 
   return ''
 })
 
 const canSubmitRegistration = computed(() =>
-  Boolean(student.value) && !activeContract.value && !openRegistration.value)
+  Boolean(student.value) &&
+  !registrationBlockReason.value &&
+  !submitting.value)
 
 const setDefaultDates = () => {
   const start = new Date()
@@ -765,42 +855,14 @@ const submitReopen = async () => {
   }
 }
 
-const openContractDialog = (contract) => {
-  selectedContract.value = contract
-  contractSignName.value = student.value?.fullName || displayName.value
-  contractDialog.value = true
-}
-
-const signContract = async () => {
-  if (!selectedContract.value) return
-
-  try {
-    contractSigning.value = true
-    error.value = ''
-    success.value = ''
-    await api.put(`/contracts/${selectedContract.value.id}/sign`, {
-      signerName: contractSignName.value,
-      method: 'StudentPortal',
-    })
-    success.value = 'Bạn đã ký hợp đồng online thành công.'
-    await loadContracts()
-    selectedContract.value = ownContracts.value.find((contract) =>
-      contract.id === selectedContract.value.id) || selectedContract.value
-  } catch (err) {
-    error.value = err.response?.data?.message || 'Không ký online được hợp đồng.'
-  } finally {
-    contractSigning.value = false
-  }
-}
-
 const submitRegistration = async () => {
-  if (!student.value) {
-    error.value = 'Chưa tìm thấy hồ sơ sinh viên để tạo đơn đăng ký.'
+  if (!canSubmitRegistration.value) {
+    error.value = registrationBlockReason.value || 'Chưa đủ điều kiện gửi đăng ký nội trú.'
     return
   }
 
-  if (!canSubmitRegistration.value) {
-    error.value = registrationBlockedReason.value
+  if (!student.value) {
+    error.value = 'Chưa tìm thấy hồ sơ sinh viên để tạo đơn đăng ký.'
     return
   }
 
@@ -830,12 +892,52 @@ const submitRegistration = async () => {
     form.priorityNote = ''
     await loadRegistrations()
   } catch (err) {
-    error.value = err.response?.data?.message ||
-      'Không gửi được đơn đăng ký. Kiểm tra dữ liệu sinh viên và service N2.'
+    error.value = 'Không gửi được đơn đăng ký. Kiểm tra dữ liệu sinh viên và service N2.'
     console.error(err)
   } finally {
     submitting.value = false
   }
+}
+
+const openSignDialog = (contract) => {
+  signTarget.value = contract
+  signForm.fullName = student.value?.fullName || displayName.value || ''
+  signForm.studentCode = student.value?.studentCode || studentCode.value || ''
+  signAccepted.value = Boolean(contract.signedAt)
+  signDialog.value = true
+}
+
+const submitSignContract = async () => {
+  if (!signTarget.value) return
+
+  if (!signAccepted.value || !signForm.fullName.trim() || !signForm.studentCode.trim()) {
+    error.value = 'Vui lòng xác nhận điều khoản và nhập đầy đủ họ tên, MSSV để ký hợp đồng.'
+    return
+  }
+
+  try {
+    signing.value = true
+    error.value = ''
+    success.value = ''
+    await api.post(`/contracts/${signTarget.value.id}/sign`, {
+      fullName: signForm.fullName.trim(),
+      studentCode: signForm.studentCode.trim(),
+      acceptedTerms: true,
+    })
+    signDialog.value = false
+    success.value = 'Đã ký hợp đồng online thành công.'
+    await loadContracts()
+  } catch (err) {
+    error.value = err.response?.data?.message || 'Không ký được hợp đồng online.'
+    console.error(err)
+  } finally {
+    signing.value = false
+  }
+}
+
+const canSignContract = (contract) => {
+  const status = String(contract.status || '').toLowerCase()
+  return !contract.signedAt && ['active', 'pendingsignature'].includes(status)
 }
 
 const priorityLabel = (value) => {
@@ -845,6 +947,7 @@ const priorityLabel = (value) => {
 const statusLabel = (status) => {
   const normalized = String(status || '').toLowerCase()
   if (normalized === 'pending') return 'Chờ duyệt'
+  if (normalized === 'pendingsignature') return 'Chờ ký online'
   if (normalized === 'approved') return 'Đã duyệt'
   if (normalized === 'rejected') return 'Đã từ chối'
   if (normalized === 'active') return 'Đang hiệu lực'
@@ -856,15 +959,12 @@ const statusLabel = (status) => {
 const statusClass = (status) => {
   const normalized = String(status || '').toLowerCase()
   return {
-    'status-pending': normalized === 'pending',
+    'status-pending': normalized === 'pending' || normalized === 'pendingsignature',
     'status-approved': normalized === 'approved' || normalized === 'active',
     'status-rejected': normalized === 'rejected' || normalized === 'cancelled',
     'status-expired': normalized === 'expired',
   }
 }
-
-const isSignedContract = (contract) =>
-  String(contract?.terms || '').toLowerCase().includes('ký điện tử:')
 
 const incidentStatusLabel = (status) => {
   const normalized = String(status || '').toLowerCase()
@@ -947,6 +1047,169 @@ onMounted(loadAll)
 .priority-high { background: #fff7e6; color: #d46b08; }
 .priority-urgent { background: #fff1f0; color: #cf1322; }
 .dialog-copy { margin: 0 0 14px; color: var(--muted); }
+
+.contract-sign-cell {
+  display: grid;
+  gap: 5px;
+}
+
+.contract-sign-dialog {
+  background: #ffffff;
+}
+
+.dialog-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.dialog-title strong {
+  display: block;
+  color: var(--ink);
+  font-family: var(--font-heading);
+  font-size: 21px;
+}
+
+.contract-paper {
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, #ffffff, #fbfdfb),
+    #ffffff;
+}
+
+.contract-paper-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.contract-paper-head span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.contract-paper-head h3 {
+  margin: 6px 0 0;
+  color: var(--brand-dark);
+  font-family: var(--font-heading);
+  font-size: 22px;
+  line-height: 1.25;
+}
+
+.contract-paper-head > strong {
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #ecfdf5;
+  color: var(--brand-dark);
+  white-space: nowrap;
+}
+
+.contract-paper-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.contract-paper-grid div {
+  min-height: 82px;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.contract-paper-grid span,
+.contract-paper-grid strong,
+.contract-paper-grid small {
+  display: block;
+}
+
+.contract-paper-grid span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.contract-paper-grid strong {
+  margin-top: 5px;
+  color: var(--ink);
+}
+
+.contract-paper-grid small {
+  margin-top: 4px;
+  color: var(--muted);
+}
+
+.contract-terms {
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid #d9f7be;
+  border-radius: 8px;
+  background: #f6ffed;
+}
+
+.contract-terms strong {
+  display: block;
+  color: var(--brand-dark);
+  margin-bottom: 6px;
+}
+
+.contract-terms p {
+  margin: 0;
+  color: #334155;
+  line-height: 1.65;
+}
+
+.signature-proof {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+  gap: 12px;
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  background: #f0fdf4;
+}
+
+.signature-proof .mdi {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 8px;
+  background: #dcfce7;
+  color: #15803d;
+  font-size: 24px;
+}
+
+.signature-proof strong,
+.signature-proof small {
+  display: block;
+}
+
+.signature-proof small {
+  margin-top: 4px;
+  color: var(--muted);
+  word-break: break-all;
+}
+
+.signature-form {
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfdfb;
+}
 
 .student-hero {
   display: flex;
@@ -1160,116 +1423,6 @@ td {
   color: #475569;
 }
 
-.dialog-card {
-  background: #ffffff;
-}
-
-.dialog-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  border-bottom: 1px solid var(--line);
-}
-
-.dialog-title strong {
-  display: block;
-  color: var(--ink);
-  font-family: var(--font-heading);
-  font-size: 21px;
-}
-
-.contract-paper {
-  display: grid;
-  gap: 18px;
-  padding: 22px;
-  border: 1px solid #dbe5df;
-  border-radius: 8px;
-  background: #fffdf8;
-}
-
-.contract-head {
-  display: grid;
-  gap: 6px;
-  text-align: center;
-}
-
-.contract-head span {
-  font-size: 12px;
-  font-weight: 900;
-  letter-spacing: 0.08em;
-}
-
-.contract-head strong {
-  color: var(--brand-dark);
-  font-family: var(--font-heading);
-  font-size: 23px;
-}
-
-.contract-head small {
-  color: var(--muted);
-  font-weight: 800;
-}
-
-.contract-grid,
-.signature-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.contract-grid p,
-.signature-grid div {
-  margin: 0;
-  padding: 12px;
-  border: 1px solid #e7ece8;
-  border-radius: 8px;
-  background: #ffffff;
-}
-
-.contract-grid span,
-.signature-grid span {
-  display: block;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 900;
-  text-transform: uppercase;
-}
-
-.contract-grid strong,
-.signature-grid strong {
-  display: block;
-  margin-top: 6px;
-  color: var(--ink);
-}
-
-.contract-paper h4 {
-  margin: 0 0 8px;
-}
-
-.contract-terms {
-  margin: 0;
-  white-space: pre-line;
-  line-height: 1.7;
-}
-
-.signature-grid .signed {
-  border-color: #bbf7d0;
-  background: #f0fdf4;
-}
-
-.sign-box {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
-  align-items: center;
-  margin-top: 16px;
-  padding: 14px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #fbfdfc;
-}
-
 .empty-state,
 .empty-cell {
   color: var(--muted);
@@ -1292,12 +1445,6 @@ td {
 
   .hero-stats {
     min-width: 0;
-  }
-
-  .contract-grid,
-  .signature-grid,
-  .sign-box {
-    grid-template-columns: 1fr;
   }
 }
 

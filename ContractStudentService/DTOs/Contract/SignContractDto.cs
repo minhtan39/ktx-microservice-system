@@ -2,7 +2,9 @@ namespace ContractStudentService.DTOs.Contract;
 
 public class SignContractDto
 {
-    public string SignerName { get; set; } = string.Empty;
+    public string FullName { get; set; } = string.Empty;
 
-    public string Method { get; set; } = "Online";
+    public string StudentCode { get; set; } = string.Empty;
+
+    public bool AcceptedTerms { get; set; }
 }

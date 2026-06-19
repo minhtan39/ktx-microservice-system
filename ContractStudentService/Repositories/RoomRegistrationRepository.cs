@@ -51,6 +51,8 @@ public class RoomRegistrationRepository : IRoomRegistrationRepository
 		existingRegistration.EndDate = registration.EndDate;
 		existingRegistration.Status = registration.Status;
 		existingRegistration.AssignedRoomId = registration.AssignedRoomId;
+		existingRegistration.RejectionReason = registration.RejectionReason;
+		existingRegistration.RejectedAt = registration.RejectedAt;
 
 		await _context.SaveChangesAsync();
 

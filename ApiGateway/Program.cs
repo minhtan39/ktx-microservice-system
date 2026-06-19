@@ -1,4 +1,10 @@
 using System.Net.Http.Headers;
+using System.Security.Claims;
+using System.Text;
+using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -17,6 +23,44 @@ builder.Services.AddCors(options =>
     });
 });
 
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = builder.Configuration["Jwt:Issuer"],
+            ValidAudience = builder.Configuration["Jwt:Audience"],
+            IssuerSigningKey = new SymmetricSecurityKey(
+                Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]!)),
+            ClockSkew = TimeSpan.FromMinutes(2)
+        };
+    });
+
+builder.Services.AddAuthorization();
+
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
+    {
+        var partitionKey = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+
+        return RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey,
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 120,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 20,
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst
+            });
+    });
+});
+
 builder.Services.AddHttpClient("Proxy")
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
     {
@@ -30,6 +74,9 @@ var serviceRoutes = builder.Configuration
 var app = builder.Build();
 
 app.UseCors("AllowFrontend");
+app.UseRateLimiter();
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.MapGet("/", () => Results.Ok(new
 {
@@ -55,6 +102,23 @@ app.MapMethods(
             return Results.Ok();
 
         var serviceKey = ResolveServiceKey(path);
+
+        var isPublicPath = IsPublicPath(path);
+        var isInternalServiceRequest = IsInternalServiceRequest(context, app.Configuration);
+
+        if (!isPublicPath &&
+            !isInternalServiceRequest &&
+            context.User.Identity?.IsAuthenticated != true)
+        {
+            return Results.Unauthorized();
+        }
+
+        if (!isPublicPath &&
+            !isInternalServiceRequest &&
+            !IsAuthorizedForPath(path, context.Request.Method, context.User))
+        {
+            return Results.Forbid();
+        }
 
         if (!serviceRoutes.TryGetValue(serviceKey, out var serviceBaseUrl))
         {
@@ -106,6 +170,79 @@ app.MapMethods(
 
 app.Run();
 
+static bool IsPublicPath(string path)
+{
+    var normalized = path.Trim('/').ToLowerInvariant();
+
+    return normalized is "auth/login"
+        or "auth/forgot-password"
+        or "auth/reset-password"
+        or "auth/reset-password/validate"
+        or "billing/webhooks/payment";
+}
+
+static bool IsAuthorizedForPath(
+    string path,
+    string method,
+    ClaimsPrincipal user)
+{
+    if (user.IsInRole("Admin") || user.IsInRole("Staff"))
+        return true;
+
+    if (!user.IsInRole("Student"))
+        return false;
+
+    var normalized = path.Trim('/').ToLowerInvariant();
+    var isGet = HttpMethods.IsGet(method);
+    var isPost = HttpMethods.IsPost(method);
+
+    if (normalized == "auth/change-password")
+        return isPost;
+
+    if (normalized == "students" || normalized.StartsWith("students/"))
+        return isGet;
+
+    if (normalized == "registrations")
+        return isGet || isPost;
+
+    if (normalized.StartsWith("registrations/"))
+        return isGet;
+
+    if (normalized.StartsWith("contracts/student/") ||
+        normalized.StartsWith("contracts/"))
+    {
+        if (isPost && normalized.EndsWith("/sign"))
+            return true;
+
+        return isGet;
+    }
+
+    if (normalized == "billing/monthly-invoices" ||
+        normalized.StartsWith("billing/monthly-invoices/") ||
+        normalized == "billing/payment-history")
+    {
+        return isGet;
+    }
+
+    if (normalized == "incidents")
+        return isGet || isPost;
+
+    return normalized.StartsWith("incidents/") &&
+        isPost &&
+        (normalized.EndsWith("/confirm") || normalized.EndsWith("/reopen"));
+}
+
+static bool IsInternalServiceRequest(HttpContext context, IConfiguration configuration)
+{
+    var expectedKey = configuration["InternalService:ApiKey"];
+
+    if (string.IsNullOrWhiteSpace(expectedKey))
+        return false;
+
+    return context.Request.Headers.TryGetValue("X-Internal-Service-Key", out var providedKey) &&
+        string.Equals(providedKey.ToString(), expectedKey, StringComparison.Ordinal);
+}
+
 static string ResolveServiceKey(string path)
 {
     var firstSegment = path.Split('/', StringSplitOptions.RemoveEmptyEntries)
@@ -141,8 +278,11 @@ static async Task<HttpRequestMessage> CreateProxyRequestAsync(
 
     foreach (var header in context.Request.Headers)
     {
-        if (header.Key.Equals("Host", StringComparison.OrdinalIgnoreCase))
+        if (header.Key.Equals("Host", StringComparison.OrdinalIgnoreCase) ||
+            header.Key.Equals("X-Internal-Service-Key", StringComparison.OrdinalIgnoreCase))
+        {
             continue;
+        }
 
         if (!requestMessage.Headers.TryAddWithoutValidation(header.Key, header.Value.ToArray()))
         {

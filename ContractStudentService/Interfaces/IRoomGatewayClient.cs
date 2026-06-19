@@ -15,4 +15,9 @@ public interface IRoomGatewayClient
         long studentId,
         long registrationId,
         string contractCode);
+
+    Task ReleaseRoomAsync(
+        long roomId,
+        long studentId,
+        string contractCode);
 }

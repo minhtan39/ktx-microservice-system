@@ -23,5 +23,5 @@ public interface IContractService
 
     Task<Contract?> RenewAsync(long id, RenewContractDto dto);
 
-    Task<Contract?> SignAsync(long id, SignContractDto dto);
+    Task<Contract?> SignAsync(long id, SignContractDto dto, string ipAddress);
 }
