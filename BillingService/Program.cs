@@ -137,6 +137,90 @@ app.MapGet("/api/billing/monthly-invoices", (
     return Results.Ok(invoices);
 });
 
+app.MapGet("/api/billing/statistics/student/{studentId:long}", (
+    long studentId,
+    int? months,
+    BillingStore store) =>
+{
+    if (studentId <= 0)
+        return Results.BadRequest(new { message = "Mã sinh viên không hợp lệ." });
+
+    var monthCount = Math.Clamp(months ?? 6, 1, 24);
+    var currentMonth = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1);
+    var firstMonth = currentMonth.AddMonths(1 - monthCount);
+    var periods = Enumerable.Range(0, monthCount)
+        .Select(offset => firstMonth.AddMonths(offset).ToString("yyyy-MM", CultureInfo.InvariantCulture))
+        .ToList();
+
+    var statistics = store.Read(data =>
+    {
+        var studentInvoices = data.MonthlyInvoices
+            .Where(invoice => invoice.StudentId == studentId && periods.Contains(invoice.BillingPeriod))
+            .ToList();
+
+        var monthlyBreakdown = periods.Select(period =>
+        {
+            var periodInvoices = studentInvoices
+                .Where(invoice => invoice.BillingPeriod.Equals(period, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            var roomFee = periodInvoices.Sum(invoice => invoice.RoomFee);
+            var electricityAmount = periodInvoices.Sum(invoice => invoice.ElectricityAmount);
+            var waterAmount = periodInvoices.Sum(invoice => invoice.WaterAmount);
+            var paidAmount = periodInvoices
+                .Where(invoice => invoice.Status.Equals("Paid", StringComparison.OrdinalIgnoreCase))
+                .Sum(invoice => invoice.TotalAmount);
+            var totalAmount = roomFee + electricityAmount + waterAmount;
+
+            return new
+            {
+                period,
+                roomFee,
+                electricityAmount,
+                waterAmount,
+                totalAmount,
+                paidAmount,
+                unpaidAmount = totalAmount - paidAmount
+            };
+        }).ToList();
+
+        var current = monthlyBreakdown[^1];
+        var previous = monthlyBreakdown.Count > 1 ? monthlyBreakdown[^2] : null;
+        decimal? changePercent = previous == null || previous.totalAmount == 0
+            ? null
+            : Math.Round(
+                (current.totalAmount - previous.totalAmount) / previous.totalAmount * 100,
+                1,
+                MidpointRounding.AwayFromZero);
+        var highestMonth = monthlyBreakdown
+            .OrderByDescending(item => item.totalAmount)
+            .First();
+
+        return new
+        {
+            studentId,
+            months = monthCount,
+            fromPeriod = periods[0],
+            toPeriod = periods[^1],
+            summary = new
+            {
+                currentPeriod = current.period,
+                currentTotal = current.totalAmount,
+                currentPaid = current.paidAmount,
+                currentUnpaid = current.unpaidAmount,
+                previousTotal = previous?.totalAmount ?? 0,
+                changePercent,
+                rangeTotal = monthlyBreakdown.Sum(item => item.totalAmount),
+                averageMonthly = Math.Round(monthlyBreakdown.Average(item => item.totalAmount), 0),
+                highestPeriod = highestMonth.totalAmount > 0 ? highestMonth.period : null,
+                highestTotal = highestMonth.totalAmount
+            },
+            monthlyBreakdown
+        };
+    });
+
+    return Results.Ok(statistics);
+});
+
 app.MapGet("/api/billing/monthly-invoices/{id:long}", (long id, BillingStore store) =>
 {
     var invoice = store.Read(data => data.MonthlyInvoices.FirstOrDefault(item => item.Id == id));

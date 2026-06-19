@@ -6,7 +6,7 @@
         <h2>Thanh toán nội trú</h2>
         <p>Xem chi tiết tiền phòng, điện, nước và quét QR để thanh toán.</p>
       </div>
-      <v-btn prepend-icon="mdi-refresh" variant="outlined" :loading="loading" @click="loadPayments">Làm mới</v-btn>
+      <v-btn prepend-icon="mdi-refresh" variant="outlined" :loading="loading" @click="loadPayments(true)">Làm mới</v-btn>
     </div>
 
     <v-alert v-if="error" type="error" variant="tonal">{{ error }}</v-alert>
@@ -85,6 +85,12 @@
         </div>
       </div>
     </section>
+
+    <StudentExpenseAnalytics
+      :student-id="studentId"
+      :refresh-key="analyticsRefreshKey"
+      @period-selected="selectPeriodInvoice"
+    />
 
     <div class="payment-layout">
       <section class="invoice-list">
@@ -175,6 +181,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import api from '../../../services/api'
+import StudentExpenseAnalytics from '../components/StudentExpenseAnalytics.vue'
 
 const loading = ref(false)
 const error = ref('')
@@ -185,6 +192,7 @@ const walletSaving = ref(false)
 const walletQrLoading = ref(false)
 const topUpAmount = ref(500000)
 const selectedInvoice = ref(null)
+const analyticsRefreshKey = ref(0)
 const copied = ref(false)
 const copyMessage = ref('Đã sao chép nội dung chuyển khoản.')
 const studentId = Number(localStorage.getItem('student_id') || 0)
@@ -220,7 +228,7 @@ const loadWallet = async () => {
   walletInfo.value = response.data
 }
 
-const loadPayments = async () => {
+const loadPayments = async (refreshAnalytics = false) => {
   loading.value = true
   error.value = ''
   try {
@@ -239,10 +247,20 @@ const loadPayments = async () => {
     } else {
       selectedInvoice.value = invoices.value.find((item) => item.id === selectedInvoice.value.id)
     }
+    if (refreshAnalytics) analyticsRefreshKey.value += 1
   } catch (err) {
     error.value = err.response?.data?.detail || err.message || 'Không tải được thông tin thanh toán.'
   } finally {
     loading.value = false
+  }
+}
+
+const selectPeriodInvoice = (period) => {
+  const periodInvoices = invoices.value.filter((item) => item.billingPeriod === period)
+  selectedInvoice.value = periodInvoices.find((item) => item.status !== 'Paid') || periodInvoices[0] || null
+
+  if (selectedInvoice.value) {
+    requestAnimationFrame(() => document.querySelector('.payment-layout')?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
   }
 }
 
@@ -278,7 +296,7 @@ const toggleAutoPay = async (enabled) => {
   error.value = ''
   try {
     await api.put(`/billing/wallets/${studentId}/auto-pay`, { enabled })
-    await loadPayments()
+    await loadPayments(true)
   } catch (err) {
     error.value = err.response?.data?.detail || err.response?.data?.message || 'Không cập nhật được tự động thanh toán.'
   } finally {
@@ -286,7 +304,7 @@ const toggleAutoPay = async (enabled) => {
   }
 }
 
-onMounted(loadPayments)
+onMounted(() => loadPayments(false))
 </script>
 
 <style scoped>
