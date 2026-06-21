@@ -28,6 +28,10 @@ public interface IContractService
 
     Task<Contract?> UploadTemplateAsync(long id, IFormFile file);
 
+    Task<Contract?> GenerateTemplateAsync(
+        long id,
+        GenerateContractTemplateDto dto);
+
     Task<ContractFileResultDto?> GetTemplateFileAsync(long id);
 
     Task<ContractFileResultDto?> GetSignedFileAsync(long id);

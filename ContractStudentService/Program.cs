@@ -16,8 +16,11 @@ using System.Text;
 using System.Text.Encodings.Web;
 using FluentValidation;
 using Microsoft.Extensions.Options;
+using PdfSharpCore.Fonts;
 
 var builder = WebApplication.CreateBuilder(args);
+
+GlobalFontSettings.FontResolver = new ContractFontResolver(builder.Environment);
 
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
@@ -120,6 +123,7 @@ builder.Services.AddScoped<IStudentService, StudentService>();
 builder.Services.AddScoped<IContractRepository, ContractRepository>();
 builder.Services.AddScoped<IContractService, ContractService>();
 builder.Services.AddScoped<ContractEmailSender>();
+builder.Services.AddSingleton<ContractPdfGenerator>();
 
 builder.Services.AddScoped<IRoomRegistrationRepository,
     RoomRegistrationRepository>();

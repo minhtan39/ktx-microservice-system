@@ -18,19 +18,22 @@ public class ContractService : IContractService
     private readonly IRoomGatewayClient _roomGatewayClient;
     private readonly IWebHostEnvironment _environment;
     private readonly ContractEmailSender _emailSender;
+    private readonly ContractPdfGenerator _pdfGenerator;
 
     public ContractService(
         IContractRepository contractRepository,
         IStudentRepository studentRepository,
         IRoomGatewayClient roomGatewayClient,
         IWebHostEnvironment environment,
-        ContractEmailSender emailSender)
+        ContractEmailSender emailSender,
+        ContractPdfGenerator pdfGenerator)
     {
         _contractRepository = contractRepository;
         _studentRepository = studentRepository;
         _roomGatewayClient = roomGatewayClient;
         _environment = environment;
         _emailSender = emailSender;
+        _pdfGenerator = pdfGenerator;
     }
 
     public async Task<IEnumerable<Contract>> GetAllAsync()
@@ -316,6 +319,51 @@ public class ContractService : IContractService
         return updatedContract;
     }
 
+    public async Task<Contract?> GenerateTemplateAsync(
+        long id,
+        GenerateContractTemplateDto dto)
+    {
+        var contract = await _contractRepository.GetByIdAsync(id);
+
+        if (contract == null)
+            return null;
+
+        if (contract.SignedAt.HasValue)
+            throw new InvalidOperationException("Hợp đồng đã được sinh viên ký. Không thể phát hành lại file mẫu.");
+
+        ValidateTemplateIssuer(dto);
+
+        var student = await _studentRepository.GetByIdAsync(contract.StudentId)
+            ?? throw new InvalidOperationException("Không tìm thấy hồ sơ sinh viên của hợp đồng.");
+        var room = await _roomGatewayClient.GetRoomByIdAsync(contract.RoomId);
+        var pdfBytes = _pdfGenerator.Generate(contract, student, room, dto);
+        var templateDirectory = EnsureContractDirectory("templates");
+        var safeContractCode = SafeFilePart(contract.ContractCode);
+        var storedFileName = $"{contract.Id}-{safeContractCode}-standard-{DateTime.UtcNow:yyyyMMddHHmmss}.pdf";
+        var fullPath = Path.Combine(templateDirectory, storedFileName);
+
+        await File.WriteAllBytesAsync(fullPath, pdfBytes);
+
+        contract.TemplateFileName = $"{safeContractCode}-hop-dong-noi-tru.pdf";
+        contract.TemplateFilePath = ToRelativeContractPath(fullPath);
+        contract.TemplateUploadedAt = DateTime.UtcNow;
+        contract.SignedFileName = string.Empty;
+        contract.SignedFilePath = string.Empty;
+        contract.SignedFileCreatedAt = null;
+
+        var updatedContract = await _contractRepository.UpdateAsync(contract);
+
+        if (updatedContract != null)
+        {
+            await _emailSender.SendTemplateReadyAsync(
+                student,
+                updatedContract,
+                fullPath);
+        }
+
+        return updatedContract;
+    }
+
     public async Task<ContractFileResultDto?> GetTemplateFileAsync(long id)
     {
         var contract = await _contractRepository.GetByIdAsync(id);
@@ -412,13 +460,19 @@ public class ContractService : IContractService
             boxWidth,
             boxHeight);
 
-        var titleFont = new XFont("Arial", 9, XFontStyle.Bold);
-        var textFont = new XFont("Arial", 8, XFontStyle.Regular);
+        var titleFont = new XFont(
+            ContractFontResolver.FamilyName,
+            9,
+            XFontStyle.Bold);
+        var textFont = new XFont(
+            ContractFontResolver.FamilyName,
+            8,
+            XFontStyle.Regular);
         var mutedBrush = new XSolidBrush(XColor.FromArgb(68, 80, 92));
         var strongBrush = new XSolidBrush(XColor.FromArgb(13, 93, 58));
 
         graphics.DrawString(
-            "CHU KY SINH VIEN ONLINE",
+            "CHỮ KÝ SINH VIÊN TRỰC TUYẾN",
             titleFont,
             strongBrush,
             new XRect(x + 10, y + 8, boxWidth - 20, 14),
@@ -435,7 +489,7 @@ public class ContractService : IContractService
         }
 
         graphics.DrawString(
-            $"Nguoi ky: {student.FullName}",
+            $"Người ký: {student.FullName}",
             textFont,
             mutedBrush,
             new XRect(x + 10, y + 74, boxWidth - 20, 11),
@@ -447,7 +501,7 @@ public class ContractService : IContractService
             new XRect(x + 10, y + 87, boxWidth - 20, 11),
             XStringFormats.TopLeft);
         graphics.DrawString(
-            $"Thoi gian: {signedAt:dd/MM/yyyy HH:mm} UTC",
+            $"Thời gian: {signedAt:dd/MM/yyyy HH:mm} UTC",
             textFont,
             mutedBrush,
             new XRect(x + 10, y + 100, boxWidth - 20, 11),
@@ -536,5 +590,29 @@ public class ContractService : IContractService
         return string.IsNullOrWhiteSpace(cleaned)
             ? "contract"
             : cleaned;
+    }
+
+    private static void ValidateTemplateIssuer(GenerateContractTemplateDto dto)
+    {
+        var missingFields = new List<string>();
+
+        if (string.IsNullOrWhiteSpace(dto.ParentOrganization))
+            missingFields.Add("cơ quan chủ quản");
+        if (string.IsNullOrWhiteSpace(dto.DormitoryName))
+            missingFields.Add("tên đơn vị quản lý ký túc xá");
+        if (string.IsNullOrWhiteSpace(dto.RepresentativeName))
+            missingFields.Add("họ tên người đại diện Bên A");
+        if (string.IsNullOrWhiteSpace(dto.RepresentativeTitle))
+            missingFields.Add("chức vụ người đại diện");
+        if (string.IsNullOrWhiteSpace(dto.Address))
+            missingFields.Add("địa chỉ Bên A");
+        if (string.IsNullOrWhiteSpace(dto.PlaceOfSigning))
+            missingFields.Add("địa danh ký hợp đồng");
+
+        if (missingFields.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"Vui lòng nhập đầy đủ: {string.Join(", ", missingFields)}.");
+        }
     }
 }

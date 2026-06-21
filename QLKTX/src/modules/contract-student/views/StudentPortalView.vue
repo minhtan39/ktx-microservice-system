@@ -408,7 +408,7 @@
                       {{ contract.signedAt ? formatDateTime(contract.signedAt) : 'Cần ký để xác nhận điều khoản' }}
                     </small>
                     <small class="table-note">
-                      PDF: {{ contract.templateFilePath ? 'Đã có mẫu hợp đồng' : 'Chờ admin tải mẫu PDF' }}
+                      PDF: {{ contract.templateFilePath ? 'Đã có hợp đồng để ký' : 'Chờ admin phát hành PDF' }}
                     </small>
                     <v-btn
                       v-if="canSignContract(contract)"
@@ -470,7 +470,7 @@
               variant="tonal"
               class="mb-4"
             >
-              Hợp đồng này chưa có file PDF mẫu do admin/nhân viên tải lên. Bạn chỉ có thể ký sau khi nhà trường phát hành file hợp đồng chuẩn.
+              Hợp đồng này chưa có file PDF do admin/nhân viên phát hành. Bạn chỉ có thể ký sau khi nhà trường tạo hoặc tải lên hợp đồng chuẩn.
             </v-alert>
 
             <div class="contract-file-actions">
@@ -996,7 +996,7 @@ const submitSignContract = async () => {
   }
 
   if (!signTarget.value.templateFilePath) {
-    error.value = 'Hợp đồng chưa có file PDF mẫu. Vui lòng chờ admin/nhân viên tải mẫu hợp đồng chuẩn.'
+    error.value = 'Hợp đồng chưa có file PDF. Vui lòng chờ admin/nhân viên phát hành hợp đồng chuẩn.'
     return
   }
 

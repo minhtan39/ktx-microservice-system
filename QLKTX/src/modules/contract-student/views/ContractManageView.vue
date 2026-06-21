@@ -188,11 +188,22 @@
                 Gia hạn {{ contract.renewalCount }} lần
               </span>
               <span class="cell-subtitle">
-                PDF: {{ contract.templateFilePath ? 'Đã có mẫu' : 'Chưa tải mẫu' }}
+                PDF: {{ contract.templateFilePath ? 'Đã phát hành' : 'Chưa phát hành' }}
               </span>
             </td>
             <td>
               <div class="action-row">
+                <v-btn
+                  color="success"
+                  size="small"
+                  variant="tonal"
+                  prepend-icon="mdi-file-document-plus-outline"
+                  :loading="generatingTemplateId === contract.id"
+                  :disabled="Boolean(contract.signedAt)"
+                  @click="openGenerateTemplateDialog(contract)"
+                >
+                  Tạo PDF chuẩn
+                </v-btn>
                 <v-btn
                   color="primary"
                   size="small"
@@ -202,7 +213,7 @@
                   :disabled="Boolean(contract.signedAt)"
                   @click="triggerTemplateUpload(contract)"
                 >
-                  Tải mẫu PDF
+                  Tải PDF khác
                 </v-btn>
                 <v-btn
                   color="primary"
@@ -275,6 +286,86 @@
         </div>
       </div>
     </v-card>
+
+    <v-dialog v-model="generateTemplateDialog" max-width="900">
+      <v-card class="generate-template-dialog">
+        <v-card-title class="dialog-title">
+          <div>
+            <span class="page-kicker">Standard Contract PDF</span>
+            <strong>Phát hành hợp đồng nội trú chuẩn</strong>
+          </div>
+          <v-btn icon="mdi-close" variant="text" @click="generateTemplateDialog = false" />
+        </v-card-title>
+        <v-card-text v-if="generateTemplateTarget">
+          <v-alert type="info" variant="tonal" class="mb-4">
+            PDF được trình bày theo thể thức Nghị định 30/2020/NĐ-CP. Hãy nhập đúng thông tin pháp lý của Bên A trước khi phát hành cho sinh viên ký.
+          </v-alert>
+
+          <div class="renew-summary mb-4">
+            <div>
+              <span>Mã hợp đồng</span>
+              <strong>{{ generateTemplateTarget.contractCode }}</strong>
+            </div>
+            <div>
+              <span>Sinh viên</span>
+              <strong>{{ studentName(generateTemplateTarget.studentId) }}</strong>
+            </div>
+            <div>
+              <span>Phòng</span>
+              <strong>{{ roomLabel(generateTemplateTarget.roomId) }}</strong>
+            </div>
+          </div>
+
+          <v-row dense>
+            <v-col cols="12" md="6">
+              <v-text-field v-model="issuerForm.parentOrganization" label="Cơ quan chủ quản *" variant="outlined" density="comfortable" />
+            </v-col>
+            <v-col cols="12" md="6">
+              <v-text-field v-model="issuerForm.dormitoryName" label="Tên đơn vị quản lý KTX *" variant="outlined" density="comfortable" />
+            </v-col>
+            <v-col cols="12" md="6">
+              <v-text-field v-model="issuerForm.representativeName" label="Người đại diện Bên A *" variant="outlined" density="comfortable" />
+            </v-col>
+            <v-col cols="12" md="6">
+              <v-text-field v-model="issuerForm.representativeTitle" label="Chức vụ người đại diện *" variant="outlined" density="comfortable" />
+            </v-col>
+            <v-col cols="12">
+              <v-text-field v-model="issuerForm.address" label="Địa chỉ Bên A *" variant="outlined" density="comfortable" />
+            </v-col>
+            <v-col cols="12" md="6">
+              <v-text-field v-model="issuerForm.phone" label="Số điện thoại" variant="outlined" density="comfortable" />
+            </v-col>
+            <v-col cols="12" md="6">
+              <v-text-field v-model="issuerForm.email" type="email" label="Email đơn vị" variant="outlined" density="comfortable" />
+            </v-col>
+            <v-col cols="12" md="6">
+              <v-text-field v-model="issuerForm.bankAccount" label="Số tài khoản thu" variant="outlined" density="comfortable" />
+            </v-col>
+            <v-col cols="12" md="6">
+              <v-text-field v-model="issuerForm.bankName" label="Ngân hàng" variant="outlined" density="comfortable" />
+            </v-col>
+            <v-col cols="12" md="6">
+              <v-text-field v-model="issuerForm.placeOfSigning" label="Địa danh ký hợp đồng *" variant="outlined" density="comfortable" />
+            </v-col>
+            <v-col cols="12" md="6">
+              <v-text-field v-model="issuerForm.issueDate" type="date" label="Ngày phát hành" variant="outlined" density="comfortable" />
+            </v-col>
+          </v-row>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" @click="generateTemplateDialog = false">Hủy</v-btn>
+          <v-btn
+            color="success"
+            prepend-icon="mdi-file-pdf-box"
+            :loading="generatingTemplateId === generateTemplateTarget?.id"
+            @click="submitGenerateTemplate"
+          >
+            Tạo và phát hành PDF
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
 
     <v-dialog v-model="renewDialog" max-width="560">
       <v-card class="renew-dialog">
@@ -358,6 +449,22 @@ const renewing = ref(false)
 const templateFileInput = ref(null)
 const templateUploadTarget = ref(null)
 const uploadingTemplateId = ref(null)
+const generateTemplateDialog = ref(false)
+const generateTemplateTarget = ref(null)
+const generatingTemplateId = ref(null)
+const issuerForm = ref({
+  parentOrganization: '',
+  dormitoryName: 'BAN QUẢN LÝ KÝ TÚC XÁ',
+  representativeName: '',
+  representativeTitle: 'Trưởng Ban Quản lý Ký túc xá',
+  address: '',
+  phone: '',
+  email: '',
+  bankAccount: '',
+  bankName: '',
+  placeOfSigning: '',
+  issueDate: new Date().toISOString().slice(0, 10),
+})
 const renewForm = ref({
   newEndDate: '',
   note: '',
@@ -511,6 +618,68 @@ const submitRenewContract = async () => {
     console.error(err)
   } finally {
     renewing.value = false
+  }
+}
+
+const openGenerateTemplateDialog = (contract) => {
+  generateTemplateTarget.value = contract
+
+  try {
+    const savedIssuer = JSON.parse(localStorage.getItem('contract_issuer_profile') || '{}')
+    issuerForm.value = {
+      ...issuerForm.value,
+      ...savedIssuer,
+      issueDate: new Date().toISOString().slice(0, 10),
+    }
+  } catch {
+    issuerForm.value.issueDate = new Date().toISOString().slice(0, 10)
+  }
+
+  generateTemplateDialog.value = true
+}
+
+const submitGenerateTemplate = async () => {
+  const contract = generateTemplateTarget.value
+  if (!contract) return
+
+  const requiredFields = [
+    ['parentOrganization', 'cơ quan chủ quản'],
+    ['dormitoryName', 'tên đơn vị quản lý KTX'],
+    ['representativeName', 'người đại diện Bên A'],
+    ['representativeTitle', 'chức vụ người đại diện'],
+    ['address', 'địa chỉ Bên A'],
+    ['placeOfSigning', 'địa danh ký hợp đồng'],
+  ]
+  const missing = requiredFields
+    .filter(([key]) => !String(issuerForm.value[key] || '').trim())
+    .map(([, label]) => label)
+
+  if (missing.length) {
+    showMessage(`Vui lòng nhập đầy đủ: ${missing.join(', ')}.`, 'error')
+    return
+  }
+
+  try {
+    generatingTemplateId.value = contract.id
+    const profile = { ...issuerForm.value }
+    delete profile.issueDate
+    localStorage.setItem('contract_issuer_profile', JSON.stringify(profile))
+
+    await api.post(`/contracts/${contract.id}/generate-template`, {
+      ...issuerForm.value,
+      issueDate: issuerForm.value.issueDate
+        ? new Date(`${issuerForm.value.issueDate}T00:00:00`).toISOString()
+        : null,
+    })
+
+    generateTemplateDialog.value = false
+    showMessage(`Đã tạo PDF chuẩn và phát hành hợp đồng ${contract.contractCode} cho sinh viên.`)
+    await loadContracts()
+  } catch (err) {
+    showMessage(err.response?.data?.message || 'Không tạo được PDF hợp đồng chuẩn.', 'error')
+    console.error(err)
+  } finally {
+    generatingTemplateId.value = null
   }
 }
 

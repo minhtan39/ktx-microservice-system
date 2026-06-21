@@ -20,4 +20,6 @@ public interface IRoomGatewayClient
         long roomId,
         long studentId,
         string contractCode);
+
+    Task<AvailableRoomDto?> GetRoomByIdAsync(long roomId);
 }

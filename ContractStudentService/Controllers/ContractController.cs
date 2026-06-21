@@ -148,6 +148,20 @@ public class ContractController : ControllerBase
         return Ok(contract);
     }
 
+    [Authorize(Roles = "Admin,Staff")]
+    [HttpPost("{id}/generate-template")]
+    public async Task<IActionResult> GenerateTemplate(
+        long id,
+        GenerateContractTemplateDto dto)
+    {
+        var contract = await _contractService.GenerateTemplateAsync(id, dto);
+
+        if (contract == null)
+            return NotFound();
+
+        return Ok(contract);
+    }
+
     [HttpGet("{id}/template-file")]
     public async Task<IActionResult> DownloadTemplate(long id)
     {

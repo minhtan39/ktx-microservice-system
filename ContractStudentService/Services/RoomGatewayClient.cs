@@ -106,6 +106,33 @@ public class RoomGatewayClient : IRoomGatewayClient
         throw new Exception("RoomService tra giuong khi ket thuc hop dong that bai.");
     }
 
+    public async Task<AvailableRoomDto?> GetRoomByIdAsync(long roomId)
+    {
+        try
+        {
+            var response = await _httpClient.GetAsync($"/api/rooms/{roomId}");
+
+            if (response.IsSuccessStatusCode)
+                return await ReadRoomResponseAsync(response);
+
+            var listResponse = await _httpClient.GetAsync("/api/rooms");
+
+            if (!listResponse.IsSuccessStatusCode)
+                return null;
+
+            var rooms = await ReadRoomListAsync(listResponse);
+            return rooms.FirstOrDefault(room => room.RoomId == roomId);
+        }
+        catch (HttpRequestException)
+        {
+            return null;
+        }
+        catch (TaskCanceledException)
+        {
+            return null;
+        }
+    }
+
     private async Task<AvailableRoomDto?> FindAvailableRoomFromRoomListAsync(
         RoomRegistration registration,
         Student student,
