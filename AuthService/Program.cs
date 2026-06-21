@@ -53,7 +53,7 @@ if (users.IsEmpty)
 
     users[adminUsername] = new(
         adminUsername,
-        adminPassword,
+        PasswordHasher.Hash(adminPassword),
         "Admin",
         adminFullName);
 
@@ -89,7 +89,7 @@ app.MapPost("/api/auth/login", async (
             accountStore.Upsert(user);
     }
 
-    if (user == null || user.Password != password)
+    if (user == null || !PasswordHasher.Verify(password, user.Password))
     {
         return Results.Unauthorized();
     }
@@ -127,7 +127,7 @@ app.MapPost("/api/auth/change-password", (
     var currentPassword = request.CurrentPassword.Trim();
     var newPassword = request.NewPassword.Trim();
 
-    if (!user.Password.Equals(currentPassword, StringComparison.Ordinal))
+    if (!PasswordHasher.Verify(currentPassword, user.Password))
     {
         return Results.BadRequest(new { message = "Mật khẩu hiện tại không đúng." });
     }
@@ -140,7 +140,7 @@ app.MapPost("/api/auth/change-password", (
         });
     }
 
-    if (user.Password.Equals(newPassword, StringComparison.Ordinal))
+    if (PasswordHasher.Verify(newPassword, user.Password))
     {
         return Results.BadRequest(new
         {
@@ -148,7 +148,12 @@ app.MapPost("/api/auth/change-password", (
         });
     }
 
-    accountStore.Upsert(user with { Password = newPassword });
+    accountStore.Upsert(user with
+    {
+        Password = PasswordHasher.Hash(newPassword),
+        PasswordChangedAt = DateTimeOffset.UtcNow,
+        MustChangePassword = false
+    });
     passwordResetTokens.InvalidateForUsername(user.Username);
 
     return Results.Ok(new { message = "Đổi mật khẩu thành công." });
@@ -267,7 +272,12 @@ app.MapPost("/api/auth/reset-password", (
         });
     }
 
-    accountStore.Upsert(user with { Password = newPassword });
+    accountStore.Upsert(user with
+    {
+        Password = PasswordHasher.Hash(newPassword),
+        PasswordChangedAt = DateTimeOffset.UtcNow,
+        MustChangePassword = false
+    });
 
     return Results.Ok(new { message = "Đặt lại mật khẩu thành công." });
 });
@@ -319,11 +329,14 @@ app.MapPost("/api/auth/student-accounts", (
 
     var user = new DemoUser(
         studentCode,
-        studentCode,
+        PasswordHasher.Hash(studentCode),
         "Student",
         request.FullName.Trim(),
         request.StudentId,
-        studentCode);
+        studentCode,
+        AccountStatus: "Active",
+        PasswordChangedAt: null,
+        MustChangePassword: true);
 
     accountStore.Upsert(user);
 
@@ -403,7 +416,7 @@ app.MapPost("/api/auth/accounts", (
 
     var staff = new DemoUser(
         username,
-        password,
+        PasswordHasher.Hash(password),
         "Staff",
         create.FullName.Trim(),
         EmployeeCode: employeeCode,
@@ -463,7 +476,7 @@ app.MapPut("/api/auth/accounts/{username}", (
 
     var nextPassword = string.IsNullOrWhiteSpace(update.Password)
         ? current.Password
-        : update.Password.Trim();
+        : PasswordHasher.Hash(update.Password.Trim());
 
     var nextFullName = string.IsNullOrWhiteSpace(update.FullName)
         ? current.FullName
@@ -875,11 +888,14 @@ static async Task SynchronizeStudentAccountsAsync(
 
             missingAccounts.Add(new DemoUser(
                 studentCode,
-                studentCode,
+                PasswordHasher.Hash(studentCode),
                 "Student",
                 string.IsNullOrWhiteSpace(fullName) ? studentCode : fullName,
                 GetInt64(student, "id"),
-                studentCode));
+                studentCode,
+                AccountStatus: "Active",
+                PasswordChangedAt: null,
+                MustChangePassword: true));
         }
 
         accountStore.AddMissingStudents(missingAccounts);
@@ -930,11 +946,14 @@ static async Task<DemoUser?> TryResolveStudentAccountAsync(
 
             return new DemoUser(
                 code,
-                code,
+                PasswordHasher.Hash(code),
                 "Student",
                 string.IsNullOrWhiteSpace(fullName) ? code : fullName,
                 id,
-                code);
+                code,
+                AccountStatus: "Active",
+                PasswordChangedAt: null,
+                MustChangePassword: true);
         }
     }
     catch
@@ -1084,6 +1103,11 @@ public sealed record DemoUser(
     string? JobTitle = null,
     string? AssignedArea = null,
     string AccountStatus = "Active",
-    string[]? Permissions = null);
+    string[]? Permissions = null,
+    DateTimeOffset? PasswordChangedAt = null,
+    DateTimeOffset? LastLoginAt = null,
+    int FailedLoginCount = 0,
+    DateTimeOffset? LockoutUntil = null,
+    bool MustChangePassword = false);
 
 public sealed record StudentContact(string Email, string FullName);

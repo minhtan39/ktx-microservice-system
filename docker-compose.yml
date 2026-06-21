@@ -97,6 +97,16 @@ services:
       Jwt__Issuer: "${JWT_ISSUER:-SmartDormitory}"
       Jwt__Audience: "${JWT_AUDIENCE:-SmartDormitoryUsers}"
       InternalService__ApiKey: "${INTERNAL_SERVICE_KEY:-CHANGE_THIS_INTERNAL_SERVICE_KEY}"
+      Frontend__BaseUrl: "${FRONTEND_BASE_URL:-http://103.188.242.37}"
+      Email__SmtpHost: "smtp.gmail.com"
+      Email__SmtpPort: "587"
+      Email__EnableSsl: "true"
+      Email__Username: "${GMAIL_USERNAME:-}"
+      Email__Password: "${GMAIL_APP_PASSWORD:-}"
+      Email__FromEmail: "${GMAIL_USERNAME:-}"
+      Email__FromName: "DormManager Contract"
+    volumes:
+      - contract-files:/app/Data/contract-files
 
   api-gateway:
     build:
@@ -138,3 +148,4 @@ volumes:
   auth-data:
   billing-data:
   room-data:
+  contract-files:

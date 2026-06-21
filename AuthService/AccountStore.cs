@@ -28,7 +28,7 @@ public sealed class AccountStore
 
         foreach (var user in loadResult.Accounts)
         {
-            var passwordHash = user.PasswordHash;
+            var passwordHash = user.Password;
 
             if (!PasswordHasher.IsHash(passwordHash) && !string.IsNullOrWhiteSpace(passwordHash))
             {
@@ -38,7 +38,7 @@ public sealed class AccountStore
 
             var normalized = user with
             {
-                PasswordHash = passwordHash,
+                Password = passwordHash,
                 AccountStatus = string.IsNullOrWhiteSpace(user.AccountStatus)
                     ? "Active"
                     : user.AccountStatus,

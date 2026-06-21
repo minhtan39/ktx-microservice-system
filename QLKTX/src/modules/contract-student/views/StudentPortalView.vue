@@ -407,6 +407,9 @@
                     <small class="table-note">
                       {{ contract.signedAt ? formatDateTime(contract.signedAt) : 'Cần ký để xác nhận điều khoản' }}
                     </small>
+                    <small class="table-note">
+                      PDF: {{ contract.templateFilePath ? 'Đã có mẫu hợp đồng' : 'Chờ admin tải mẫu PDF' }}
+                    </small>
                     <v-btn
                       v-if="canSignContract(contract)"
                       size="small"
@@ -424,6 +427,24 @@
                       @click="openSignDialog(contract)"
                     >
                       Xem hợp đồng
+                    </v-btn>
+                    <v-btn
+                      v-if="contract.templateFilePath"
+                      size="small"
+                      variant="text"
+                      color="primary"
+                      @click="openContractPdf(contract, 'template')"
+                    >
+                      Mở PDF mẫu
+                    </v-btn>
+                    <v-btn
+                      v-if="contract.signedFilePath"
+                      size="small"
+                      variant="text"
+                      color="success"
+                      @click="openContractPdf(contract, 'signed')"
+                    >
+                      Mở bản đã ký
                     </v-btn>
                   </div>
                 </td>
@@ -443,6 +464,36 @@
             <v-btn icon="mdi-close" variant="text" @click="signDialog = false" />
           </v-card-title>
           <v-card-text>
+            <v-alert
+              v-if="!signTarget.templateFilePath"
+              type="warning"
+              variant="tonal"
+              class="mb-4"
+            >
+              Hợp đồng này chưa có file PDF mẫu do admin/nhân viên tải lên. Bạn chỉ có thể ký sau khi nhà trường phát hành file hợp đồng chuẩn.
+            </v-alert>
+
+            <div class="contract-file-actions">
+              <v-btn
+                color="primary"
+                variant="tonal"
+                prepend-icon="mdi-file-pdf-box"
+                :disabled="!signTarget.templateFilePath"
+                @click="openContractPdf(signTarget, 'template')"
+              >
+                Xem PDF mẫu
+              </v-btn>
+              <v-btn
+                color="success"
+                variant="tonal"
+                prepend-icon="mdi-file-check-outline"
+                :disabled="!signTarget.signedFilePath"
+                @click="openContractPdf(signTarget, 'signed')"
+              >
+                Xem bản đã ký
+              </v-btn>
+            </div>
+
             <section class="contract-paper">
               <div class="contract-paper-head">
                 <div>
@@ -508,6 +559,29 @@
                     <v-text-field v-model="signForm.studentCode" label="Mã sinh viên" density="comfortable" />
                   </v-col>
                 </v-row>
+                <div class="signature-pad-block">
+                  <div class="signature-pad-head">
+                    <div>
+                      <strong>Chữ ký tay</strong>
+                      <small>Ký trực tiếp bằng chuột hoặc ngón tay. Chữ ký này sẽ được đóng vào file PDF đã ký.</small>
+                    </div>
+                    <v-btn size="small" variant="text" color="warning" @click="clearSignature">
+                      Ký lại
+                    </v-btn>
+                  </div>
+                  <canvas
+                    ref="signatureCanvas"
+                    class="signature-canvas"
+                    @pointerdown="startSignature"
+                    @pointermove="drawSignature"
+                    @pointerup="stopSignature"
+                    @pointerleave="stopSignature"
+                    @pointercancel="stopSignature"
+                  ></canvas>
+                  <small class="table-note">
+                    {{ hasSignature ? 'Đã ghi nhận nét ký.' : 'Chưa có chữ ký tay.' }}
+                  </small>
+                </div>
               </div>
             </section>
           </v-card-text>
@@ -518,7 +592,7 @@
               v-if="!signTarget.signedAt"
               color="success"
               :loading="signing"
-              :disabled="!signAccepted"
+              :disabled="!signAccepted || !hasSignature || !signTarget.templateFilePath"
               @click="submitSignContract"
             >
               Ký hợp đồng online
@@ -546,7 +620,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import api from '@/services/api'
 import { cleanStudents, normalizeList } from '../utils/studentDisplay'
 
@@ -578,6 +652,10 @@ const signDialog = ref(false)
 const signTarget = ref(null)
 const signing = ref(false)
 const signAccepted = ref(false)
+const signatureCanvas = ref(null)
+const hasSignature = ref(false)
+let drawingSignature = false
+let lastSignaturePoint = null
 const signForm = reactive({
   fullName: '',
   studentCode: '',
@@ -904,7 +982,9 @@ const openSignDialog = (contract) => {
   signForm.fullName = student.value?.fullName || displayName.value || ''
   signForm.studentCode = student.value?.studentCode || studentCode.value || ''
   signAccepted.value = Boolean(contract.signedAt)
+  hasSignature.value = false
   signDialog.value = true
+  nextTick(prepareSignatureCanvas)
 }
 
 const submitSignContract = async () => {
@@ -912,6 +992,16 @@ const submitSignContract = async () => {
 
   if (!signAccepted.value || !signForm.fullName.trim() || !signForm.studentCode.trim()) {
     error.value = 'Vui lòng xác nhận điều khoản và nhập đầy đủ họ tên, MSSV để ký hợp đồng.'
+    return
+  }
+
+  if (!signTarget.value.templateFilePath) {
+    error.value = 'Hợp đồng chưa có file PDF mẫu. Vui lòng chờ admin/nhân viên tải mẫu hợp đồng chuẩn.'
+    return
+  }
+
+  if (!hasSignature.value || !signatureCanvas.value) {
+    error.value = 'Vui lòng ký tay trên khung chữ ký trước khi xác nhận hợp đồng.'
     return
   }
 
@@ -923,15 +1013,101 @@ const submitSignContract = async () => {
       fullName: signForm.fullName.trim(),
       studentCode: signForm.studentCode.trim(),
       acceptedTerms: true,
+      signatureImageDataUrl: signatureCanvas.value.toDataURL('image/png'),
     })
     signDialog.value = false
-    success.value = 'Đã ký hợp đồng online thành công.'
+    success.value = 'Đã ký hợp đồng online thành công. Hệ thống đã tạo bản PDF có chữ ký của bạn.'
     await loadContracts()
   } catch (err) {
     error.value = err.response?.data?.message || 'Không ký được hợp đồng online.'
     console.error(err)
   } finally {
     signing.value = false
+  }
+}
+
+const prepareSignatureCanvas = () => {
+  const canvas = signatureCanvas.value
+
+  if (!canvas || signTarget.value?.signedAt) return
+
+  const rect = canvas.getBoundingClientRect()
+  const ratio = window.devicePixelRatio || 1
+  canvas.width = Math.max(1, Math.floor(rect.width * ratio))
+  canvas.height = Math.max(1, Math.floor(rect.height * ratio))
+
+  const context = canvas.getContext('2d')
+  context.setTransform(ratio, 0, 0, ratio, 0, 0)
+  context.clearRect(0, 0, rect.width, rect.height)
+  context.lineWidth = 2.4
+  context.lineCap = 'round'
+  context.lineJoin = 'round'
+  context.strokeStyle = '#0f172a'
+}
+
+const signaturePoint = (event) => {
+  const canvas = signatureCanvas.value
+  const rect = canvas.getBoundingClientRect()
+
+  return {
+    x: event.clientX - rect.left,
+    y: event.clientY - rect.top,
+  }
+}
+
+const startSignature = (event) => {
+  if (!signatureCanvas.value || signTarget.value?.signedAt) return
+
+  event.preventDefault()
+  drawingSignature = true
+  lastSignaturePoint = signaturePoint(event)
+}
+
+const drawSignature = (event) => {
+  if (!drawingSignature || !signatureCanvas.value || !lastSignaturePoint) return
+
+  event.preventDefault()
+  const context = signatureCanvas.value.getContext('2d')
+  const nextPoint = signaturePoint(event)
+  context.beginPath()
+  context.moveTo(lastSignaturePoint.x, lastSignaturePoint.y)
+  context.lineTo(nextPoint.x, nextPoint.y)
+  context.stroke()
+  lastSignaturePoint = nextPoint
+  hasSignature.value = true
+}
+
+const stopSignature = () => {
+  drawingSignature = false
+  lastSignaturePoint = null
+}
+
+const clearSignature = () => {
+  const canvas = signatureCanvas.value
+
+  if (!canvas) return
+
+  const rect = canvas.getBoundingClientRect()
+  const context = canvas.getContext('2d')
+  context.clearRect(0, 0, rect.width, rect.height)
+  hasSignature.value = false
+}
+
+const openContractPdf = async (contract, kind) => {
+  const endpoint = kind === 'signed' ? 'signed-file' : 'template-file'
+
+  try {
+    const response = await api.get(`/contracts/${contract.id}/${endpoint}`, {
+      responseType: 'blob',
+    })
+    const blob = new Blob([response.data], { type: 'application/pdf' })
+    const url = URL.createObjectURL(blob)
+    window.open(url, '_blank', 'noopener')
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+  } catch (err) {
+    error.value = err.response?.data?.message ||
+      (kind === 'signed' ? 'Chưa có bản PDF đã ký.' : 'Chưa có file PDF mẫu.')
+    console.error(err)
   }
 }
 
@@ -1055,6 +1231,13 @@ onMounted(loadAll)
 
 .contract-sign-dialog {
   background: #ffffff;
+}
+
+.contract-file-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 14px;
 }
 
 .dialog-title {
@@ -1209,6 +1392,41 @@ onMounted(loadAll)
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fbfdfb;
+}
+
+.signature-pad-block {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.signature-pad-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.signature-pad-head strong,
+.signature-pad-head small {
+  display: block;
+}
+
+.signature-pad-head small {
+  margin-top: 3px;
+  color: var(--muted);
+}
+
+.signature-canvas {
+  width: 100%;
+  height: 170px;
+  border: 1px dashed #94a3b8;
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.96)),
+    #ffffff;
+  cursor: crosshair;
+  touch-action: none;
 }
 
 .student-hero {

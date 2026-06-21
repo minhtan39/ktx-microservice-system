@@ -32,6 +32,18 @@ public class Contract
 
     public string SignatureIpAddress { get; set; } = string.Empty;
 
+    public string TemplateFileName { get; set; } = string.Empty;
+
+    public string TemplateFilePath { get; set; } = string.Empty;
+
+    public DateTime? TemplateUploadedAt { get; set; }
+
+    public string SignedFileName { get; set; } = string.Empty;
+
+    public string SignedFilePath { get; set; } = string.Empty;
+
+    public DateTime? SignedFileCreatedAt { get; set; }
+
     public int RenewalCount { get; set; }
 
     public DateTime? LastRenewedAt { get; set; }

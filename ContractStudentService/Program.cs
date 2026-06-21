@@ -119,6 +119,7 @@ builder.Services.AddScoped<IStudentService, StudentService>();
 
 builder.Services.AddScoped<IContractRepository, ContractRepository>();
 builder.Services.AddScoped<IContractService, ContractService>();
+builder.Services.AddScoped<ContractEmailSender>();
 
 builder.Services.AddScoped<IRoomRegistrationRepository,
     RoomRegistrationRepository>();

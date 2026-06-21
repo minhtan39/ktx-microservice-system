@@ -6,5 +6,7 @@ public class SignContractDto
 
     public string StudentCode { get; set; } = string.Empty;
 
+    public string SignatureImageDataUrl { get; set; } = string.Empty;
+
     public bool AcceptedTerms { get; set; }
 }

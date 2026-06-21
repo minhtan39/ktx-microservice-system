@@ -64,6 +64,13 @@
         <v-btn variant="text" @click="message = ''">Đóng</v-btn>
       </template>
     </v-snackbar>
+    <input
+      ref="templateFileInput"
+      class="hidden-file-input"
+      type="file"
+      accept="application/pdf,.pdf"
+      @change="uploadTemplateFile"
+    />
 
     <v-card class="pa-4 mb-4 filter-panel">
       <div class="filter-heading">
@@ -180,9 +187,41 @@
               <span v-if="contract.renewalCount" class="cell-subtitle">
                 Gia hạn {{ contract.renewalCount }} lần
               </span>
+              <span class="cell-subtitle">
+                PDF: {{ contract.templateFilePath ? 'Đã có mẫu' : 'Chưa tải mẫu' }}
+              </span>
             </td>
             <td>
               <div class="action-row">
+                <v-btn
+                  color="primary"
+                  size="small"
+                  variant="tonal"
+                  prepend-icon="mdi-upload-outline"
+                  :loading="uploadingTemplateId === contract.id"
+                  :disabled="Boolean(contract.signedAt)"
+                  @click="triggerTemplateUpload(contract)"
+                >
+                  Tải mẫu PDF
+                </v-btn>
+                <v-btn
+                  color="primary"
+                  size="small"
+                  variant="text"
+                  :disabled="!contract.templateFilePath"
+                  @click="openContractPdf(contract, 'template')"
+                >
+                  Xem mẫu
+                </v-btn>
+                <v-btn
+                  color="success"
+                  size="small"
+                  variant="text"
+                  :disabled="!contract.signedFilePath"
+                  @click="openContractPdf(contract, 'signed')"
+                >
+                  Bản đã ký
+                </v-btn>
                 <v-btn
                   color="success"
                   size="small"
@@ -316,6 +355,9 @@ const currentPage = ref(1)
 const renewDialog = ref(false)
 const renewTarget = ref(null)
 const renewing = ref(false)
+const templateFileInput = ref(null)
+const templateUploadTarget = ref(null)
+const uploadingTemplateId = ref(null)
 const renewForm = ref({
   newEndDate: '',
   note: '',
@@ -472,6 +514,61 @@ const submitRenewContract = async () => {
   }
 }
 
+const triggerTemplateUpload = (contract) => {
+  templateUploadTarget.value = contract
+  templateFileInput.value?.click()
+}
+
+const uploadTemplateFile = async (event) => {
+  const file = event.target.files?.[0]
+  const contract = templateUploadTarget.value
+  event.target.value = ''
+
+  if (!file || !contract) return
+
+  if (file.type && file.type !== 'application/pdf') {
+    showMessage('Chỉ chấp nhận file PDF hợp đồng.', 'error')
+    return
+  }
+
+  try {
+    uploadingTemplateId.value = contract.id
+    const formData = new FormData()
+    formData.append('file', file)
+    await api.post(`/contracts/${contract.id}/template`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    showMessage(`Đã tải mẫu PDF cho hợp đồng ${contract.contractCode}.`)
+    await loadContracts()
+  } catch (err) {
+    showMessage(err.response?.data?.message || 'Không tải được mẫu PDF hợp đồng.', 'error')
+    console.error(err)
+  } finally {
+    uploadingTemplateId.value = null
+    templateUploadTarget.value = null
+  }
+}
+
+const openContractPdf = async (contract, kind) => {
+  const endpoint = kind === 'signed' ? 'signed-file' : 'template-file'
+
+  try {
+    const response = await api.get(`/contracts/${contract.id}/${endpoint}`, {
+      responseType: 'blob',
+    })
+    const blob = new Blob([response.data], { type: 'application/pdf' })
+    const url = URL.createObjectURL(blob)
+    window.open(url, '_blank', 'noopener')
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+  } catch (err) {
+    showMessage(
+      err.response?.data?.message ||
+        (kind === 'signed' ? 'Chưa có bản PDF đã ký.' : 'Chưa có file PDF mẫu.'),
+      'error')
+    console.error(err)
+  }
+}
+
 watch([keyword, statusFilter, buildingFilter], () => {
   currentPage.value = 1
 })
@@ -497,6 +594,8 @@ const exportContracts = () => {
       { header: 'Tiền phòng tháng', value: (contract) => formatMoney(contract.monthlyFee) },
       { header: 'Trạng thái', value: (contract) => statusText(contract.status) },
       { header: 'Ký online', value: (contract) => contract.signedAt ? `Đã ký ${formatDate(contract.signedAt)}` : 'Chưa ký' },
+      { header: 'PDF mẫu', value: (contract) => contract.templateFilePath ? 'Đã tải' : 'Chưa tải' },
+      { header: 'PDF đã ký', value: (contract) => contract.signedFilePath ? 'Đã có' : 'Chưa có' },
       { header: 'Số lần gia hạn', value: (contract) => contract.renewalCount || 0 },
     ],
   })
@@ -549,6 +648,10 @@ onMounted(loadAll)
   display: flex;
   flex-direction: column;
   gap: 18px;
+}
+
+.hidden-file-input {
+  display: none;
 }
 
 .page-heading {

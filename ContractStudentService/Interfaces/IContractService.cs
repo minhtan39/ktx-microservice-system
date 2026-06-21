@@ -1,5 +1,6 @@
 using ContractStudentService.DTOs.Contract;
 using ContractStudentService.Entities;
+using Microsoft.AspNetCore.Http;
 
 namespace ContractStudentService.Interfaces;
 
@@ -24,4 +25,10 @@ public interface IContractService
     Task<Contract?> RenewAsync(long id, RenewContractDto dto);
 
     Task<Contract?> SignAsync(long id, SignContractDto dto, string ipAddress);
+
+    Task<Contract?> UploadTemplateAsync(long id, IFormFile file);
+
+    Task<ContractFileResultDto?> GetTemplateFileAsync(long id);
+
+    Task<ContractFileResultDto?> GetSignedFileAsync(long id);
 }

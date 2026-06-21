@@ -131,6 +131,67 @@ public class ContractController : ControllerBase
         return Ok(contract);
     }
 
+    [Authorize(Roles = "Admin,Staff")]
+    [HttpPost("{id}/template")]
+    [Consumes("multipart/form-data")]
+    [RequestSizeLimit(10 * 1024 * 1024)]
+    public async Task<IActionResult> UploadTemplate(long id, [FromForm] IFormFile file)
+    {
+        if (file == null)
+            return BadRequest(new { message = "Vui lòng chọn file PDF hợp đồng." });
+
+        var contract = await _contractService.UploadTemplateAsync(id, file);
+
+        if (contract == null)
+            return NotFound();
+
+        return Ok(contract);
+    }
+
+    [HttpGet("{id}/template-file")]
+    public async Task<IActionResult> DownloadTemplate(long id)
+    {
+        var existing = await _contractService.GetByIdAsync(id);
+
+        if (existing == null)
+            return NotFound();
+
+        if (!User.IsOperationsUser() &&
+            User.CurrentStudentId() != existing.StudentId)
+        {
+            return Forbid();
+        }
+
+        var file = await _contractService.GetTemplateFileAsync(id);
+
+        if (file == null)
+            return NotFound(new { message = "Hợp đồng chưa có file PDF mẫu." });
+
+        return File(file.Stream, file.ContentType, file.FileName);
+    }
+
+    [HttpGet("{id}/signed-file")]
+    public async Task<IActionResult> DownloadSignedFile(long id)
+    {
+        var existing = await _contractService.GetByIdAsync(id);
+
+        if (existing == null)
+            return NotFound();
+
+        if (!User.IsOperationsUser() &&
+            User.CurrentStudentId() != existing.StudentId)
+        {
+            return Forbid();
+        }
+
+        var file = await _contractService.GetSignedFileAsync(id);
+
+        if (file == null)
+            return NotFound(new { message = "Hợp đồng chưa có file PDF đã ký." });
+
+        return File(file.Stream, file.ContentType, file.FileName);
+    }
+
     [HttpPost("{id}/sign")]
     public async Task<IActionResult> Sign(
         long id,
