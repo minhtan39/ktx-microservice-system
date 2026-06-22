@@ -765,7 +765,7 @@ const issueAndPrint = async () => {
     const createdInvoices = normalizeList(response.data.invoices)
     success.value = response.data.message
     await loadAll()
-    printInvoices(createdInvoices, printWindow)
+    await printInvoices(createdInvoices, printWindow)
   } catch (err) {
     printWindow?.close()
     error.value = err.response?.data?.message || err.response?.data?.detail || 'Không phát hành được phiếu thanh toán.'
@@ -827,14 +827,20 @@ const exportInvoices = () => {
   })
 }
 
-const printInvoice = (invoice, targetWindow = null) => {
-  printInvoices([invoice], targetWindow)
+const printInvoice = async (invoice, targetWindow = null) => {
+  await printInvoices([invoice], targetWindow)
 }
 
-const printInvoices = (invoiceList, targetWindow = null) => {
+const printInvoices = async (invoiceList, targetWindow = null) => {
   const popup = targetWindow || window.open('', '_blank')
   if (!popup) {
     error.value = 'Trình duyệt đang chặn cửa sổ in.'
+    return
+  }
+
+  if (!invoiceList.length) {
+    popup.close()
+    error.value = 'Không có phiếu thanh toán nào để in.'
     return
   }
 
@@ -848,8 +854,22 @@ const printInvoices = (invoiceList, targetWindow = null) => {
 
   popup.document.write(`<!doctype html><html lang="vi"><head><meta charset="utf-8"><title>Phiếu thanh toán</title><style>body{font-family:Arial,sans-serif;color:#17201b;max-width:820px;margin:30px auto;padding:0 20px}h1{color:#0f7f51}table{width:100%;border-collapse:collapse;margin:20px 0}th,td{border:1px solid #cfd8d2;padding:11px}th{text-align:left;background:#eaf7ef}.right{text-align:right}.total{font-size:20px;font-weight:700;color:#0f7f51}.qr{text-align:center;margin-top:24px}.invoice-print{page-break-after:always}.invoice-print:last-child{page-break-after:auto}@media print{button{display:none}}</style></head><body>${body}</body></html>`)
   popup.document.close()
+
+  const images = Array.from(popup.document.images)
+  await Promise.all(images.map((image) => new Promise((resolve) => {
+    if (image.complete) {
+      resolve()
+      return
+    }
+
+    const finish = () => resolve()
+    image.addEventListener('load', finish, { once: true })
+    image.addEventListener('error', finish, { once: true })
+    setTimeout(finish, 5000)
+  })))
+
   popup.focus()
-  setTimeout(() => popup.print(), 500)
+  popup.print()
 }
 
 watch(

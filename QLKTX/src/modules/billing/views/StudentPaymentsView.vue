@@ -249,7 +249,7 @@ const loadPayments = async (refreshAnalytics = false) => {
     }
     if (refreshAnalytics) analyticsRefreshKey.value += 1
   } catch (err) {
-    error.value = err.response?.data?.detail || err.message || 'Không tải được thông tin thanh toán.'
+    error.value = err.response?.data?.detail || err.response?.data?.message || err.message || 'Không tải được thông tin thanh toán.'
   } finally {
     loading.value = false
   }

@@ -224,6 +224,17 @@ static bool IsAuthorizedForPath(
         return isGet;
     }
 
+    if (normalized.StartsWith("billing/statistics/student/"))
+        return isGet;
+
+    if (normalized.StartsWith("billing/wallets/"))
+    {
+        if (isGet)
+            return true;
+
+        return HttpMethods.IsPut(method) && normalized.EndsWith("/auto-pay");
+    }
+
     if (normalized == "incidents")
         return isGet || isPost;
 

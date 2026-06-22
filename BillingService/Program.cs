@@ -1,6 +1,9 @@
 using System.Globalization;
 using System.IdentityModel.Tokens.Jwt;
+using System.Net.Http.Json;
 using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -23,6 +26,13 @@ builder.Services.AddOpenApi();
 builder.Services.AddSingleton<BillingStore>();
 builder.Services.AddSingleton<BillingEmailSender>();
 builder.Services.AddSingleton<PaymentQrBuilder>();
+builder.Services.AddHttpClient("RoomService", client =>
+{
+    var roomServiceBaseUrl = builder.Configuration["Integration:RoomServiceBaseUrl"]
+        ?? "http://room-service:8080";
+
+    client.BaseAddress = new Uri(roomServiceBaseUrl);
+});
 
 var app = builder.Build();
 
@@ -119,7 +129,6 @@ app.MapGet("/api/billing/monthly-invoices", (
     BillingStore store) =>
 {
     var effectiveStudentId = ResolveStudentScope(httpRequest, studentId);
-
     var invoices = store.Read(data => data.MonthlyInvoices
         .Where(invoice => !effectiveStudentId.HasValue || invoice.StudentId == effectiveStudentId.Value)
         .Where(invoice => string.IsNullOrWhiteSpace(status) ||
@@ -130,6 +139,96 @@ app.MapGet("/api/billing/monthly-invoices", (
         .ToList());
 
     return Results.Ok(invoices);
+});
+
+app.MapGet("/api/billing/statistics/student/{studentId:long}", (
+    long studentId,
+    int? months,
+    HttpRequest httpRequest,
+    BillingStore store) =>
+{
+    if (studentId <= 0)
+        return Results.BadRequest(new { message = "Mã sinh viên không hợp lệ." });
+
+    var effectiveStudentId = ResolveStudentScope(httpRequest, studentId);
+
+    if (effectiveStudentId.HasValue && effectiveStudentId.Value != studentId)
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+    var monthCount = Math.Clamp(months ?? 6, 1, 24);
+    var currentMonth = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1);
+    var firstMonth = currentMonth.AddMonths(1 - monthCount);
+    var periods = Enumerable.Range(0, monthCount)
+        .Select(offset => firstMonth.AddMonths(offset).ToString("yyyy-MM", CultureInfo.InvariantCulture))
+        .ToList();
+
+    var statistics = store.Read(data =>
+    {
+        var studentInvoices = data.MonthlyInvoices
+            .Where(invoice => invoice.StudentId == studentId && periods.Contains(invoice.BillingPeriod))
+            .ToList();
+
+        var monthlyBreakdown = periods.Select(period =>
+        {
+            var periodInvoices = studentInvoices
+                .Where(invoice => invoice.BillingPeriod.Equals(period, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            var roomFee = periodInvoices.Sum(invoice => invoice.RoomFee);
+            var electricityAmount = periodInvoices.Sum(invoice => invoice.ElectricityAmount);
+            var waterAmount = periodInvoices.Sum(invoice => invoice.WaterAmount);
+            var paidAmount = periodInvoices
+                .Where(invoice => invoice.Status.Equals("Paid", StringComparison.OrdinalIgnoreCase))
+                .Sum(invoice => invoice.TotalAmount);
+            var totalAmount = roomFee + electricityAmount + waterAmount;
+
+            return new
+            {
+                period,
+                roomFee,
+                electricityAmount,
+                waterAmount,
+                totalAmount,
+                paidAmount,
+                unpaidAmount = totalAmount - paidAmount
+            };
+        }).ToList();
+
+        var current = monthlyBreakdown[^1];
+        var previous = monthlyBreakdown.Count > 1 ? monthlyBreakdown[^2] : null;
+        decimal? changePercent = previous == null || previous.totalAmount == 0
+            ? null
+            : Math.Round(
+                (current.totalAmount - previous.totalAmount) / previous.totalAmount * 100,
+                1,
+                MidpointRounding.AwayFromZero);
+        var highestMonth = monthlyBreakdown
+            .OrderByDescending(item => item.totalAmount)
+            .First();
+
+        return new
+        {
+            studentId,
+            months = monthCount,
+            fromPeriod = periods[0],
+            toPeriod = periods[^1],
+            summary = new
+            {
+                currentPeriod = current.period,
+                currentTotal = current.totalAmount,
+                currentPaid = current.paidAmount,
+                currentUnpaid = current.unpaidAmount,
+                previousTotal = previous?.totalAmount ?? 0,
+                changePercent,
+                rangeTotal = monthlyBreakdown.Sum(item => item.totalAmount),
+                averageMonthly = Math.Round(monthlyBreakdown.Average(item => item.totalAmount), 0),
+                highestPeriod = highestMonth.totalAmount > 0 ? highestMonth.period : null,
+                highestTotal = highestMonth.totalAmount
+            },
+            monthlyBreakdown
+        };
+    });
+
+    return Results.Ok(statistics);
 });
 
 app.MapGet("/api/billing/monthly-invoices/{id:long}", (
@@ -144,10 +243,9 @@ app.MapGet("/api/billing/monthly-invoices/{id:long}", (
 
     var effectiveStudentId = ResolveStudentScope(httpRequest, null);
 
-    if (effectiveStudentId.HasValue && invoice.StudentId != effectiveStudentId.Value)
-        return Results.Forbid();
-
-    return Results.Ok(invoice);
+    return effectiveStudentId.HasValue && invoice.StudentId != effectiveStudentId.Value
+        ? Results.StatusCode(StatusCodes.Status403Forbidden)
+        : Results.Ok(invoice);
 });
 
 app.MapPost("/api/billing/monthly-invoices", async Task<IResult> (
@@ -184,6 +282,7 @@ app.MapPost("/api/billing/monthly-invoices", async Task<IResult> (
         var waterUsage = request.CurrentWaterReading - request.PreviousWaterReading;
         var paymentCode = BuildPaymentCode(request.BillingPeriod, request.StudentCode, nextId);
         var total = request.RoomFee + electricityUsage * ElectricityRate + waterUsage * WaterRate;
+        var (_, _, billingDays) = GetBillingPeriodRange(request.BillingPeriod);
 
         invoice = new MonthlyInvoice
         {
@@ -198,6 +297,7 @@ app.MapPost("/api/billing/monthly-invoices", async Task<IResult> (
             RoomId = request.RoomId,
             RoomName = request.RoomName?.Trim() ?? request.RoomId.ToString(CultureInfo.InvariantCulture),
             BillingPeriod = request.BillingPeriod,
+            BatchCode = string.Empty,
             RoomFee = request.RoomFee,
             PreviousElectricityReading = request.PreviousElectricityReading,
             CurrentElectricityReading = request.CurrentElectricityReading,
@@ -209,6 +309,15 @@ app.MapPost("/api/billing/monthly-invoices", async Task<IResult> (
             WaterUsage = waterUsage,
             WaterRate = WaterRate,
             WaterAmount = waterUsage * WaterRate,
+            RoomElectricityUsage = electricityUsage,
+            RoomElectricityAmount = electricityUsage * ElectricityRate,
+            RoomWaterUsage = waterUsage,
+            RoomWaterAmount = waterUsage * WaterRate,
+            RoomOccupantCount = 1,
+            OccupancyDays = billingDays,
+            BillingDays = billingDays,
+            AllocationMethod = "Manual",
+            AllocationNote = "Phiếu lập trực tiếp cho từng sinh viên.",
             TotalAmount = total,
             DueDate = request.DueDate?.Date ?? DateTime.UtcNow.Date.AddDays(7),
             Status = "Unpaid",
@@ -219,6 +328,7 @@ app.MapPost("/api/billing/monthly-invoices", async Task<IResult> (
         };
 
         data.MonthlyInvoices.Add(invoice);
+        TryAutoPayStudentInvoices(data, invoice.StudentId);
         return true;
     });
 
@@ -241,6 +351,179 @@ app.MapPost("/api/billing/monthly-invoices", async Task<IResult> (
         invoice,
         emailSent = emailResult.Sent,
         emailError = emailResult.Error
+    });
+});
+
+app.MapPost("/api/billing/monthly-invoices/room/preview", (
+    CreateRoomMonthlyInvoicesRequest request) =>
+{
+    var previewResult = BuildRoomInvoicePreview(request);
+
+    return previewResult.Error == null
+        ? Results.Ok(new
+        {
+            roomId = request.RoomId,
+            roomName = NormalizeRoomName(request.RoomName, request.RoomId),
+            billingPeriod = request.BillingPeriod,
+            electricityUsage = previewResult.ElectricityUsage,
+            electricityAmount = previewResult.ElectricityAmount,
+            waterUsage = previewResult.WaterUsage,
+            waterAmount = previewResult.WaterAmount,
+            occupantCount = previewResult.Allocations.Count,
+            totalAmount = previewResult.Allocations.Sum(item => item.TotalAmount),
+            allocationMethod = "OccupancyDays",
+            allocations = previewResult.Allocations
+        })
+        : Results.BadRequest(new { message = previewResult.Error });
+});
+
+app.MapPost("/api/billing/monthly-invoices/room/issue", async Task<IResult> (
+    CreateRoomMonthlyInvoicesRequest request,
+    BillingStore store,
+    PaymentQrBuilder qrBuilder,
+    BillingEmailSender emailSender) =>
+{
+    var previewResult = BuildRoomInvoicePreview(request);
+
+    if (previewResult.Error != null)
+        return Results.BadRequest(new { message = previewResult.Error });
+
+    var roomName = NormalizeRoomName(request.RoomName, request.RoomId);
+    var periodDigits = request.BillingPeriod.Replace("-", string.Empty);
+    var safeRoom = request.RoomId.ToString(CultureInfo.InvariantCulture);
+    var batchCode = $"PB-{periodDigits}-P{safeRoom}";
+    var issuedBy = string.IsNullOrWhiteSpace(request.IssuedBy) ? "Nhân viên" : request.IssuedBy.Trim();
+    var issuedAt = DateTime.UtcNow;
+    var dueDate = request.DueDate?.Date ?? DateTime.UtcNow.Date.AddDays(7);
+    var createdInvoices = new List<MonthlyInvoice>();
+    var returnedInvoices = new List<MonthlyInvoice>();
+
+    store.Write(data =>
+    {
+        var nextId = data.MonthlyInvoices.Count == 0
+            ? 1
+            : data.MonthlyInvoices.Max(item => item.Id) + 1;
+
+        foreach (var allocation in previewResult.Allocations)
+        {
+            var existing = data.MonthlyInvoices.FirstOrDefault(item =>
+                item.ContractId == allocation.ContractId &&
+                item.BillingPeriod.Equals(request.BillingPeriod, StringComparison.OrdinalIgnoreCase));
+
+            if (existing != null)
+            {
+                returnedInvoices.Add(existing);
+                continue;
+            }
+
+            var paymentCode = BuildPaymentCode(request.BillingPeriod, allocation.StudentCode, nextId);
+            var invoice = new MonthlyInvoice
+            {
+                Id = nextId,
+                InvoiceCode = $"PT-{periodDigits}-P{safeRoom}-{nextId:0000}",
+                ContractId = allocation.ContractId,
+                ContractCode = allocation.ContractCode,
+                StudentId = allocation.StudentId,
+                StudentCode = allocation.StudentCode,
+                StudentName = allocation.StudentName,
+                StudentEmail = allocation.StudentEmail,
+                RoomId = request.RoomId,
+                RoomName = roomName,
+                BillingPeriod = request.BillingPeriod,
+                BatchCode = batchCode,
+                RoomFee = allocation.RoomFee,
+                PreviousElectricityReading = request.PreviousElectricityReading,
+                CurrentElectricityReading = request.CurrentElectricityReading,
+                ElectricityUsage = allocation.ElectricityUsage,
+                ElectricityRate = ElectricityRate,
+                ElectricityAmount = allocation.ElectricityAmount,
+                PreviousWaterReading = request.PreviousWaterReading,
+                CurrentWaterReading = request.CurrentWaterReading,
+                WaterUsage = allocation.WaterUsage,
+                WaterRate = WaterRate,
+                WaterAmount = allocation.WaterAmount,
+                RoomElectricityUsage = previewResult.ElectricityUsage,
+                RoomElectricityAmount = previewResult.ElectricityAmount,
+                RoomWaterUsage = previewResult.WaterUsage,
+                RoomWaterAmount = previewResult.WaterAmount,
+                RoomOccupantCount = previewResult.Allocations.Count,
+                OccupancyDays = allocation.OccupancyDays,
+                BillingDays = allocation.BillingDays,
+                AllocationMethod = "OccupancyDays",
+                AllocationNote = allocation.AllocationNote,
+                TotalAmount = allocation.TotalAmount,
+                DueDate = dueDate,
+                Status = "Unpaid",
+                PaymentCode = paymentCode,
+                QrCodeUrl = qrBuilder.Build(allocation.TotalAmount, paymentCode),
+                IssuedBy = issuedBy,
+                IssuedAt = issuedAt
+            };
+
+            data.MonthlyInvoices.Add(invoice);
+            createdInvoices.Add(invoice);
+            returnedInvoices.Add(invoice);
+            nextId++;
+        }
+
+        var invoiceIds = returnedInvoices.Select(item => item.Id).Distinct().OrderBy(id => id).ToList();
+        var existingBatchIndex = data.RoomInvoiceBatches.FindIndex(item =>
+            item.BatchCode.Equals(batchCode, StringComparison.OrdinalIgnoreCase));
+        var batch = new RoomMonthlyInvoiceBatch(
+            existingBatchIndex >= 0 ? data.RoomInvoiceBatches[existingBatchIndex].Id : NextBatchId(data),
+            batchCode,
+            request.RoomId,
+            roomName,
+            request.BillingPeriod,
+            request.PreviousElectricityReading,
+            request.CurrentElectricityReading,
+            previewResult.ElectricityUsage,
+            previewResult.ElectricityAmount,
+            request.PreviousWaterReading,
+            request.CurrentWaterReading,
+            previewResult.WaterUsage,
+            previewResult.WaterAmount,
+            previewResult.Allocations.Count,
+            returnedInvoices.Sum(item => item.TotalAmount),
+            issuedBy,
+            issuedAt,
+            invoiceIds);
+
+        if (existingBatchIndex >= 0)
+            data.RoomInvoiceBatches[existingBatchIndex] = batch;
+        else
+            data.RoomInvoiceBatches.Add(batch);
+
+        foreach (var studentId in createdInvoices.Select(item => item.StudentId).Distinct())
+            TryAutoPayStudentInvoices(data, studentId);
+
+        return true;
+    });
+
+    var emailResults = new List<object>();
+
+    foreach (var invoice in createdInvoices)
+    {
+        var result = await TrySendInvoiceEmailAsync(invoice, store, emailSender);
+        emailResults.Add(new
+        {
+            invoiceId = invoice.Id,
+            invoiceCode = invoice.InvoiceCode,
+            sent = result.Sent,
+            error = result.Error
+        });
+    }
+
+    return Results.Ok(new
+    {
+        message = createdInvoices.Count == 0
+            ? "Phòng này đã có đủ phiếu thanh toán trong tháng đã chọn."
+            : $"Đã phát hành {createdInvoices.Count} phiếu thanh toán cho phòng {roomName}.",
+        batchCode,
+        created = createdInvoices.Count,
+        skipped = returnedInvoices.Count - createdInvoices.Count,
+        invoices = returnedInvoices.OrderBy(item => item.StudentName).ToList(),
+        emailResults
     });
 });
 
@@ -288,13 +571,120 @@ app.MapGet("/api/billing/payment-history", (
     BillingStore store) =>
 {
     var effectiveStudentId = ResolveStudentScope(httpRequest, studentId);
-
     var history = store.Read(data => data.PaymentHistory
         .Where(item => !effectiveStudentId.HasValue || item.StudentId == effectiveStudentId.Value)
         .OrderByDescending(item => item.PaidAt)
         .ToList());
 
     return Results.Ok(history);
+});
+
+app.MapGet("/api/billing/wallets", (long? studentId, BillingStore store) =>
+{
+    var wallets = store.Write(data =>
+    {
+        var knownStudentIds = data.StudentWallets
+            .Select(item => item.StudentId)
+            .Concat(data.MonthlyInvoices.Select(item => item.StudentId))
+            .Where(id => id > 0)
+            .Distinct()
+            .Where(id => !studentId.HasValue || id == studentId.Value)
+            .OrderBy(id => id)
+            .ToList();
+
+        return knownStudentIds
+            .Select(id => EnsureWallet(data, id))
+            .OrderBy(item => item.StudentName)
+            .ThenBy(item => item.StudentCode)
+            .ToList();
+    });
+
+    return Results.Ok(wallets);
+});
+
+app.MapGet("/api/billing/wallets/{studentId:long}", (
+    long studentId,
+    decimal? amount,
+    HttpRequest httpRequest,
+    BillingStore store,
+    PaymentQrBuilder qrBuilder) =>
+{
+    if (studentId <= 0)
+        return Results.BadRequest(new { message = "studentId is required." });
+
+    var effectiveStudentId = ResolveStudentScope(httpRequest, studentId);
+
+    if (effectiveStudentId.HasValue && effectiveStudentId.Value != studentId)
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+    var result = store.Write(data =>
+    {
+        var wallet = EnsureWallet(data, studentId);
+        var topUpAmount = amount.HasValue && amount.Value > 0 ? RoundMoney(amount.Value) : 0m;
+        var topUpCode = BuildWalletTopUpCode(studentId);
+        var transactions = data.WalletTransactions
+            .Where(item => item.StudentId == studentId)
+            .OrderByDescending(item => item.CreatedAt)
+            .Take(30)
+            .ToList();
+        var unpaidInvoices = data.MonthlyInvoices
+            .Where(item => item.StudentId == studentId &&
+                !item.Status.Equals("Paid", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(item => item.DueDate)
+            .ThenBy(item => item.Id)
+            .ToList();
+
+        return new
+        {
+            wallet,
+            transactions,
+            unpaidInvoices,
+            topUpCode,
+            topUpQrCodeUrl = topUpAmount > 0 ? qrBuilder.Build(topUpAmount, topUpCode) : string.Empty
+        };
+    });
+
+    return Results.Ok(result);
+});
+
+app.MapPut("/api/billing/wallets/{studentId:long}/auto-pay", (
+    long studentId,
+    WalletAutoPayRequest request,
+    HttpRequest httpRequest,
+    BillingStore store) =>
+{
+    if (studentId <= 0)
+        return Results.BadRequest(new { message = "studentId is required." });
+
+    var effectiveStudentId = ResolveStudentScope(httpRequest, studentId);
+
+    if (effectiveStudentId.HasValue && effectiveStudentId.Value != studentId)
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+    var result = store.Write(data =>
+    {
+        var wallet = EnsureWallet(data, studentId);
+        wallet.AutoPayEnabled = request.Enabled;
+        wallet.UpdatedAt = DateTime.UtcNow;
+        var paidInvoices = request.Enabled
+            ? TryAutoPayStudentInvoices(data, studentId)
+            : [];
+
+        return new
+        {
+            wallet,
+            paidInvoices
+        };
+    });
+
+    return Results.Ok(new
+    {
+        message = request.Enabled
+            ? "Đã bật tự động thanh toán bằng ví KTX."
+            : "Đã tắt tự động thanh toán bằng ví KTX.",
+        result.wallet,
+        result.paidInvoices
+    });
 });
 
 app.MapPost("/api/billing/webhooks/payment", async Task<IResult> (
@@ -321,6 +711,8 @@ app.MapPost("/api/billing/webhooks/payment", async Task<IResult> (
     using var body = await JsonDocument.ParseAsync(request.Body);
     var payments = ExtractIncomingPayments(body.RootElement).ToList();
     var completed = new List<MonthlyInvoice>();
+    var walletTopUps = new List<WalletTransaction>();
+    var walletPaidInvoices = new List<MonthlyInvoice>();
 
     store.Write(data =>
     {
@@ -332,13 +724,21 @@ app.MapPost("/api/billing/webhooks/payment", async Task<IResult> (
                 payment.Amount >= item.TotalAmount);
 
             if (invoice == null)
+            {
+                var walletResult = ApplyWalletTopUpFromPayment(data, payment);
+
+                if (walletResult.Transaction != null)
+                    walletTopUps.Add(walletResult.Transaction);
+
+                walletPaidInvoices.AddRange(walletResult.PaidInvoices);
                 continue;
+            }
 
             var paidInvoice = CompleteInvoicePayment(
                 data,
                 invoice.Id,
                 payment.Amount,
-                payment.ReferenceCode,
+                NormalizeIncomingPaymentReference(payment),
                 "BankWebhook",
                 "Ngân hàng");
 
@@ -353,7 +753,9 @@ app.MapPost("/api/billing/webhooks/payment", async Task<IResult> (
     {
         success = true,
         received = payments.Count,
-        completed = completed.Select(item => item.InvoiceCode).ToList()
+        completed = completed.Select(item => item.InvoiceCode).ToList(),
+        walletTopUps = walletTopUps.Select(item => item.ReferenceCode).ToList(),
+        walletAutoPaid = walletPaidInvoices.Select(item => item.InvoiceCode).ToList()
     });
 });
 
@@ -395,7 +797,12 @@ app.MapPost("/api/incidents", (
 app.MapMethods(
     "/api/incidents/{id:long}/assign",
     ["PATCH", "PUT"],
-    (long id, AssignIncidentRequest request, HttpRequest httpRequest, BillingStore store) =>
+    async Task<IResult> (
+        long id,
+        AssignIncidentRequest request,
+        HttpRequest httpRequest,
+        BillingStore store,
+        IHttpClientFactory httpClientFactory) =>
     {
         var identity = GetRequestIdentity(httpRequest);
 
@@ -410,6 +817,20 @@ app.MapMethods(
         {
             return Results.StatusCode(StatusCodes.Status403Forbidden);
         }
+
+        var existing = store.Read(data => data.Incidents.FirstOrDefault(item => item.Id == id));
+
+        if (existing == null)
+            return Results.NotFound(new { message = "Incident request not found." });
+
+        var roomSyncResult = await SyncRoomForIncidentAsync(
+            existing,
+            "assigned",
+            store,
+            httpClientFactory);
+
+        if (!roomSyncResult.Success)
+            return Results.Problem(roomSyncResult.Message, statusCode: StatusCodes.Status502BadGateway);
 
         var updated = store.Write(data =>
         {
@@ -437,7 +858,12 @@ app.MapMethods(
 app.MapMethods(
     "/api/incidents/{id:long}/status",
     ["PATCH", "PUT"],
-    (long id, UpdateIncidentStatusRequest request, HttpRequest httpRequest, BillingStore store) =>
+    async Task<IResult> (
+        long id,
+        UpdateIncidentStatusRequest request,
+        HttpRequest httpRequest,
+        BillingStore store,
+        IHttpClientFactory httpClientFactory) =>
     {
         var identity = GetRequestIdentity(httpRequest);
 
@@ -466,6 +892,15 @@ app.MapMethods(
         {
             return Results.BadRequest(new { message = "Vui lòng nhập kết quả xử lý trước khi hoàn thành." });
         }
+
+        var roomSyncResult = await SyncRoomForIncidentAsync(
+            existing,
+            nextStatus,
+            store,
+            httpClientFactory);
+
+        if (!roomSyncResult.Success)
+            return Results.Problem(roomSyncResult.Message, statusCode: StatusCodes.Status502BadGateway);
 
         var updated = store.Write(data =>
         {
@@ -502,13 +937,34 @@ app.MapMethods(
             : Results.Ok(updated);
     });
 
-app.MapPost("/api/incidents/{id:long}/confirm", (
+app.MapPost("/api/incidents/{id:long}/confirm", async Task<IResult> (
     long id,
     StudentIncidentActionRequest request,
     HttpRequest httpRequest,
-    BillingStore store) =>
+    BillingStore store,
+    IHttpClientFactory httpClientFactory) =>
 {
     var identity = GetRequestIdentity(httpRequest);
+    var existing = store.Read(data => data.Incidents.FirstOrDefault(item => item.Id == id));
+
+    if (existing == null)
+        return Results.NotFound();
+
+    if (!identity.IsAdmin && !identity.IsStudentOwner(existing))
+        return Results.Unauthorized();
+
+    if (existing.Status != "completed")
+        return Results.BadRequest(new { message = "Yêu cầu chưa ở trạng thái hoàn thành." });
+
+    var roomSyncResult = await SyncRoomForIncidentAsync(
+        existing,
+        "confirmed",
+        store,
+        httpClientFactory);
+
+    if (!roomSyncResult.Success)
+        return Results.Problem(roomSyncResult.Message, statusCode: StatusCodes.Status502BadGateway);
+
     var updated = store.Write(data =>
     {
         var incident = data.Incidents.FirstOrDefault(item => item.Id == id);
@@ -528,13 +984,34 @@ app.MapPost("/api/incidents/{id:long}/confirm", (
     return updated == null ? Results.NotFound() : Results.Ok(updated);
 });
 
-app.MapPost("/api/incidents/{id:long}/reopen", (
+app.MapPost("/api/incidents/{id:long}/reopen", async Task<IResult> (
     long id,
     StudentIncidentActionRequest request,
     HttpRequest httpRequest,
-    BillingStore store) =>
+    BillingStore store,
+    IHttpClientFactory httpClientFactory) =>
 {
     var identity = GetRequestIdentity(httpRequest);
+    var existing = store.Read(data => data.Incidents.FirstOrDefault(item => item.Id == id));
+
+    if (existing == null)
+        return Results.NotFound();
+
+    if (!identity.IsAdmin && !identity.IsStudentOwner(existing))
+        return Results.Unauthorized();
+
+    if (existing.Status is not ("completed" or "confirmed"))
+        return Results.BadRequest(new { message = "Yêu cầu chưa thể mở lại." });
+
+    var roomSyncResult = await SyncRoomForIncidentAsync(
+        existing,
+        "reopened",
+        store,
+        httpClientFactory);
+
+    if (!roomSyncResult.Success)
+        return Results.Problem(roomSyncResult.Message, statusCode: StatusCodes.Status502BadGateway);
+
     var updated = store.Write(data =>
     {
         var incident = data.Incidents.FirstOrDefault(item => item.Id == id);
@@ -608,7 +1085,12 @@ app.MapPost("/api/maintenance", (
 app.MapMethods(
     "/api/maintenance/{id:long}",
     ["PATCH", "PUT"],
-    (long id, UpdateMaintenancePlanRequest request, HttpRequest httpRequest, BillingStore store) =>
+    async Task<IResult> (
+        long id,
+        UpdateMaintenancePlanRequest request,
+        HttpRequest httpRequest,
+        BillingStore store,
+        IHttpClientFactory httpClientFactory) =>
     {
         var identity = GetRequestIdentity(httpRequest);
         if (!identity.IsOperational) return Results.Unauthorized();
@@ -622,19 +1104,38 @@ app.MapMethods(
             return Results.StatusCode(StatusCodes.Status403Forbidden);
         }
 
+        var nextStatus = NormalizeMaintenanceStatus(request.Status) ?? existing.Status;
+        var nextCompletedItems = request.CompletedItems ?? existing.CompletedItems;
+
+        if (nextStatus == "completed" &&
+            existing.Checklist.Count > 0 &&
+            !existing.Checklist.All(item => nextCompletedItems.Contains(item)))
+        {
+            return Results.BadRequest(new { message = "Vui lòng hoàn thành toàn bộ checklist trước khi kết thúc bảo trì." });
+        }
+
+        var roomSyncResult = await SyncRoomForMaintenanceAsync(
+            existing,
+            nextStatus,
+            store,
+            httpClientFactory);
+
+        if (!roomSyncResult.Success)
+            return Results.Problem(roomSyncResult.Message, statusCode: StatusCodes.Status502BadGateway);
+
         var plan = store.Write(data =>
         {
             var current = data.MaintenancePlans.FirstOrDefault(item => item.Id == id);
             if (current == null) return null;
 
-            current.Status = NormalizeMaintenanceStatus(request.Status) ?? current.Status;
+            current.Status = nextStatus;
             if (identity.IsAdmin)
             {
                 current.AssignedTo = string.IsNullOrWhiteSpace(request.AssignedTo) ? current.AssignedTo : request.AssignedTo.Trim();
                 current.AssignedName = string.IsNullOrWhiteSpace(request.AssignedName) ? current.AssignedName : request.AssignedName.Trim();
             }
             current.NextDueDate = request.NextDueDate ?? current.NextDueDate;
-            current.CompletedItems = request.CompletedItems ?? current.CompletedItems;
+            current.CompletedItems = nextCompletedItems;
             current.Cost = request.Cost ?? current.Cost;
             current.Notes = string.IsNullOrWhiteSpace(request.Notes) ? current.Notes : request.Notes.Trim();
             current.UpdatedAt = DateTime.UtcNow;
@@ -654,35 +1155,193 @@ app.MapMethods(
 
 app.Run();
 
-static long? ResolveStudentScope(HttpRequest request, long? requestedStudentId)
+static RoomPreviewBuildResult BuildRoomInvoicePreview(CreateRoomMonthlyInvoicesRequest request)
 {
-    var authorization = request.Headers.Authorization.ToString();
-    const string bearerPrefix = "Bearer ";
+    var validationError = ValidateRoomInvoiceRequest(request);
 
-    if (!authorization.StartsWith(bearerPrefix, StringComparison.OrdinalIgnoreCase))
-        return requestedStudentId;
+    if (validationError != null)
+        return new RoomPreviewBuildResult(validationError, 0, 0, 0, 0, []);
 
-    try
+    var (periodStart, periodEndExclusive, billingDays) = GetBillingPeriodRange(request.BillingPeriod);
+    var electricityUsage = request.CurrentElectricityReading - request.PreviousElectricityReading;
+    var waterUsage = request.CurrentWaterReading - request.PreviousWaterReading;
+    var electricityAmount = electricityUsage * ElectricityRate;
+    var waterAmount = waterUsage * WaterRate;
+    var normalizedOccupants = request.Occupants!
+        .Where(item => item.ContractId > 0 && item.StudentId > 0)
+        .Select(item =>
+        {
+            var occupancyDays = CalculateOccupancyDays(item.StartDate, item.EndDate, periodStart, periodEndExclusive);
+            return new RoomOccupantAllocationInput(item, occupancyDays);
+        })
+        .Where(item => item.OccupancyDays > 0)
+        .ToList();
+
+    if (normalizedOccupants.Count == 0)
     {
-        var token = authorization[bearerPrefix.Length..].Trim();
-        var jwt = new JwtSecurityTokenHandler().ReadJwtToken(token);
-        var role = jwt.Claims.FirstOrDefault(claim =>
-            claim.Type == ClaimTypes.Role || claim.Type == "role")?.Value;
-
-        if (!string.Equals(role, "Student", StringComparison.OrdinalIgnoreCase))
-            return requestedStudentId;
-
-        var rawStudentId = jwt.Claims.FirstOrDefault(claim => claim.Type == "studentId")?.Value;
-
-        return long.TryParse(rawStudentId, out var studentId)
-            ? studentId
-            : requestedStudentId;
+        return new RoomPreviewBuildResult(
+            "Không có sinh viên nào ở phòng này trong kỳ thanh toán đã chọn.",
+            electricityUsage,
+            electricityAmount,
+            waterUsage,
+            waterAmount,
+            []);
     }
-    catch
+
+    var missingEmail = normalizedOccupants
+        .FirstOrDefault(item => string.IsNullOrWhiteSpace(item.Occupant.StudentEmail));
+
+    if (missingEmail != null)
     {
-        return requestedStudentId;
+        var name = missingEmail.Occupant.StudentName?.Trim()
+            ?? missingEmail.Occupant.StudentCode?.Trim()
+            ?? missingEmail.Occupant.StudentId.ToString(CultureInfo.InvariantCulture);
+        return new RoomPreviewBuildResult(
+            $"Sinh viên {name} chưa có email để nhận phiếu thanh toán.",
+            electricityUsage,
+            electricityAmount,
+            waterUsage,
+            waterAmount,
+            []);
     }
+
+    var weights = normalizedOccupants.Select(item => (decimal)item.OccupancyDays).ToList();
+    var electricityShares = SplitAmount(electricityAmount, weights);
+    var waterShares = SplitAmount(waterAmount, weights);
+    var allocations = new List<RoomInvoiceAllocationPreview>();
+
+    for (var index = 0; index < normalizedOccupants.Count; index++)
+    {
+        var input = normalizedOccupants[index];
+        var occupant = input.Occupant;
+        var roomFee = RoundMoney(occupant.RoomFee * input.OccupancyDays / billingDays);
+        var electricityShare = electricityShares[index];
+        var waterShare = waterShares[index];
+        var electricityShareUsage = electricityAmount <= 0
+            ? 0
+            : RoundUsage(electricityShare / ElectricityRate);
+        var waterShareUsage = waterAmount <= 0
+            ? 0
+            : RoundUsage(waterShare / WaterRate);
+        var allocationNote = input.OccupancyDays == billingDays
+            ? $"Ở đủ {billingDays} ngày trong kỳ, chia điện nước theo {normalizedOccupants.Count} người."
+            : $"Ở {input.OccupancyDays}/{billingDays} ngày trong kỳ, điện nước và tiền phòng được phân bổ theo ngày ở.";
+
+        allocations.Add(new RoomInvoiceAllocationPreview(
+            occupant.ContractId,
+            occupant.ContractCode?.Trim() ?? $"HD-{occupant.ContractId}",
+            occupant.StudentId,
+            occupant.StudentCode?.Trim() ?? $"SV{occupant.StudentId}",
+            occupant.StudentName?.Trim() ?? "Sinh viên",
+            occupant.StudentEmail?.Trim() ?? string.Empty,
+            roomFee,
+            input.OccupancyDays,
+            billingDays,
+            electricityShareUsage,
+            electricityShare,
+            waterShareUsage,
+            waterShare,
+            roomFee + electricityShare + waterShare,
+            allocationNote));
+    }
+
+    return new RoomPreviewBuildResult(
+        null,
+        electricityUsage,
+        electricityAmount,
+        waterUsage,
+        waterAmount,
+        allocations);
 }
+
+static string? ValidateRoomInvoiceRequest(CreateRoomMonthlyInvoicesRequest request)
+{
+    if (request.RoomId <= 0)
+        return "Vui lòng chọn phòng cần phát hành hóa đơn.";
+
+    if (!Regex.IsMatch(request.BillingPeriod ?? string.Empty, @"^\d{4}-(0[1-9]|1[0-2])$"))
+        return "Kỳ thanh toán phải có định dạng yyyy-MM.";
+
+    if (request.CurrentElectricityReading < request.PreviousElectricityReading)
+        return "Chỉ số điện mới phải lớn hơn hoặc bằng chỉ số cũ.";
+
+    if (request.CurrentWaterReading < request.PreviousWaterReading)
+        return "Chỉ số nước mới phải lớn hơn hoặc bằng chỉ số cũ.";
+
+    if (request.Occupants == null || request.Occupants.Count == 0)
+        return "Phòng chưa có sinh viên/hợp đồng đang ở để chia hóa đơn.";
+
+    return null;
+}
+
+static (DateTime Start, DateTime EndExclusive, int Days) GetBillingPeriodRange(string period)
+{
+    var start = DateTime.ParseExact($"{period}-01", "yyyy-MM-dd", CultureInfo.InvariantCulture);
+    var endExclusive = start.AddMonths(1);
+    return (start, endExclusive, (int)(endExclusive - start).TotalDays);
+}
+
+static int CalculateOccupancyDays(
+    DateTime? startDate,
+    DateTime? endDate,
+    DateTime periodStart,
+    DateTime periodEndExclusive)
+{
+    var start = (startDate?.Date ?? periodStart) > periodStart
+        ? startDate!.Value.Date
+        : periodStart;
+    var endExclusive = endDate.HasValue
+        ? endDate.Value.Date.AddDays(1)
+        : periodEndExclusive;
+
+    if (endExclusive > periodEndExclusive)
+        endExclusive = periodEndExclusive;
+
+    if (endExclusive <= start)
+        return 0;
+
+    return (int)(endExclusive - start).TotalDays;
+}
+
+static List<decimal> SplitAmount(decimal amount, IReadOnlyList<decimal> weights)
+{
+    if (weights.Count == 0)
+        return [];
+
+    var totalWeight = weights.Sum();
+    if (totalWeight <= 0 || amount <= 0)
+        return weights.Select(_ => 0m).ToList();
+
+    var shares = new List<decimal>(weights.Count);
+    var assigned = 0m;
+
+    for (var index = 0; index < weights.Count; index++)
+    {
+        var share = index == weights.Count - 1
+            ? amount - assigned
+            : RoundMoney(amount * weights[index] / totalWeight);
+        shares.Add(share);
+        assigned += share;
+    }
+
+    return shares;
+}
+
+static decimal RoundMoney(decimal value) =>
+    Math.Round(value, 0, MidpointRounding.AwayFromZero);
+
+static decimal RoundUsage(decimal value) =>
+    Math.Round(value, 2, MidpointRounding.AwayFromZero);
+
+static string NormalizeRoomName(string? roomName, long roomId) =>
+    string.IsNullOrWhiteSpace(roomName)
+        ? roomId.ToString(CultureInfo.InvariantCulture)
+        : roomName.Trim();
+
+static long NextBatchId(BillingData data) =>
+    data.RoomInvoiceBatches.Count == 0
+        ? 1
+        : data.RoomInvoiceBatches.Max(item => item.Id) + 1;
 
 static string? ValidateInvoiceRequest(CreateMonthlyInvoiceRequest request)
 {
@@ -804,6 +1463,211 @@ static MonthlyInvoice? CompleteInvoicePayment(
     return invoice;
 }
 
+static StudentWallet EnsureWallet(
+    BillingData data,
+    long studentId,
+    string? studentCode = null,
+    string? studentName = null)
+{
+    var wallet = data.StudentWallets.FirstOrDefault(item => item.StudentId == studentId);
+    var latestInvoice = data.MonthlyInvoices
+        .Where(item => item.StudentId == studentId)
+        .OrderByDescending(item => item.IssuedAt)
+        .FirstOrDefault();
+    var resolvedCode = FirstNonBlank(studentCode, wallet?.StudentCode, latestInvoice?.StudentCode, $"SV{studentId}");
+    var resolvedName = FirstNonBlank(studentName, wallet?.StudentName, latestInvoice?.StudentName, "Sinh viên");
+
+    if (wallet == null)
+    {
+        wallet = new StudentWallet
+        {
+            StudentId = studentId,
+            StudentCode = resolvedCode,
+            StudentName = resolvedName,
+            Balance = 0,
+            AutoPayEnabled = false,
+            UpdatedAt = DateTime.UtcNow
+        };
+        data.StudentWallets.Add(wallet);
+        return wallet;
+    }
+
+    if (string.IsNullOrWhiteSpace(wallet.StudentCode) ||
+        wallet.StudentCode.StartsWith("SV", StringComparison.OrdinalIgnoreCase))
+    {
+        wallet.StudentCode = resolvedCode;
+    }
+
+    if (string.IsNullOrWhiteSpace(wallet.StudentName) ||
+        wallet.StudentName.Equals("Sinh viên", StringComparison.OrdinalIgnoreCase))
+    {
+        wallet.StudentName = resolvedName;
+    }
+
+    return wallet;
+}
+
+static WalletTransaction AddWalletTransaction(
+    BillingData data,
+    StudentWallet wallet,
+    string type,
+    decimal amount,
+    string referenceCode,
+    long? invoiceId,
+    string? invoiceCode,
+    string description,
+    string createdBy)
+{
+    wallet.Balance = RoundMoney(wallet.Balance + amount);
+    wallet.UpdatedAt = DateTime.UtcNow;
+
+    var nextId = data.WalletTransactions.Count == 0
+        ? 1
+        : data.WalletTransactions.Max(item => item.Id) + 1;
+    var transaction = new WalletTransaction(
+        nextId,
+        wallet.StudentId,
+        wallet.StudentCode,
+        wallet.StudentName,
+        type,
+        RoundMoney(amount),
+        wallet.Balance,
+        referenceCode,
+        invoiceId,
+        invoiceCode,
+        description,
+        createdBy,
+        DateTime.UtcNow);
+
+    data.WalletTransactions.Add(transaction);
+    return transaction;
+}
+
+static List<MonthlyInvoice> TryAutoPayStudentInvoices(BillingData data, long studentId)
+{
+    var wallet = data.StudentWallets.FirstOrDefault(item => item.StudentId == studentId);
+
+    if (wallet == null || !wallet.AutoPayEnabled || wallet.Balance <= 0)
+        return [];
+
+    var paidInvoices = new List<MonthlyInvoice>();
+    var unpaidInvoices = data.MonthlyInvoices
+        .Where(item => item.StudentId == studentId &&
+            !item.Status.Equals("Paid", StringComparison.OrdinalIgnoreCase))
+        .OrderBy(item => item.DueDate)
+        .ThenBy(item => item.IssuedAt)
+        .ThenBy(item => item.Id)
+        .ToList();
+
+    foreach (var invoice in unpaidInvoices)
+    {
+        var amount = RoundMoney(invoice.TotalAmount);
+
+        if (amount <= 0)
+            continue;
+
+        if (wallet.Balance < amount)
+            break;
+
+        var reference = $"WALLET-{invoice.InvoiceCode}-{DateTime.UtcNow:yyyyMMddHHmmss}";
+        AddWalletTransaction(
+            data,
+            wallet,
+            "AutoPayment",
+            -amount,
+            reference,
+            invoice.Id,
+            invoice.InvoiceCode,
+            $"Tự động thanh toán phiếu {invoice.InvoiceCode}",
+            "Ví KTX");
+
+        var paidInvoice = CompleteInvoicePayment(
+            data,
+            invoice.Id,
+            amount,
+            reference,
+            "WalletAutoPay",
+            "Ví KTX");
+
+        if (paidInvoice != null)
+            paidInvoices.Add(paidInvoice);
+    }
+
+    return paidInvoices;
+}
+
+static WalletTopUpApplyResult ApplyWalletTopUpFromPayment(BillingData data, IncomingPayment payment)
+{
+    var studentId = TryParseWalletStudentId(payment.Content);
+
+    if (!studentId.HasValue)
+        return new WalletTopUpApplyResult(
+            new StudentWallet(),
+            null,
+            [],
+            false);
+
+    var wallet = EnsureWallet(data, studentId.Value);
+    var reference = NormalizeIncomingPaymentReference(payment);
+    var duplicate = data.WalletTransactions.Any(item =>
+        item.Type.Equals("TopUp", StringComparison.OrdinalIgnoreCase) &&
+        item.StudentId == studentId.Value &&
+        item.ReferenceCode.Equals(reference, StringComparison.OrdinalIgnoreCase));
+
+    if (duplicate)
+    {
+        return new WalletTopUpApplyResult(
+            wallet,
+            null,
+            [],
+            true);
+    }
+
+    var transaction = AddWalletTransaction(
+        data,
+        wallet,
+        "TopUp",
+        RoundMoney(payment.Amount),
+        reference,
+        null,
+        null,
+        "Nạp ví qua chuyển khoản ngân hàng",
+        "Ngân hàng");
+    var paidInvoices = TryAutoPayStudentInvoices(data, studentId.Value);
+
+    return new WalletTopUpApplyResult(
+        wallet,
+        transaction,
+        paidInvoices,
+        false);
+}
+
+static string BuildWalletTopUpCode(long studentId) =>
+    $"KTXWALLET{studentId}";
+
+static long? TryParseWalletStudentId(string content)
+{
+    var match = Regex.Match(content ?? string.Empty, @"KTXWALLET\s*(\d+)", RegexOptions.IgnoreCase);
+
+    return match.Success &&
+        long.TryParse(match.Groups[1].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var studentId)
+        ? studentId
+        : null;
+}
+
+static string NormalizeIncomingPaymentReference(IncomingPayment payment)
+{
+    if (!string.IsNullOrWhiteSpace(payment.ReferenceCode))
+        return payment.ReferenceCode.Trim();
+
+    var payload = $"{payment.Amount:0}|{payment.Content.Trim().ToUpperInvariant()}";
+    var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(payload)));
+    return $"BANK-{hash[..16]}";
+}
+
+static string FirstNonBlank(params string?[] values) =>
+    values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim() ?? string.Empty;
+
 static IEnumerable<IncomingPayment> ExtractIncomingPayments(JsonElement element)
 {
     if (element.ValueKind == JsonValueKind.Array)
@@ -856,6 +1720,330 @@ static decimal GetDecimal(JsonElement element, params string[] names)
     return decimal.TryParse(value, NumberStyles.Any, CultureInfo.InvariantCulture, out var amount)
         ? amount
         : 0;
+}
+
+static async Task<RoomSyncResult> SyncRoomForIncidentAsync(
+    MaintenanceIncident incident,
+    string nextStatus,
+    BillingStore store,
+    IHttpClientFactory httpClientFactory)
+{
+    return await SyncRoomForWorkItemAsync(
+        RoomReferenceFromIncident(incident),
+        nextStatus,
+        store,
+        httpClientFactory,
+        incident.Id,
+        null);
+}
+
+static async Task<RoomSyncResult> SyncRoomForMaintenanceAsync(
+    MaintenancePlan plan,
+    string nextStatus,
+    BillingStore store,
+    IHttpClientFactory httpClientFactory)
+{
+    return await SyncRoomForWorkItemAsync(
+        RoomReferenceFromMaintenance(plan),
+        nextStatus,
+        store,
+        httpClientFactory,
+        null,
+        plan.Id);
+}
+
+static async Task<RoomSyncResult> SyncRoomForWorkItemAsync(
+    RoomWorkReference? reference,
+    string nextStatus,
+    BillingStore store,
+    IHttpClientFactory httpClientFactory,
+    long? currentIncidentId,
+    long? currentMaintenanceId)
+{
+    if (reference == null)
+        return RoomSyncResult.Ok();
+
+    if (!ShouldMarkRoomMaintenance(nextStatus) && !ShouldReleaseRoom(nextStatus))
+        return RoomSyncResult.Ok();
+
+    if (ShouldReleaseRoom(nextStatus) &&
+        HasOtherOpenRoomWork(reference, store, currentIncidentId, currentMaintenanceId))
+    {
+        return RoomSyncResult.Ok();
+    }
+
+    var roomIdResult = await ResolveRoomIdAsync(reference, httpClientFactory);
+
+    if (!roomIdResult.Success)
+        return new RoomSyncResult(false, roomIdResult.Message);
+
+    if (!roomIdResult.RoomId.HasValue)
+        return RoomSyncResult.Ok();
+
+    return await SetRoomStatusAsync(
+        roomIdResult.RoomId.Value,
+        ShouldMarkRoomMaintenance(nextStatus) ? "Maintenance" : "Auto",
+        httpClientFactory);
+}
+
+static bool HasOtherOpenRoomWork(
+    RoomWorkReference reference,
+    BillingStore store,
+    long? currentIncidentId,
+    long? currentMaintenanceId)
+{
+    return store.Read(data =>
+        data.Incidents.Any(item =>
+            item.Id != currentIncidentId &&
+            ShouldMarkRoomMaintenance(item.Status) &&
+            SameRoomReference(RoomReferenceFromIncident(item), reference)) ||
+        data.MaintenancePlans.Any(item =>
+            item.Id != currentMaintenanceId &&
+            ShouldMarkRoomMaintenance(item.Status) &&
+            SameRoomReference(RoomReferenceFromMaintenance(item), reference)));
+}
+
+static bool ShouldMarkRoomMaintenance(string? status)
+{
+    return NormalizeWorkStatus(status) is "accepted" or "assigned" or "processing" or
+        "waiting-materials" or "reopened" or "in-progress";
+}
+
+static bool ShouldReleaseRoom(string? status)
+{
+    return NormalizeWorkStatus(status) is "completed" or "confirmed" or "rejected" or "cancelled" or "scheduled";
+}
+
+static string NormalizeWorkStatus(string? status)
+{
+    return (status ?? string.Empty).Trim().ToLowerInvariant();
+}
+
+static RoomWorkReference? RoomReferenceFromIncident(MaintenanceIncident incident)
+{
+    if (string.IsNullOrWhiteSpace(incident.RoomName))
+        return null;
+
+    return new RoomWorkReference(CleanBuildingToken(incident.Building), incident.RoomName.Trim());
+}
+
+static RoomWorkReference? RoomReferenceFromMaintenance(MaintenancePlan plan)
+{
+    if (string.IsNullOrWhiteSpace(plan.Location))
+        return null;
+
+    var foldedLocation = FoldText(plan.Location);
+    var roomMatch = Regex.Match(
+        foldedLocation,
+        @"\b(?:phong|room)\s*([A-Za-z]?\s*[-_/]?\s*\d{2,5})\b",
+        RegexOptions.IgnoreCase);
+
+    var compactRoomMatch = Regex.Match(
+        foldedLocation,
+        @"\b([A-Za-z])\s*[-_/]\s*(\d{2,5})\b",
+        RegexOptions.IgnoreCase);
+
+    if (!roomMatch.Success && !compactRoomMatch.Success)
+        return null;
+
+    var building = ExtractBuildingToken(foldedLocation);
+    var roomName = string.Empty;
+
+    if (compactRoomMatch.Success)
+    {
+        building = string.IsNullOrWhiteSpace(building) ? compactRoomMatch.Groups[1].Value : building;
+        roomName = compactRoomMatch.Groups[2].Value;
+    }
+    else
+    {
+        roomName = roomMatch.Groups[1].Value;
+    }
+
+    return string.IsNullOrWhiteSpace(roomName)
+        ? null
+        : new RoomWorkReference(CleanBuildingToken(building), CleanRoomToken(roomName));
+}
+
+static async Task<RoomResolveResult> ResolveRoomIdAsync(
+    RoomWorkReference reference,
+    IHttpClientFactory httpClientFactory)
+{
+    var client = httpClientFactory.CreateClient("RoomService");
+    var requestPath = string.IsNullOrWhiteSpace(reference.Building)
+        ? "/api/rooms"
+        : $"/api/rooms?buildingName={Uri.EscapeDataString(reference.Building)}";
+
+    try
+    {
+        using var response = await client.GetAsync(requestPath);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var detail = await response.Content.ReadAsStringAsync();
+            return new RoomResolveResult(false, $"Không đọc được danh sách phòng từ RoomService: {detail}", null);
+        }
+
+        await using var stream = await response.Content.ReadAsStreamAsync();
+        using var document = await JsonDocument.ParseAsync(stream);
+        var matchedRoom = EnumerateRoomElements(document.RootElement)
+            .FirstOrDefault(element => SameRoomElement(element, reference));
+
+        if (matchedRoom.ValueKind == JsonValueKind.Undefined)
+            return new RoomResolveResult(true, string.Empty, null);
+
+        var roomId = GetLong(matchedRoom, "roomId", "id");
+        return roomId > 0
+            ? new RoomResolveResult(true, string.Empty, roomId)
+            : new RoomResolveResult(false, "RoomService trả về phòng nhưng thiếu roomId.", null);
+    }
+    catch (HttpRequestException ex)
+    {
+        return new RoomResolveResult(false, $"Không kết nối được RoomService: {ex.Message}", null);
+    }
+    catch (TaskCanceledException ex)
+    {
+        return new RoomResolveResult(false, $"RoomService phản hồi quá lâu: {ex.Message}", null);
+    }
+}
+
+static async Task<RoomSyncResult> SetRoomStatusAsync(
+    long roomId,
+    string status,
+    IHttpClientFactory httpClientFactory)
+{
+    var client = httpClientFactory.CreateClient("RoomService");
+    using var request = new HttpRequestMessage(HttpMethod.Patch, $"/api/rooms/{roomId}/status")
+    {
+        Content = JsonContent.Create(new { status })
+    };
+
+    try
+    {
+        using var response = await client.SendAsync(request);
+
+        if (response.IsSuccessStatusCode)
+            return RoomSyncResult.Ok();
+
+        var detail = await response.Content.ReadAsStringAsync();
+        return new RoomSyncResult(false, $"RoomService không cập nhật được trạng thái phòng {roomId}: {detail}");
+    }
+    catch (HttpRequestException ex)
+    {
+        return new RoomSyncResult(false, $"Không kết nối được RoomService khi cập nhật phòng {roomId}: {ex.Message}");
+    }
+    catch (TaskCanceledException ex)
+    {
+        return new RoomSyncResult(false, $"RoomService phản hồi quá lâu khi cập nhật phòng {roomId}: {ex.Message}");
+    }
+}
+
+static IEnumerable<JsonElement> EnumerateRoomElements(JsonElement element)
+{
+    if (element.ValueKind == JsonValueKind.Array)
+    {
+        foreach (var child in element.EnumerateArray())
+            yield return child;
+
+        yield break;
+    }
+
+    if (element.ValueKind != JsonValueKind.Object)
+        yield break;
+
+    foreach (var propertyName in new[] { "data", "value", "items", "rooms" })
+    {
+        if (!element.TryGetProperty(propertyName, out var child))
+            continue;
+
+        foreach (var item in EnumerateRoomElements(child))
+            yield return item;
+    }
+}
+
+static bool SameRoomElement(JsonElement element, RoomWorkReference reference)
+{
+    var roomId = GetLong(element, "roomId", "id");
+    var roomNumber = GetString(element, "roomNumber", "roomName", "name");
+    var building = GetString(element, "buildingName", "building", "buildingCode");
+
+    var sameBuilding = string.IsNullOrWhiteSpace(reference.Building) ||
+        SameComparable(CleanBuildingToken(building), reference.Building);
+
+    var sameRoom = SameComparable(CleanRoomToken(roomNumber), CleanRoomToken(reference.RoomName)) ||
+        (long.TryParse(reference.RoomName, NumberStyles.Integer, CultureInfo.InvariantCulture, out var requestedRoomId) &&
+            roomId == requestedRoomId);
+
+    return sameBuilding && sameRoom;
+}
+
+static bool SameRoomReference(RoomWorkReference? first, RoomWorkReference second)
+{
+    if (first == null)
+        return false;
+
+    var sameBuilding = string.IsNullOrWhiteSpace(first.Building) ||
+        string.IsNullOrWhiteSpace(second.Building) ||
+        SameComparable(first.Building, second.Building);
+
+    return sameBuilding && SameComparable(CleanRoomToken(first.RoomName), CleanRoomToken(second.RoomName));
+}
+
+static long GetLong(JsonElement element, params string[] names)
+{
+    var value = GetString(element, names);
+    return long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var number)
+        ? number
+        : 0;
+}
+
+static string ExtractBuildingToken(string value)
+{
+    var match = Regex.Match(value, @"\b(?:toa|building|nha)\s*([A-Za-z0-9]+)\b", RegexOptions.IgnoreCase);
+    return match.Success ? match.Groups[1].Value : string.Empty;
+}
+
+static string CleanBuildingToken(string? value)
+{
+    var normalized = FoldText(value)
+        .Replace("toa", string.Empty, StringComparison.OrdinalIgnoreCase)
+        .Replace("building", string.Empty, StringComparison.OrdinalIgnoreCase)
+        .Trim();
+
+    return normalized is "-" or "." ? string.Empty : normalized;
+}
+
+static string CleanRoomToken(string? value)
+{
+    var normalized = FoldText(value);
+    var match = Regex.Match(normalized, @"\d{1,5}");
+    return match.Success ? match.Value : normalized;
+}
+
+static bool SameComparable(string? first, string? second)
+{
+    return string.Equals(
+        NormalizeComparable(first),
+        NormalizeComparable(second),
+        StringComparison.OrdinalIgnoreCase);
+}
+
+static string NormalizeComparable(string? value)
+{
+    return Regex.Replace(FoldText(value), @"[\s\-_/]", string.Empty).ToLowerInvariant();
+}
+
+static string FoldText(string? value)
+{
+    var normalized = (value ?? string.Empty).Normalize(NormalizationForm.FormD);
+    var builder = new StringBuilder(normalized.Length);
+
+    foreach (var character in normalized)
+    {
+        if (CharUnicodeInfo.GetUnicodeCategory(character) != UnicodeCategory.NonSpacingMark)
+            builder.Append(character);
+    }
+
+    return builder.ToString().Normalize(NormalizationForm.FormC).Trim();
 }
 
 static IResult CreateIncident(CreateIncidentRequest request, RequestIdentity identity, BillingStore store)
@@ -963,31 +2151,91 @@ static DateTime CalculateNextMaintenanceDate(DateTime current, string frequency)
     };
 }
 
-static RequestIdentity GetRequestIdentity(HttpRequest request)
+static long? ResolveStudentScope(HttpRequest request, long? requestedStudentId)
+{
+    var jwt = ReadBearerJwt(request);
+
+    if (jwt == null)
+        return requestedStudentId;
+
+    var role = jwt.Claims.FirstOrDefault(claim =>
+        claim.Type == ClaimTypes.Role || claim.Type == "role")?.Value;
+
+    if (!string.Equals(role, "Student", StringComparison.OrdinalIgnoreCase))
+        return requestedStudentId;
+
+    var rawStudentId = jwt.Claims.FirstOrDefault(claim => claim.Type == "studentId")?.Value;
+    return long.TryParse(rawStudentId, out var studentId)
+        ? studentId
+        : requestedStudentId;
+}
+
+static JwtSecurityToken? ReadBearerJwt(HttpRequest request)
 {
     var authorization = request.Headers.Authorization.ToString();
     const string bearerPrefix = "Bearer ";
 
     if (!authorization.StartsWith(bearerPrefix, StringComparison.OrdinalIgnoreCase))
-        return new RequestIdentity("anonymous", string.Empty, string.Empty);
+        return null;
 
     try
     {
-        var token = authorization[bearerPrefix.Length..].Trim();
-        var raw = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(token));
-        var parts = raw.Split(':');
-        return new RequestIdentity(
-            parts.ElementAtOrDefault(0) ?? "anonymous",
-            parts.ElementAtOrDefault(1) ?? string.Empty,
-            parts.ElementAtOrDefault(2) ?? string.Empty);
+        return new JwtSecurityTokenHandler().ReadJwtToken(
+            authorization[bearerPrefix.Length..].Trim());
     }
     catch
     {
-        return new RequestIdentity("anonymous", string.Empty, string.Empty);
+        return null;
     }
 }
 
+static RequestIdentity GetRequestIdentity(HttpRequest request)
+{
+    var jwt = ReadBearerJwt(request);
+
+    if (jwt == null)
+        return new RequestIdentity("anonymous", string.Empty, string.Empty);
+
+    var username = jwt.Claims.FirstOrDefault(claim =>
+        claim.Type == "username" ||
+        claim.Type == ClaimTypes.Name ||
+        claim.Type == JwtRegisteredClaimNames.Sub)?.Value ?? "anonymous";
+    var role = jwt.Claims.FirstOrDefault(claim =>
+        claim.Type == ClaimTypes.Role || claim.Type == "role")?.Value ?? string.Empty;
+    var studentCode = jwt.Claims.FirstOrDefault(claim => claim.Type == "studentCode")?.Value
+        ?? string.Empty;
+
+    return new RequestIdentity(username, role, studentCode);
+}
+
 public sealed record IncomingPayment(decimal Amount, string Content, string ReferenceCode);
+
+public sealed record WalletTopUpApplyResult(
+    StudentWallet Wallet,
+    WalletTransaction? Transaction,
+    List<MonthlyInvoice> PaidInvoices,
+    bool Duplicate);
+
+public sealed record RoomOccupantAllocationInput(
+    RoomInvoiceOccupant Occupant,
+    int OccupancyDays);
+
+public sealed record RoomPreviewBuildResult(
+    string? Error,
+    decimal ElectricityUsage,
+    decimal ElectricityAmount,
+    decimal WaterUsage,
+    decimal WaterAmount,
+    List<RoomInvoiceAllocationPreview> Allocations);
+
+public sealed record RoomSyncResult(bool Success, string Message)
+{
+    public static RoomSyncResult Ok() => new(true, string.Empty);
+}
+
+public sealed record RoomResolveResult(bool Success, string Message, long? RoomId);
+
+public sealed record RoomWorkReference(string Building, string RoomName);
 
 public sealed record RequestIdentity(string Username, string Role, string StudentCode)
 {
