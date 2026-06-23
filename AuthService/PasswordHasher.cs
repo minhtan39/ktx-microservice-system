@@ -44,7 +44,7 @@ public static class PasswordHasher
             return false;
 
         if (!IsHash(storedHash))
-            return string.Equals(storedHash, password, StringComparison.Ordinal);
+            return false;
 
         var parts = storedHash.Split('$', StringSplitOptions.RemoveEmptyEntries);
 

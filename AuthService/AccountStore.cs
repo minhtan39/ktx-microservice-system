@@ -28,7 +28,7 @@ public sealed class AccountStore
 
         foreach (var user in loadResult.Accounts)
         {
-            var passwordHash = user.Password;
+            var passwordHash = user.PasswordHash;
 
             if (!PasswordHasher.IsHash(passwordHash) && !string.IsNullOrWhiteSpace(passwordHash))
             {
@@ -38,7 +38,7 @@ public sealed class AccountStore
 
             var normalized = user with
             {
-                Password = passwordHash,
+                PasswordHash = passwordHash,
                 AccountStatus = string.IsNullOrWhiteSpace(user.AccountStatus)
                     ? "Active"
                     : user.AccountStatus,
@@ -99,18 +99,6 @@ public sealed class AccountStore
 
             Users[updated.Username] = updated;
             PersistUnsafe();
-        }
-    }
-
-    public bool Remove(string username)
-    {
-        lock (_writeLock)
-        {
-            if (!Users.TryRemove(username, out _))
-                return false;
-
-            PersistUnsafe();
-            return true;
         }
     }
 

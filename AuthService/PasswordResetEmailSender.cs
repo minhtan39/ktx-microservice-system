@@ -150,11 +150,11 @@ public sealed class PasswordResetEmailSender
         var safeUrl = WebUtility.HtmlEncode(accessUrl);
         var safeUsername = WebUtility.HtmlEncode(username);
         var title = isActivation
-            ? "Kich hoat tai khoan DormManager"
-            : "Dat lai mat khau DormManager";
+            ? "Kích hoạt tài khoản DormManager"
+            : "Đặt lại mật khẩu DormManager";
         var action = isActivation
-            ? "Kich hoat tai khoan"
-            : "Dat lai mat khau";
+            ? "Kích hoạt tài khoản"
+            : "Đặt lại mật khẩu";
 
         using var message = new MailMessage
         {
@@ -164,16 +164,16 @@ public sealed class PasswordResetEmailSender
             Body = $"""
                 <div style="font-family:Arial,sans-serif;line-height:1.6;color:#111827">
                   <h2 style="color:#0f7f51">{title}</h2>
-                  <p>Xin chao {safeName},</p>
-                  <p>Quan tri vien DormManager da gui lien ket bao mat cho tai khoan cua ban.</p>
-                  <p><b>Ten dang nhap:</b> {safeUsername}</p>
+                  <p>Xin chào {safeName},</p>
+                  <p>Quản trị viên DormManager đã gửi liên kết bảo mật cho tài khoản của bạn.</p>
+                  <p><b>Tên đăng nhập:</b> {safeUsername}</p>
                   <p>
                     <a href="{safeUrl}" style="display:inline-block;padding:12px 18px;background:#169b63;color:#fff;text-decoration:none;border-radius:6px;font-weight:700">
                       {action}
                     </a>
                   </p>
-                  <p>Lien ket co hieu luc trong thoi gian ngan va chi su dung duoc mot lan.</p>
-                  <p>Neu ban khong yeu cau thao tac nay, hay bao lai quan tri vien ky tuc xa.</p>
+                  <p>Liên kết có hiệu lực trong thời gian ngắn và chỉ sử dụng được một lần.</p>
+                  <p>Nếu bạn không yêu cầu thao tác này, hãy báo lại quản trị viên ký túc xá.</p>
                 </div>
                 """
         };

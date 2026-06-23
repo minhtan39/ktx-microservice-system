@@ -569,13 +569,21 @@ const createStudent = async () => {
     const createdStudent = res.data?.data || res.data || payload
 
     try {
-      await api.post('/auth/student-accounts', {
+      const accountResponse = await api.post('/auth/student-accounts', {
         studentId: createdStudent.id,
         studentCode: createdStudent.studentCode || payload.studentCode,
         fullName: createdStudent.fullName || payload.fullName,
       })
 
-      success.value = `Đã tạo hồ sơ và tài khoản sinh viên: ${payload.studentCode} / ${payload.studentCode}.`
+      const accountUsername = accountResponse.data?.data?.username || payload.studentCode
+
+      try {
+        await api.post(`/auth/accounts/${encodeURIComponent(accountUsername)}/access-link`)
+        success.value = `Đã tạo hồ sơ, tài khoản và gửi liên kết đặt mật khẩu đến email sinh viên ${payload.studentCode}.`
+      } catch (emailError) {
+        const emailMessage = emailError.response?.data?.detail || emailError.response?.data?.message
+        success.value = `Đã tạo hồ sơ và tài khoản chờ kích hoạt. Chưa gửi được email: ${emailMessage || 'hãy kiểm tra Gmail và email sinh viên.'}`
+      }
     } catch (accountError) {
       const accountMessage = accountError.response?.data?.message
       if (accountError.response?.status === 409) {
