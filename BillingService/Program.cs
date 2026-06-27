@@ -776,10 +776,25 @@ app.MapGet("/api/incidents", (
     string? status,
     string? assignedTo,
     string? priority,
+    HttpRequest httpRequest,
     BillingStore store) =>
 {
+    var identity = GetRequestIdentity(httpRequest);
+    var effectiveStudentId = studentId;
+    var effectiveStudentCode = string.Empty;
+
+    if (identity.Role.Equals("Student", StringComparison.OrdinalIgnoreCase))
+    {
+        effectiveStudentId = identity.StudentId ?? studentId;
+        effectiveStudentCode = identity.StudentCode;
+    }
+
     var incidents = store.Read(data => data.Incidents
-        .Where(item => !studentId.HasValue || item.StudentId == studentId.Value)
+        .Where(item =>
+            !effectiveStudentId.HasValue && string.IsNullOrWhiteSpace(effectiveStudentCode) ||
+            effectiveStudentId.HasValue && item.StudentId == effectiveStudentId.Value ||
+            !string.IsNullOrWhiteSpace(effectiveStudentCode) &&
+                item.StudentCode.Equals(effectiveStudentCode, StringComparison.OrdinalIgnoreCase))
         .Where(item => string.IsNullOrWhiteSpace(status) ||
             item.Status.Equals(status, StringComparison.OrdinalIgnoreCase))
         .Where(item => string.IsNullOrWhiteSpace(assignedTo) ||
@@ -1093,7 +1108,7 @@ app.MapPost("/api/incidents/{id:long}/cancel", async Task<IResult> (
             existing.AssignedTo.Equals(identity.Username, StringComparison.OrdinalIgnoreCase));
 
     if (!isStudentOwner && !canOperationalCancel)
-        return Results.Unauthorized();
+        return Forbidden("Bạn không có quyền hủy yêu cầu sửa chữa này.");
 
     if (IsFinalIncidentStatus(existing.Status))
         return Results.BadRequest(new { message = "Yêu cầu đã kết thúc nên không thể hủy." });
@@ -1133,7 +1148,7 @@ app.MapPost("/api/incidents/{id:long}/cancel", async Task<IResult> (
         return incident;
     });
 
-    if (updated?.Id == -1) return Results.Unauthorized();
+    if (updated?.Id == -1) return Forbidden("Bạn không có quyền hủy yêu cầu sửa chữa này.");
     if (updated?.Id == -2) return Results.BadRequest(new { message = "Yêu cầu đã kết thúc nên không thể hủy." });
     if (updated?.Id == -3)
     {
@@ -2523,6 +2538,9 @@ static long? ResolveStudentScope(HttpRequest request, long? requestedStudentId)
         : requestedStudentId;
 }
 
+static IResult Forbidden(string message) =>
+    Results.Json(new { message }, statusCode: StatusCodes.Status403Forbidden);
+
 static JwtSecurityToken? ReadBearerJwt(HttpRequest request)
 {
     var authorization = request.Headers.Authorization.ToString();
@@ -2618,5 +2636,6 @@ public sealed record RequestIdentity(string Username, string Role, string Studen
     public bool IsStudentOwner(MaintenanceIncident incident) =>
         Role.Equals("Student", StringComparison.OrdinalIgnoreCase) &&
         ((StudentId.HasValue && StudentId.Value == incident.StudentId) ||
-            StudentCode.Equals(incident.StudentCode, StringComparison.OrdinalIgnoreCase));
+            StudentCode.Equals(incident.StudentCode, StringComparison.OrdinalIgnoreCase) ||
+            Username.Equals(incident.StudentCode, StringComparison.OrdinalIgnoreCase));
 }

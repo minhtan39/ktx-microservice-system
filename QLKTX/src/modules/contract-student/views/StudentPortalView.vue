@@ -782,10 +782,16 @@ const toIsoDate = (value) => new Date(`${value}T00:00:00`).toISOString()
 const resolveStudent = async () => {
   const response = await api.get('/students')
   const students = cleanStudents(response.data)
+  const normalizedStudentCode = String(studentCode.value || '').trim().toLowerCase()
 
-  const matched = students.find((item) =>
-    Number(item.id) === studentId.value ||
-    (studentCode.value && item.studentCode === studentCode.value))
+  const matchedByCode = normalizedStudentCode
+    ? students.find((item) =>
+      String(item.studentCode || '').trim().toLowerCase() === normalizedStudentCode)
+    : null
+  const matchedById = !matchedByCode && studentId.value
+    ? students.find((item) => Number(item.id) === studentId.value)
+    : null
+  const matched = matchedByCode || matchedById
 
   student.value = matched || null
 
@@ -833,6 +839,16 @@ const loadIncidents = async () => {
 
   const response = await api.get(`/incidents?studentId=${studentId.value}`)
   ownIncidents.value = normalizeList(response.data)
+    .filter((incident) => isOwnIncident(incident))
+}
+
+const isOwnIncident = (incident) => {
+  const incidentStudentId = Number(incident.studentId || 0)
+  const incidentStudentCode = String(incident.studentCode || '').trim().toLowerCase()
+  const currentStudentCode = String(studentCode.value || '').trim().toLowerCase()
+
+  return Boolean(studentId.value && incidentStudentId === studentId.value) ||
+    Boolean(currentStudentCode && incidentStudentCode === currentStudentCode)
 }
 
 const loadAll = async () => {
@@ -963,7 +979,10 @@ const cancelIncident = async (incident) => {
     success.value = 'Đã hủy yêu cầu sửa chữa.'
     await loadIncidents()
   } catch (err) {
-    error.value = err.response?.data?.message || 'Không hủy được yêu cầu sửa chữa.'
+    error.value = err.response?.data?.message ||
+      ([401, 403].includes(err.response?.status)
+        ? 'Bạn không có quyền hủy yêu cầu sửa chữa này.'
+        : 'Không hủy được yêu cầu sửa chữa.')
   } finally {
     incidentActionLoading.value = null
   }
