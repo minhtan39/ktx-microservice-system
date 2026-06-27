@@ -980,26 +980,17 @@ app.MapPost("/api/incidents/{id:long}/confirm", async Task<IResult> (
     if (existing == null)
         return Results.NotFound();
 
-    if (!identity.IsAdmin && !identity.IsStudentOwner(existing))
+    if (!identity.IsStudentOwner(existing))
         return Results.Unauthorized();
 
     if (existing.Status != "completed")
         return Results.BadRequest(new { message = "Yêu cầu chưa ở trạng thái hoàn thành." });
 
-    var roomSyncResult = await SyncRoomForIncidentAsync(
-        existing,
-        "confirmed",
-        store,
-        httpClientFactory);
-
-    if (!roomSyncResult.Success)
-        return Results.Problem(roomSyncResult.Message, statusCode: StatusCodes.Status502BadGateway);
-
     var updated = store.Write(data =>
     {
         var incident = data.Incidents.FirstOrDefault(item => item.Id == id);
         if (incident == null) return null;
-        if (!identity.IsAdmin && !identity.IsStudentOwner(incident)) return new MaintenanceIncident { Id = -1 };
+        if (!identity.IsStudentOwner(incident)) return new MaintenanceIncident { Id = -1 };
         if (incident.Status != "completed") return new MaintenanceIncident { Id = -2 };
 
         incident.Status = "confirmed";
@@ -1011,7 +1002,22 @@ app.MapPost("/api/incidents/{id:long}/confirm", async Task<IResult> (
 
     if (updated?.Id == -1) return Results.Unauthorized();
     if (updated?.Id == -2) return Results.BadRequest(new { message = "Yêu cầu chưa ở trạng thái hoàn thành." });
-    return updated == null ? Results.NotFound() : Results.Ok(updated);
+    if (updated == null) return Results.NotFound();
+
+    var roomSyncResult = await SyncRoomForIncidentAsync(
+        updated,
+        "confirmed",
+        store,
+        httpClientFactory);
+
+    if (!roomSyncResult.Success)
+    {
+        var warning = $"Đã xác nhận hoàn thành nhưng chưa đồng bộ được trạng thái phòng: {roomSyncResult.Message}";
+        updated = AddIncidentWarning(store, id, identity.Username, warning) ?? updated;
+        return Results.Ok(new { data = updated, warning });
+    }
+
+    return Results.Ok(updated);
 });
 
 app.MapPost("/api/incidents/{id:long}/reopen", async Task<IResult> (
@@ -1027,26 +1033,17 @@ app.MapPost("/api/incidents/{id:long}/reopen", async Task<IResult> (
     if (existing == null)
         return Results.NotFound();
 
-    if (!identity.IsAdmin && !identity.IsStudentOwner(existing))
+    if (!identity.IsStudentOwner(existing))
         return Results.Unauthorized();
 
     if (existing.Status is not ("completed" or "confirmed"))
         return Results.BadRequest(new { message = "Yêu cầu chưa thể mở lại." });
 
-    var roomSyncResult = await SyncRoomForIncidentAsync(
-        existing,
-        "reopened",
-        store,
-        httpClientFactory);
-
-    if (!roomSyncResult.Success)
-        return Results.Problem(roomSyncResult.Message, statusCode: StatusCodes.Status502BadGateway);
-
     var updated = store.Write(data =>
     {
         var incident = data.Incidents.FirstOrDefault(item => item.Id == id);
         if (incident == null) return null;
-        if (!identity.IsAdmin && !identity.IsStudentOwner(incident)) return new MaintenanceIncident { Id = -1 };
+        if (!identity.IsStudentOwner(incident)) return new MaintenanceIncident { Id = -1 };
         if (incident.Status is not ("completed" or "confirmed")) return new MaintenanceIncident { Id = -2 };
 
         incident.Status = "reopened";
@@ -1058,7 +1055,22 @@ app.MapPost("/api/incidents/{id:long}/reopen", async Task<IResult> (
 
     if (updated?.Id == -1) return Results.Unauthorized();
     if (updated?.Id == -2) return Results.BadRequest(new { message = "Yêu cầu chưa thể mở lại." });
-    return updated == null ? Results.NotFound() : Results.Ok(updated);
+    if (updated == null) return Results.NotFound();
+
+    var roomSyncResult = await SyncRoomForIncidentAsync(
+        updated,
+        "reopened",
+        store,
+        httpClientFactory);
+
+    if (!roomSyncResult.Success)
+    {
+        var warning = $"Đã mở lại yêu cầu nhưng chưa đồng bộ được trạng thái phòng: {roomSyncResult.Message}";
+        updated = AddIncidentWarning(store, id, identity.Username, warning) ?? updated;
+        return Results.Ok(new { data = updated, warning });
+    }
+
+    return Results.Ok(updated);
 });
 
 app.MapGet("/api/maintenance", (string? assignedTo, string? status, BillingStore store) =>
@@ -2438,7 +2450,7 @@ static RequestIdentity GetRequestIdentity(HttpRequest request)
     var jwt = ReadBearerJwt(request);
 
     if (jwt == null)
-        return new RequestIdentity("anonymous", string.Empty, string.Empty);
+        return new RequestIdentity("anonymous", string.Empty, string.Empty, null);
 
     var username = jwt.Claims.FirstOrDefault(claim =>
         claim.Type == "username" ||
@@ -2448,8 +2460,12 @@ static RequestIdentity GetRequestIdentity(HttpRequest request)
         claim.Type == ClaimTypes.Role || claim.Type == "role")?.Value ?? string.Empty;
     var studentCode = jwt.Claims.FirstOrDefault(claim => claim.Type == "studentCode")?.Value
         ?? string.Empty;
+    var rawStudentId = jwt.Claims.FirstOrDefault(claim => claim.Type == "studentId")?.Value;
+    var studentId = long.TryParse(rawStudentId, out var parsedStudentId)
+        ? parsedStudentId
+        : (long?)null;
 
-    return new RequestIdentity(username, role, studentCode);
+    return new RequestIdentity(username, role, studentCode, studentId);
 }
 
 public sealed record IncomingPayment(decimal Amount, string Content, string ReferenceCode);
@@ -2498,11 +2514,12 @@ public sealed record StaffAssigneeValidationResult(
         new(false, true, message, string.Empty, string.Empty);
 }
 
-public sealed record RequestIdentity(string Username, string Role, string StudentCode)
+public sealed record RequestIdentity(string Username, string Role, string StudentCode, long? StudentId)
 {
     public bool IsAdmin => Role.Equals("Admin", StringComparison.OrdinalIgnoreCase);
     public bool IsOperational => IsAdmin || Role.Equals("Staff", StringComparison.OrdinalIgnoreCase);
     public bool IsStudentOwner(MaintenanceIncident incident) =>
         Role.Equals("Student", StringComparison.OrdinalIgnoreCase) &&
-        StudentCode.Equals(incident.StudentCode, StringComparison.OrdinalIgnoreCase);
+        ((StudentId.HasValue && StudentId.Value == incident.StudentId) ||
+            StudentCode.Equals(incident.StudentCode, StringComparison.OrdinalIgnoreCase));
 }
