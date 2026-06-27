@@ -240,7 +240,9 @@ static bool IsAuthorizedForPath(
 
     return normalized.StartsWith("incidents/") &&
         isPost &&
-        (normalized.EndsWith("/confirm") || normalized.EndsWith("/reopen"));
+        (normalized.EndsWith("/confirm") ||
+            normalized.EndsWith("/reopen") ||
+            normalized.EndsWith("/cancel"));
 }
 
 static bool IsInternalServiceRequest(HttpContext context, IConfiguration configuration)
