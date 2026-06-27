@@ -33,6 +33,18 @@ builder.Services.AddHttpClient("RoomService", client =>
 
     client.BaseAddress = new Uri(roomServiceBaseUrl);
 });
+builder.Services.AddHttpClient("AuthService", client =>
+{
+    var authServiceBaseUrl = builder.Configuration["Integration:AuthServiceBaseUrl"]
+        ?? "http://auth-service:8080";
+
+    client.BaseAddress = new Uri(authServiceBaseUrl);
+
+    var internalServiceKey = builder.Configuration["InternalService:ApiKey"];
+
+    if (!string.IsNullOrWhiteSpace(internalServiceKey))
+        client.DefaultRequestHeaders.Add("X-Internal-Service-Key", internalServiceKey);
+});
 
 var app = builder.Build();
 
@@ -823,24 +835,23 @@ app.MapMethods(
         if (existing == null)
             return Results.NotFound(new { message = "Incident request not found." });
 
-        var roomSyncResult = await SyncRoomForIncidentAsync(
-            existing,
-            "assigned",
-            store,
+        var assignee = await ValidateStaffAssigneeAsync(
+            request.AssignedTo,
+            "manage_incidents",
             httpClientFactory);
 
-        if (!roomSyncResult.Success)
-            return Results.Problem(roomSyncResult.Message, statusCode: StatusCodes.Status502BadGateway);
+        if (!assignee.Success)
+            return assignee.IsServiceError
+                ? Results.Problem(assignee.Message, statusCode: StatusCodes.Status502BadGateway)
+                : Results.BadRequest(new { message = assignee.Message });
 
         var updated = store.Write(data =>
         {
             var incident = data.Incidents.FirstOrDefault(item => item.Id == id);
             if (incident == null) return null;
 
-            incident.AssignedTo = request.AssignedTo.Trim();
-            incident.AssignedName = string.IsNullOrWhiteSpace(request.AssignedName)
-                ? request.AssignedTo.Trim()
-                : request.AssignedName.Trim();
+            incident.AssignedTo = assignee.Username;
+            incident.AssignedName = assignee.DisplayName;
             incident.Priority = NormalizePriority(request.Priority) ?? incident.Priority;
             incident.ScheduledAt = request.ScheduledAt ?? incident.ScheduledAt;
             incident.DueAt = request.DueAt ?? incident.DueAt;
@@ -850,9 +861,23 @@ app.MapMethods(
             return incident;
         });
 
-        return updated == null
-            ? Results.NotFound(new { message = "Incident request not found." })
-            : Results.Ok(updated);
+        if (updated == null)
+            return Results.NotFound(new { message = "Incident request not found." });
+
+        var roomSyncResult = await SyncRoomForIncidentAsync(
+            updated,
+            updated.Status,
+            store,
+            httpClientFactory);
+
+        if (!roomSyncResult.Success)
+        {
+            var warning = $"Đã phân công nhưng chưa đồng bộ được trạng thái phòng: {roomSyncResult.Message}";
+            updated = AddIncidentWarning(store, id, identity.Username, warning) ?? updated;
+            return Results.Ok(new { data = updated, warning });
+        }
+
+        return Results.Ok(updated);
     });
 
 app.MapMethods(
@@ -893,15 +918,6 @@ app.MapMethods(
             return Results.BadRequest(new { message = "Vui lòng nhập kết quả xử lý trước khi hoàn thành." });
         }
 
-        var roomSyncResult = await SyncRoomForIncidentAsync(
-            existing,
-            nextStatus,
-            store,
-            httpClientFactory);
-
-        if (!roomSyncResult.Success)
-            return Results.Problem(roomSyncResult.Message, statusCode: StatusCodes.Status502BadGateway);
-
         var updated = store.Write(data =>
         {
             var incident = data.Incidents.FirstOrDefault(item => item.Id == id);
@@ -932,9 +948,23 @@ app.MapMethods(
             return incident;
         });
 
-        return updated == null
-            ? Results.NotFound(new { message = "Incident request not found." })
-            : Results.Ok(updated);
+        if (updated == null)
+            return Results.NotFound(new { message = "Incident request not found." });
+
+        var roomSyncResult = await SyncRoomForIncidentAsync(
+            updated,
+            nextStatus,
+            store,
+            httpClientFactory);
+
+        if (!roomSyncResult.Success)
+        {
+            var warning = $"Đã cập nhật tiến độ nhưng chưa đồng bộ được trạng thái phòng: {roomSyncResult.Message}";
+            updated = AddIncidentWarning(store, id, identity.Username, warning) ?? updated;
+            return Results.Ok(new { data = updated, warning });
+        }
+
+        return Results.Ok(updated);
     });
 
 app.MapPost("/api/incidents/{id:long}/confirm", async Task<IResult> (
@@ -1040,10 +1070,11 @@ app.MapGet("/api/maintenance", (string? assignedTo, string? status, BillingStore
         .OrderBy(item => item.NextDueDate)
         .ToList())));
 
-app.MapPost("/api/maintenance", (
+app.MapPost("/api/maintenance", async Task<IResult> (
     CreateMaintenancePlanRequest request,
     HttpRequest httpRequest,
-    BillingStore store) =>
+    BillingStore store,
+    IHttpClientFactory httpClientFactory) =>
 {
     var identity = GetRequestIdentity(httpRequest);
     if (!identity.IsAdmin) return Results.StatusCode(StatusCodes.Status403Forbidden);
@@ -1053,6 +1084,21 @@ app.MapPost("/api/maintenance", (
         string.IsNullOrWhiteSpace(request.Location))
     {
         return Results.BadRequest(new { message = "Vui lòng nhập tên công việc, thiết bị và vị trí." });
+    }
+
+    StaffAssigneeValidationResult? assignee = null;
+
+    if (!string.IsNullOrWhiteSpace(request.AssignedTo))
+    {
+        assignee = await ValidateStaffAssigneeAsync(
+            request.AssignedTo,
+            "manage_maintenance",
+            httpClientFactory);
+
+        if (!assignee.Success)
+            return assignee.IsServiceError
+                ? Results.Problem(assignee.Message, statusCode: StatusCodes.Status502BadGateway)
+                : Results.BadRequest(new { message = assignee.Message });
     }
 
     var plan = store.Write(data =>
@@ -1068,8 +1114,8 @@ app.MapPost("/api/maintenance", (
             Category = string.IsNullOrWhiteSpace(request.Category) ? "Other" : request.Category.Trim(),
             Frequency = string.IsNullOrWhiteSpace(request.Frequency) ? "Monthly" : request.Frequency.Trim(),
             NextDueDate = request.NextDueDate,
-            AssignedTo = request.AssignedTo?.Trim(),
-            AssignedName = request.AssignedName?.Trim(),
+            AssignedTo = assignee?.Username,
+            AssignedName = assignee?.DisplayName,
             Checklist = request.Checklist ?? [],
             Notes = request.Notes?.Trim(),
             CreatedAt = DateTime.UtcNow,
@@ -1106,6 +1152,20 @@ app.MapMethods(
 
         var nextStatus = NormalizeMaintenanceStatus(request.Status) ?? existing.Status;
         var nextCompletedItems = request.CompletedItems ?? existing.CompletedItems;
+        StaffAssigneeValidationResult? assignee = null;
+
+        if (identity.IsAdmin && !string.IsNullOrWhiteSpace(request.AssignedTo))
+        {
+            assignee = await ValidateStaffAssigneeAsync(
+                request.AssignedTo,
+                "manage_maintenance",
+                httpClientFactory);
+
+            if (!assignee.Success)
+                return assignee.IsServiceError
+                    ? Results.Problem(assignee.Message, statusCode: StatusCodes.Status502BadGateway)
+                    : Results.BadRequest(new { message = assignee.Message });
+        }
 
         if (nextStatus == "completed" &&
             existing.Checklist.Count > 0 &&
@@ -1114,25 +1174,16 @@ app.MapMethods(
             return Results.BadRequest(new { message = "Vui lòng hoàn thành toàn bộ checklist trước khi kết thúc bảo trì." });
         }
 
-        var roomSyncResult = await SyncRoomForMaintenanceAsync(
-            existing,
-            nextStatus,
-            store,
-            httpClientFactory);
-
-        if (!roomSyncResult.Success)
-            return Results.Problem(roomSyncResult.Message, statusCode: StatusCodes.Status502BadGateway);
-
         var plan = store.Write(data =>
         {
             var current = data.MaintenancePlans.FirstOrDefault(item => item.Id == id);
             if (current == null) return null;
 
             current.Status = nextStatus;
-            if (identity.IsAdmin)
+            if (identity.IsAdmin && assignee != null)
             {
-                current.AssignedTo = string.IsNullOrWhiteSpace(request.AssignedTo) ? current.AssignedTo : request.AssignedTo.Trim();
-                current.AssignedName = string.IsNullOrWhiteSpace(request.AssignedName) ? current.AssignedName : request.AssignedName.Trim();
+                current.AssignedTo = assignee.Username;
+                current.AssignedName = assignee.DisplayName;
             }
             current.NextDueDate = request.NextDueDate ?? current.NextDueDate;
             current.CompletedItems = nextCompletedItems;
@@ -1150,7 +1201,23 @@ app.MapMethods(
             return current;
         });
 
-        return plan == null ? Results.NotFound() : Results.Ok(plan);
+        if (plan == null)
+            return Results.NotFound();
+
+        var roomSyncResult = await SyncRoomForMaintenanceAsync(
+            plan,
+            nextStatus,
+            store,
+            httpClientFactory);
+
+        if (!roomSyncResult.Success)
+        {
+            var warning = $"Đã lưu bảo trì nhưng chưa đồng bộ được trạng thái phòng: {roomSyncResult.Message}";
+            plan = AddMaintenanceWarning(store, id, identity.Username, warning) ?? plan;
+            return Results.Ok(new { data = plan, warning });
+        }
+
+        return Results.Ok(plan);
     });
 
 app.Run();
@@ -2064,7 +2131,7 @@ static IResult CreateIncident(CreateIncidentRequest request, RequestIdentity ide
             StudentCode = string.IsNullOrWhiteSpace(request.StudentCode) ? $"SV-{request.StudentId}" : request.StudentCode.Trim(),
             StudentName = string.IsNullOrWhiteSpace(request.StudentName) ? "Student" : request.StudentName.Trim(),
             RoomName = request.RoomName.Trim(),
-            Building = string.IsNullOrWhiteSpace(request.Building) ? "-" : request.Building.Trim(),
+            Building = request.Building?.Trim() ?? string.Empty,
             Category = string.IsNullOrWhiteSpace(request.Category) ? "Other" : request.Category.Trim(),
             Description = request.Description.Trim(),
             Priority = NormalizePriority(request.Priority) ?? "normal",
@@ -2102,6 +2169,183 @@ static string? NormalizeIncidentStatus(string status)
         "cancelled" or "canceled" => "cancelled",
         _ => null
     };
+}
+
+static async Task<StaffAssigneeValidationResult> ValidateStaffAssigneeAsync(
+    string assignedTo,
+    string requiredPermission,
+    IHttpClientFactory httpClientFactory)
+{
+    var username = assignedTo.Trim();
+
+    if (string.IsNullOrWhiteSpace(username))
+        return StaffAssigneeValidationResult.Invalid("Vui lòng chọn nhân viên phụ trách.");
+
+    var client = httpClientFactory.CreateClient("AuthService");
+
+    try
+    {
+        using var response = await client.GetAsync("/api/auth/staff");
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var detail = await response.Content.ReadAsStringAsync();
+            return StaffAssigneeValidationResult.ServiceError(
+                $"Không kiểm tra được danh sách nhân viên từ AuthService: {detail}");
+        }
+
+        await using var stream = await response.Content.ReadAsStreamAsync();
+        using var document = await JsonDocument.ParseAsync(stream);
+        var staff = EnumeratePayloadItems(document.RootElement)
+            .FirstOrDefault(item =>
+                GetString(item, "username").Equals(username, StringComparison.OrdinalIgnoreCase));
+
+        if (staff.ValueKind == JsonValueKind.Undefined)
+            return StaffAssigneeValidationResult.Invalid("Nhân viên được giao không tồn tại trong AuthService.");
+
+        var accountStatus = GetString(staff, "accountStatus", "status");
+
+        if (!accountStatus.Equals("Active", StringComparison.OrdinalIgnoreCase))
+            return StaffAssigneeValidationResult.Invalid("Nhân viên được giao chưa hoạt động hoặc đang bị khóa.");
+
+        var permissions = GetStringArray(staff, "permissions");
+
+        if (!permissions.Contains(requiredPermission, StringComparer.OrdinalIgnoreCase))
+        {
+            return StaffAssigneeValidationResult.Invalid(
+                $"Nhân viên được giao chưa có quyền {PermissionLabel(requiredPermission)}.");
+        }
+
+        var fullName = GetString(staff, "fullName", "name", "displayName");
+        var employeeCode = GetString(staff, "employeeCode");
+        var displayName = string.IsNullOrWhiteSpace(employeeCode)
+            ? fullName
+            : $"{employeeCode} · {fullName}";
+
+        return StaffAssigneeValidationResult.Valid(
+            username,
+            string.IsNullOrWhiteSpace(displayName) ? username : displayName);
+    }
+    catch (HttpRequestException ex)
+    {
+        return StaffAssigneeValidationResult.ServiceError($"Không kết nối được AuthService: {ex.Message}");
+    }
+    catch (TaskCanceledException ex)
+    {
+        return StaffAssigneeValidationResult.ServiceError($"AuthService phản hồi quá lâu: {ex.Message}");
+    }
+    catch (JsonException ex)
+    {
+        return StaffAssigneeValidationResult.ServiceError($"AuthService trả dữ liệu nhân viên không hợp lệ: {ex.Message}");
+    }
+}
+
+static IEnumerable<JsonElement> EnumeratePayloadItems(JsonElement element)
+{
+    if (element.ValueKind == JsonValueKind.Array)
+    {
+        foreach (var item in element.EnumerateArray())
+            yield return item;
+
+        yield break;
+    }
+
+    if (element.ValueKind != JsonValueKind.Object)
+        yield break;
+
+    foreach (var property in element.EnumerateObject())
+    {
+        if (!property.Name.Equals("data", StringComparison.OrdinalIgnoreCase) &&
+            !property.Name.Equals("items", StringComparison.OrdinalIgnoreCase) &&
+            !property.Name.Equals("value", StringComparison.OrdinalIgnoreCase))
+        {
+            continue;
+        }
+
+        foreach (var item in EnumeratePayloadItems(property.Value))
+            yield return item;
+    }
+}
+
+static string[] GetStringArray(JsonElement element, string name)
+{
+    foreach (var property in element.EnumerateObject())
+    {
+        if (!property.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+            continue;
+
+        if (property.Value.ValueKind == JsonValueKind.Array)
+        {
+            return property.Value
+                .EnumerateArray()
+                .Select(item => item.ToString())
+                .Where(item => !string.IsNullOrWhiteSpace(item))
+                .ToArray();
+        }
+
+        var scalar = property.Value.ToString();
+        return string.IsNullOrWhiteSpace(scalar) ? [] : [scalar];
+    }
+
+    return [];
+}
+
+static string PermissionLabel(string permission)
+{
+    return permission switch
+    {
+        "manage_incidents" => "xử lý sửa chữa",
+        "manage_maintenance" => "quản lý bảo trì",
+        _ => permission
+    };
+}
+
+static MaintenanceIncident? AddIncidentWarning(
+    BillingStore store,
+    long incidentId,
+    string actor,
+    string warning)
+{
+    return store.Write(data =>
+    {
+        var incident = data.Incidents.FirstOrDefault(item => item.Id == incidentId);
+
+        if (incident == null)
+            return null;
+
+        incident.UpdatedAt = DateTime.UtcNow;
+        AddIncidentTimeline(incident, "room-sync-warning", actor, warning);
+        return incident;
+    });
+}
+
+static MaintenancePlan? AddMaintenanceWarning(
+    BillingStore store,
+    long maintenanceId,
+    string actor,
+    string warning)
+{
+    return store.Write(data =>
+    {
+        var plan = data.MaintenancePlans.FirstOrDefault(item => item.Id == maintenanceId);
+
+        if (plan == null)
+            return null;
+
+        plan.UpdatedAt = DateTime.UtcNow;
+        plan.UpdatedBy = string.IsNullOrWhiteSpace(actor) ? plan.UpdatedBy : actor;
+        plan.Notes = AppendOperationalNote(plan.Notes, warning);
+        return plan;
+    });
+}
+
+static string AppendOperationalNote(string? currentNote, string note)
+{
+    var timestampedNote = $"[{DateTime.UtcNow:dd/MM/yyyy HH:mm} UTC] {note}";
+
+    return string.IsNullOrWhiteSpace(currentNote)
+        ? timestampedNote
+        : $"{currentNote.Trim()}\n{timestampedNote}";
 }
 
 static string? NormalizePriority(string? priority)
@@ -2236,6 +2480,23 @@ public sealed record RoomSyncResult(bool Success, string Message)
 public sealed record RoomResolveResult(bool Success, string Message, long? RoomId);
 
 public sealed record RoomWorkReference(string Building, string RoomName);
+
+public sealed record StaffAssigneeValidationResult(
+    bool Success,
+    bool IsServiceError,
+    string Message,
+    string Username,
+    string DisplayName)
+{
+    public static StaffAssigneeValidationResult Valid(string username, string displayName) =>
+        new(true, false, string.Empty, username, displayName);
+
+    public static StaffAssigneeValidationResult Invalid(string message) =>
+        new(false, false, message, string.Empty, string.Empty);
+
+    public static StaffAssigneeValidationResult ServiceError(string message) =>
+        new(false, true, message, string.Empty, string.Empty);
+}
 
 public sealed record RequestIdentity(string Username, string Role, string StudentCode)
 {

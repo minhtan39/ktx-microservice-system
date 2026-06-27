@@ -199,20 +199,14 @@
 
         <v-form class="registration-form" @submit.prevent="submitIncident">
           <v-row dense>
-            <v-col cols="12" sm="3">
-              <v-text-field
-                v-model="incidentForm.roomName"
-                label="Phòng"
-                density="comfortable"
-              />
-            </v-col>
-            <v-col cols="12" sm="3">
-              <v-select
-                v-model="incidentForm.building"
-                :items="buildingOptions"
-                label="Tòa"
-                density="comfortable"
-              />
+            <v-col cols="12" sm="6">
+              <div :class="['auto-room-field', { 'is-missing': !repairRoom }]">
+                <span class="mdi mdi-home-city-outline"></span>
+                <div>
+                  <small>Phòng báo sửa chữa</small>
+                  <strong>{{ repairRoomLabel }}</strong>
+                </div>
+              </div>
             </v-col>
             <v-col cols="12" sm="3">
               <v-select
@@ -264,7 +258,7 @@
               color="success"
               type="submit"
               :loading="incidentSubmitting"
-              :disabled="!student"
+              :disabled="!student || !repairRoom"
               prepend-icon="mdi-send-outline"
             >
               Gửi yêu cầu sửa chữa
@@ -292,7 +286,7 @@
               </tr>
               <tr v-for="incident in ownIncidents" :key="incident.id">
                 <td>{{ formatDate(incident.createdAt) }}</td>
-                <td>{{ incident.building }}-{{ incident.roomName }}</td>
+                <td>{{ roomDisplay(incident) }}</td>
                 <td><span class="status-pill" :class="`priority-${incident.priority || 'normal'}`">{{ incidentPriorityLabel(incident.priority) }}</span></td>
                 <td>{{ incidentCategoryLabel(incident.category) }}</td>
                 <td>{{ incident.description }}</td>
@@ -708,21 +702,11 @@ const incidentPriorityOptions = [
 ]
 const incidentSubmitting = ref(false)
 const incidentForm = reactive({
-  roomName: '',
-  building: 'A',
   category: 'Electric',
   priority: 'normal',
   preferredVisitAt: '',
   contactPhone: '',
   description: '',
-})
-
-const currentRoom = computed(() => {
-  const activeContract = ownContracts.value.find((contract) =>
-    ['active', 'pendingsignature'].includes(String(contract.status || '').toLowerCase()))
-
-  if (activeContract) return `#${activeContract.roomId}`
-  return student.value?.residenceHistory ? 'Có' : 'Chưa có'
 })
 
 const activeRegistration = computed(() =>
@@ -732,6 +716,30 @@ const activeRegistration = computed(() =>
 const activeHousingContract = computed(() =>
   ownContracts.value.find((contract) =>
     ['active', 'pendingsignature'].includes(String(contract.status || '').toLowerCase())))
+
+const repairRoom = computed(() => {
+  const contract = activeHousingContract.value
+
+  if (!contract?.roomId)
+    return null
+
+  return {
+    roomName: String(contract.roomId),
+    building: contract.buildingName || contract.building || '',
+  }
+})
+
+const repairRoomLabel = computed(() => {
+  if (!repairRoom.value)
+    return 'Chưa có phòng đang thuê'
+
+  return repairRoom.value.building
+    ? `${repairRoom.value.building}-${repairRoom.value.roomName}`
+    : `Phòng #${repairRoom.value.roomName}`
+})
+
+const currentRoom = computed(() =>
+  repairRoom.value ? repairRoomLabel.value : student.value?.residenceHistory ? 'Có' : 'Chưa có')
 
 const registrationBlockReason = computed(() => {
   if (!student.value) return 'Chưa tìm thấy hồ sơ sinh viên nên chưa thể gửi đăng ký.'
@@ -852,8 +860,13 @@ const submitIncident = async () => {
     return
   }
 
-  if (!incidentForm.roomName.trim() || !incidentForm.description.trim()) {
-    error.value = 'Vui lòng nhập phòng và mô tả sự cố.'
+  if (!repairRoom.value) {
+    error.value = 'Bạn chưa có hợp đồng hoặc phòng đang ở để gửi yêu cầu sửa chữa.'
+    return
+  }
+
+  if (!incidentForm.description.trim()) {
+    error.value = 'Vui lòng nhập mô tả sự cố.'
     return
   }
 
@@ -866,8 +879,8 @@ const submitIncident = async () => {
       studentId: studentId.value,
       studentCode: studentCode.value,
       studentName: displayName.value,
-      roomName: incidentForm.roomName,
-      building: incidentForm.building,
+      roomName: repairRoom.value.roomName,
+      building: repairRoom.value.building,
       category: incidentForm.category,
       priority: incidentForm.priority,
       preferredVisitAt: incidentForm.preferredVisitAt
@@ -1162,6 +1175,16 @@ const incidentPriorityLabel = (priority) =>
 
 const incidentCategoryLabel = (category) => {
   return incidentCategories.find((item) => item.value === category)?.title || category
+}
+
+const roomDisplay = (incident) => {
+  const building = String(incident.building || '').trim()
+  const roomName = String(incident.roomName || '').trim()
+
+  if (building && roomName)
+    return `${building}-${roomName}`
+
+  return roomName ? `Phòng #${roomName}` : '-'
 }
 
 const incidentStatusClass = (status) => {
@@ -1570,6 +1593,43 @@ onMounted(loadAll)
 .registration-form {
   display: grid;
   gap: 10px;
+}
+
+.auto-room-field {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  align-items: center;
+  min-height: 56px;
+  padding: 8px 12px;
+  border: 1px solid #d9e7df;
+  border-radius: 8px;
+  background: #f6fffa;
+}
+
+.auto-room-field > .mdi {
+  color: #007a4d;
+  font-size: 24px;
+}
+
+.auto-room-field small,
+.auto-room-field strong {
+  display: block;
+}
+
+.auto-room-field small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.auto-room-field strong {
+  margin-top: 2px;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.auto-room-field.is-missing {
+  border-color: #ffd8bf;
+  background: #fff7e6;
 }
 
 .form-actions {

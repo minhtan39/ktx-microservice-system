@@ -720,7 +720,19 @@ static bool IsOperationalRequest(HttpRequest request, IConfiguration configurati
     var principal = TryValidateBearerToken(request, configuration);
 
     return principal?.IsInRole("Admin") == true ||
-        principal?.IsInRole("Staff") == true;
+        principal?.IsInRole("Staff") == true ||
+        IsInternalServiceRequest(request, configuration);
+}
+
+static bool IsInternalServiceRequest(HttpRequest request, IConfiguration configuration)
+{
+    var expectedKey = configuration["InternalService:ApiKey"];
+
+    if (string.IsNullOrWhiteSpace(expectedKey))
+        return false;
+
+    return request.Headers.TryGetValue("X-Internal-Service-Key", out var providedKey) &&
+        string.Equals(providedKey.ToString(), expectedKey, StringComparison.Ordinal);
 }
 
 static DemoUser? TryGetAuthenticatedUser(

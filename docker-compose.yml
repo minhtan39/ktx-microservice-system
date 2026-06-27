@@ -76,6 +76,9 @@ services:
       Payment__AccountName: "${PAYMENT_ACCOUNT_NAME:-}"
       Payment__QrTemplate: "compact2"
       Payment__WebhookSecret: "${PAYMENT_WEBHOOK_SECRET:-}"
+      Integration__AuthServiceBaseUrl: "http://auth-service:8080"
+      Integration__RoomServiceBaseUrl: "http://room-service:8080"
+      InternalService__ApiKey: "${INTERNAL_SERVICE_KEY:-CHANGE_THIS_INTERNAL_SERVICE_KEY}"
     volumes:
       - billing-data:/app/data
 
