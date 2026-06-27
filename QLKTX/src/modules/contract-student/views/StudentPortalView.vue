@@ -925,6 +925,8 @@ const confirmIncident = async (incident) => {
     error.value = ''
     await api.post(`/incidents/${incident.id}/confirm`, {
       note: 'Sinh viên xác nhận yêu cầu đã được xử lý đạt yêu cầu.',
+      studentId: studentId.value,
+      studentCode: studentCode.value,
     })
     success.value = 'Đã xác nhận yêu cầu sửa chữa hoàn thành.'
     await loadIncidents()
@@ -952,6 +954,8 @@ const submitReopen = async () => {
     error.value = ''
     await api.post(`/incidents/${reopenIncidentTarget.value.id}/reopen`, {
       note: reopenNote.value.trim(),
+      studentId: studentId.value,
+      studentCode: studentCode.value,
     })
     reopenDialog.value = false
     success.value = 'Đã gửi lại yêu cầu cho nhân viên phụ trách.'
@@ -975,6 +979,8 @@ const cancelIncident = async (incident) => {
     error.value = ''
     await api.post(`/incidents/${incident.id}/cancel`, {
       note: 'Sinh viên hủy yêu cầu sửa chữa.',
+      studentId: studentId.value,
+      studentCode: studentCode.value,
     })
     success.value = 'Đã hủy yêu cầu sửa chữa.'
     await loadIncidents()

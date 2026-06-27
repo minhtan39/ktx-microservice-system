@@ -234,7 +234,9 @@ public sealed record AssignIncidentRequest(
     string? Note);
 
 public sealed record StudentIncidentActionRequest(
-    string? Note);
+    string? Note,
+    long? StudentId = null,
+    string? StudentCode = null);
 
 public sealed class MaintenanceIncident
 {

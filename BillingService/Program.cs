@@ -995,7 +995,7 @@ app.MapPost("/api/incidents/{id:long}/confirm", async Task<IResult> (
     if (existing == null)
         return Results.NotFound();
 
-    if (!identity.IsStudentOwner(existing))
+    if (!IsStudentActionOwner(identity, request, existing))
         return Results.Unauthorized();
 
     if (existing.Status != "completed")
@@ -1005,7 +1005,7 @@ app.MapPost("/api/incidents/{id:long}/confirm", async Task<IResult> (
     {
         var incident = data.Incidents.FirstOrDefault(item => item.Id == id);
         if (incident == null) return null;
-        if (!identity.IsStudentOwner(incident)) return new MaintenanceIncident { Id = -1 };
+        if (!IsStudentActionOwner(identity, request, incident)) return new MaintenanceIncident { Id = -1 };
         if (incident.Status != "completed") return new MaintenanceIncident { Id = -2 };
 
         incident.Status = "confirmed";
@@ -1048,7 +1048,7 @@ app.MapPost("/api/incidents/{id:long}/reopen", async Task<IResult> (
     if (existing == null)
         return Results.NotFound();
 
-    if (!identity.IsStudentOwner(existing))
+    if (!IsStudentActionOwner(identity, request, existing))
         return Results.Unauthorized();
 
     if (existing.Status is not ("completed" or "confirmed"))
@@ -1058,7 +1058,7 @@ app.MapPost("/api/incidents/{id:long}/reopen", async Task<IResult> (
     {
         var incident = data.Incidents.FirstOrDefault(item => item.Id == id);
         if (incident == null) return null;
-        if (!identity.IsStudentOwner(incident)) return new MaintenanceIncident { Id = -1 };
+        if (!IsStudentActionOwner(identity, request, incident)) return new MaintenanceIncident { Id = -1 };
         if (incident.Status is not ("completed" or "confirmed")) return new MaintenanceIncident { Id = -2 };
 
         incident.Status = "reopened";
@@ -1101,7 +1101,7 @@ app.MapPost("/api/incidents/{id:long}/cancel", async Task<IResult> (
     if (existing == null)
         return Results.NotFound();
 
-    var isStudentOwner = identity.IsStudentOwner(existing);
+    var isStudentOwner = IsStudentActionOwner(identity, request, existing);
     var canOperationalCancel = identity.IsAdmin ||
         (identity.IsOperational &&
             !string.IsNullOrWhiteSpace(existing.AssignedTo) &&
@@ -1126,7 +1126,7 @@ app.MapPost("/api/incidents/{id:long}/cancel", async Task<IResult> (
         var incident = data.Incidents.FirstOrDefault(item => item.Id == id);
         if (incident == null) return null;
 
-        var currentStudentOwner = identity.IsStudentOwner(incident);
+        var currentStudentOwner = IsStudentActionOwner(identity, request, incident);
         var currentOperationalCancel = identity.IsAdmin ||
             (identity.IsOperational &&
                 !string.IsNullOrWhiteSpace(incident.AssignedTo) &&
@@ -2540,6 +2540,26 @@ static long? ResolveStudentScope(HttpRequest request, long? requestedStudentId)
 
 static IResult Forbidden(string message) =>
     Results.Json(new { message }, statusCode: StatusCodes.Status403Forbidden);
+
+static bool IsStudentActionOwner(
+    RequestIdentity identity,
+    StudentIncidentActionRequest request,
+    MaintenanceIncident incident)
+{
+    if (identity.IsStudentOwner(incident))
+        return true;
+
+    if (!identity.Role.Equals("Student", StringComparison.OrdinalIgnoreCase))
+        return false;
+
+    var requestStudentCode = request.StudentCode?.Trim();
+
+    return (request.StudentId.HasValue &&
+            request.StudentId.Value > 0 &&
+            request.StudentId.Value == incident.StudentId) ||
+        (!string.IsNullOrWhiteSpace(requestStudentCode) &&
+            requestStudentCode.Equals(incident.StudentCode, StringComparison.OrdinalIgnoreCase));
+}
 
 static JwtSecurityToken? ReadBearerJwt(HttpRequest request)
 {
