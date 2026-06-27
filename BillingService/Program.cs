@@ -1102,18 +1102,19 @@ app.MapPost("/api/incidents/{id:long}/cancel", async Task<IResult> (
         return Results.NotFound();
 
     var isStudentOwner = IsStudentActionOwner(identity, request, existing);
+    var canStudentCancelNewUnassigned = CanStudentCancelNewUnassigned(identity, existing);
     var canOperationalCancel = identity.IsAdmin ||
         (identity.IsOperational &&
             !string.IsNullOrWhiteSpace(existing.AssignedTo) &&
             existing.AssignedTo.Equals(identity.Username, StringComparison.OrdinalIgnoreCase));
 
-    if (!isStudentOwner && !canOperationalCancel)
+    if (!isStudentOwner && !canStudentCancelNewUnassigned && !canOperationalCancel)
         return Forbidden("Bạn không có quyền hủy yêu cầu sửa chữa này.");
 
     if (IsFinalIncidentStatus(existing.Status))
         return Results.BadRequest(new { message = "Yêu cầu đã kết thúc nên không thể hủy." });
 
-    if (isStudentOwner && !CanStudentCancelIncident(existing.Status))
+    if ((isStudentOwner || canStudentCancelNewUnassigned) && !CanStudentCancelIncident(existing.Status))
     {
         return Results.BadRequest(new
         {
@@ -1127,14 +1128,15 @@ app.MapPost("/api/incidents/{id:long}/cancel", async Task<IResult> (
         if (incident == null) return null;
 
         var currentStudentOwner = IsStudentActionOwner(identity, request, incident);
+        var currentStudentCancelNewUnassigned = CanStudentCancelNewUnassigned(identity, incident);
         var currentOperationalCancel = identity.IsAdmin ||
             (identity.IsOperational &&
                 !string.IsNullOrWhiteSpace(incident.AssignedTo) &&
                 incident.AssignedTo.Equals(identity.Username, StringComparison.OrdinalIgnoreCase));
 
-        if (!currentStudentOwner && !currentOperationalCancel) return new MaintenanceIncident { Id = -1 };
+        if (!currentStudentOwner && !currentStudentCancelNewUnassigned && !currentOperationalCancel) return new MaintenanceIncident { Id = -1 };
         if (IsFinalIncidentStatus(incident.Status)) return new MaintenanceIncident { Id = -2 };
-        if (currentStudentOwner && !CanStudentCancelIncident(incident.Status)) return new MaintenanceIncident { Id = -3 };
+        if ((currentStudentOwner || currentStudentCancelNewUnassigned) && !CanStudentCancelIncident(incident.Status)) return new MaintenanceIncident { Id = -3 };
 
         incident.Status = "cancelled";
         incident.UpdatedAt = DateTime.UtcNow;
@@ -2559,6 +2561,18 @@ static bool IsStudentActionOwner(
             request.StudentId.Value == incident.StudentId) ||
         (!string.IsNullOrWhiteSpace(requestStudentCode) &&
             requestStudentCode.Equals(incident.StudentCode, StringComparison.OrdinalIgnoreCase));
+}
+
+static bool CanStudentCancelNewUnassigned(RequestIdentity identity, MaintenanceIncident incident)
+{
+    var isAuthenticatedStudent = !identity.IsOperational &&
+        !identity.Username.Equals("anonymous", StringComparison.OrdinalIgnoreCase) &&
+        (identity.Role.Equals("Student", StringComparison.OrdinalIgnoreCase) ||
+            string.IsNullOrWhiteSpace(identity.Role));
+
+    return isAuthenticatedStudent &&
+        incident.Status.Equals("new", StringComparison.OrdinalIgnoreCase) &&
+        string.IsNullOrWhiteSpace(incident.AssignedTo);
 }
 
 static JwtSecurityToken? ReadBearerJwt(HttpRequest request)
