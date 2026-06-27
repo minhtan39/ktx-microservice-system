@@ -141,7 +141,7 @@ const isAdmin = role === 'Admin', permissions = getPermissions()
 const canManageIncidents = isAdmin || permissions.includes('manage_incidents')
 const canManageMaintenance = isAdmin || permissions.includes('manage_maintenance')
 
-const statusOptions = [{ title: 'Tất cả trạng thái', value: 'all' }, { title: 'Mới gửi', value: 'new' }, { title: 'Đã tiếp nhận', value: 'accepted' }, { title: 'Đã phân công', value: 'assigned' }, { title: 'Đang xử lý', value: 'processing' }, { title: 'Chờ vật tư', value: 'waiting-materials' }, { title: 'Đã sửa xong, chờ SV xác nhận', value: 'completed' }, { title: 'Cần xử lý lại', value: 'reopened' }, { title: 'Sinh viên đã xác nhận', value: 'confirmed' }, { title: 'Từ chối', value: 'rejected' }]
+const statusOptions = [{ title: 'Tất cả trạng thái', value: 'all' }, { title: 'Mới gửi', value: 'new' }, { title: 'Đã tiếp nhận', value: 'accepted' }, { title: 'Đã phân công', value: 'assigned' }, { title: 'Đang xử lý', value: 'processing' }, { title: 'Chờ vật tư', value: 'waiting-materials' }, { title: 'Đã sửa xong, chờ SV xác nhận', value: 'completed' }, { title: 'Cần xử lý lại', value: 'reopened' }, { title: 'Sinh viên đã xác nhận', value: 'confirmed' }, { title: 'Từ chối', value: 'rejected' }, { title: 'Đã hủy', value: 'cancelled' }]
 const progressStatusOptions = statusOptions.filter((item) => !['all', 'new', 'confirmed'].includes(item.value))
 const priorityOptions = [{ title: 'Thấp', value: 'low' }, { title: 'Bình thường', value: 'normal' }, { title: 'Cao', value: 'high' }, { title: 'Khẩn cấp', value: 'urgent' }]
 const priorityOptionsWithAll = [{ title: 'Tất cả mức độ', value: 'all' }, ...priorityOptions]

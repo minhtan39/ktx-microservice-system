@@ -305,6 +305,7 @@
                     <v-btn size="small" variant="tonal" color="warning" :disabled="incidentActionLoading === incident.id" @click="openReopenDialog(incident)">Chưa đạt</v-btn>
                   </div>
                   <v-btn v-else-if="incident.status === 'confirmed'" size="small" variant="text" color="warning" @click="openReopenDialog(incident)">Yêu cầu xử lý lại</v-btn>
+                  <v-btn v-else-if="canCancelIncident(incident)" size="small" variant="text" color="error" :loading="incidentActionLoading === incident.id" @click="cancelIncident(incident)">Hủy yêu cầu</v-btn>
                   <span v-else class="table-note">{{ incident.staffNote || '-' }}</span>
                 </td>
               </tr>
@@ -941,6 +942,28 @@ const submitReopen = async () => {
     await loadIncidents()
   } catch (err) {
     error.value = err.response?.data?.message || 'Không thể mở lại yêu cầu sửa chữa.'
+  } finally {
+    incidentActionLoading.value = null
+  }
+}
+
+const canCancelIncident = (incident) =>
+  ['new', 'accepted', 'assigned', 'reopened'].includes(String(incident.status || '').toLowerCase())
+
+const cancelIncident = async (incident) => {
+  if (!window.confirm('Bạn chắc chắn muốn hủy yêu cầu sửa chữa này?'))
+    return
+
+  try {
+    incidentActionLoading.value = incident.id
+    error.value = ''
+    await api.post(`/incidents/${incident.id}/cancel`, {
+      note: 'Sinh viên hủy yêu cầu sửa chữa.',
+    })
+    success.value = 'Đã hủy yêu cầu sửa chữa.'
+    await loadIncidents()
+  } catch (err) {
+    error.value = err.response?.data?.message || 'Không hủy được yêu cầu sửa chữa.'
   } finally {
     incidentActionLoading.value = null
   }

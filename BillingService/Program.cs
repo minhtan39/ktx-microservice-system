@@ -1073,6 +1073,93 @@ app.MapPost("/api/incidents/{id:long}/reopen", async Task<IResult> (
     return Results.Ok(updated);
 });
 
+app.MapPost("/api/incidents/{id:long}/cancel", async Task<IResult> (
+    long id,
+    StudentIncidentActionRequest request,
+    HttpRequest httpRequest,
+    BillingStore store,
+    IHttpClientFactory httpClientFactory) =>
+{
+    var identity = GetRequestIdentity(httpRequest);
+    var existing = store.Read(data => data.Incidents.FirstOrDefault(item => item.Id == id));
+
+    if (existing == null)
+        return Results.NotFound();
+
+    var isStudentOwner = identity.IsStudentOwner(existing);
+    var canOperationalCancel = identity.IsAdmin ||
+        (identity.IsOperational &&
+            !string.IsNullOrWhiteSpace(existing.AssignedTo) &&
+            existing.AssignedTo.Equals(identity.Username, StringComparison.OrdinalIgnoreCase));
+
+    if (!isStudentOwner && !canOperationalCancel)
+        return Results.Unauthorized();
+
+    if (IsFinalIncidentStatus(existing.Status))
+        return Results.BadRequest(new { message = "Yêu cầu đã kết thúc nên không thể hủy." });
+
+    if (isStudentOwner && !CanStudentCancelIncident(existing.Status))
+    {
+        return Results.BadRequest(new
+        {
+            message = "Yêu cầu đang được xử lý. Vui lòng dùng 'Chưa đạt' hoặc liên hệ nhân viên phụ trách."
+        });
+    }
+
+    var updated = store.Write(data =>
+    {
+        var incident = data.Incidents.FirstOrDefault(item => item.Id == id);
+        if (incident == null) return null;
+
+        var currentStudentOwner = identity.IsStudentOwner(incident);
+        var currentOperationalCancel = identity.IsAdmin ||
+            (identity.IsOperational &&
+                !string.IsNullOrWhiteSpace(incident.AssignedTo) &&
+                incident.AssignedTo.Equals(identity.Username, StringComparison.OrdinalIgnoreCase));
+
+        if (!currentStudentOwner && !currentOperationalCancel) return new MaintenanceIncident { Id = -1 };
+        if (IsFinalIncidentStatus(incident.Status)) return new MaintenanceIncident { Id = -2 };
+        if (currentStudentOwner && !CanStudentCancelIncident(incident.Status)) return new MaintenanceIncident { Id = -3 };
+
+        incident.Status = "cancelled";
+        incident.UpdatedAt = DateTime.UtcNow;
+        AddIncidentTimeline(
+            incident,
+            "cancelled",
+            identity.Username,
+            string.IsNullOrWhiteSpace(request.Note)
+                ? "Yêu cầu sửa chữa đã được hủy."
+                : request.Note);
+        return incident;
+    });
+
+    if (updated?.Id == -1) return Results.Unauthorized();
+    if (updated?.Id == -2) return Results.BadRequest(new { message = "Yêu cầu đã kết thúc nên không thể hủy." });
+    if (updated?.Id == -3)
+    {
+        return Results.BadRequest(new
+        {
+            message = "Yêu cầu đang được xử lý. Vui lòng dùng 'Chưa đạt' hoặc liên hệ nhân viên phụ trách."
+        });
+    }
+    if (updated == null) return Results.NotFound();
+
+    var roomSyncResult = await SyncRoomForIncidentAsync(
+        updated,
+        "cancelled",
+        store,
+        httpClientFactory);
+
+    if (!roomSyncResult.Success)
+    {
+        var warning = $"Đã hủy yêu cầu nhưng chưa đồng bộ được trạng thái phòng: {roomSyncResult.Message}";
+        updated = AddIncidentWarning(store, id, identity.Username, warning) ?? updated;
+        return Results.Ok(new { data = updated, warning });
+    }
+
+    return Results.Ok(updated);
+});
+
 app.MapGet("/api/maintenance", (string? assignedTo, string? status, BillingStore store) =>
     Results.Ok(store.Read(data => data.MaintenancePlans
         .Where(item => string.IsNullOrWhiteSpace(assignedTo) ||
@@ -2181,6 +2268,16 @@ static string? NormalizeIncidentStatus(string status)
         "cancelled" or "canceled" => "cancelled",
         _ => null
     };
+}
+
+static bool CanStudentCancelIncident(string? status)
+{
+    return NormalizeWorkStatus(status) is "new" or "accepted" or "assigned" or "reopened";
+}
+
+static bool IsFinalIncidentStatus(string? status)
+{
+    return NormalizeWorkStatus(status) is "confirmed" or "cancelled" or "rejected";
 }
 
 static async Task<StaffAssigneeValidationResult> ValidateStaffAssigneeAsync(
