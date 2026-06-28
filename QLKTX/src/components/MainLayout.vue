@@ -96,6 +96,50 @@
         </div>
 
         <div class="topbar-actions">
+          <v-menu v-model="notificationMenu" location="bottom end" :close-on-content-click="false">
+            <template #activator="{ props }">
+              <v-badge
+                :model-value="unreadNotifications > 0"
+                :content="unreadNotifications"
+                color="error"
+                offset-x="2"
+                offset-y="2"
+              >
+                <v-btn
+                  v-bind="props"
+                  icon="mdi-bell-outline"
+                  variant="tonal"
+                  color="primary"
+                  density="comfortable"
+                  @click="loadNotifications"
+                />
+              </v-badge>
+            </template>
+            <section class="notification-menu">
+              <div class="notification-head">
+                <strong>Thông báo</strong>
+                <v-btn size="small" variant="text" :loading="notificationLoading" @click="loadNotifications">Làm mới</v-btn>
+              </div>
+              <div v-if="notifications.length === 0" class="notification-empty">
+                Chưa có thông báo.
+              </div>
+              <button
+                v-for="item in notifications.slice(0, 8)"
+                :key="item.id"
+                class="notification-row"
+                :class="{ unread: !item.isRead }"
+                type="button"
+                @click="markNotificationRead(item)"
+              >
+                <span :class="['notification-dot', severityClass(item.severity)]"></span>
+                <div>
+                  <strong>{{ item.title }}</strong>
+                  <p>{{ item.content }}</p>
+                  <small>{{ notificationAudienceLabel(item.targetAudience) }} · {{ formatNotificationTime(item.publishedAt || item.createdAt) }}</small>
+                </div>
+              </button>
+            </section>
+          </v-menu>
           <div class="term-chip">
             <span class="mdi mdi-calendar-check-outline"></span>
             <div>
@@ -135,8 +179,9 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import api from '@/services/api'
 import { getPermissions, normalizeRole } from '@/utils/auth'
 
 const route = useRoute()
@@ -148,6 +193,11 @@ const roleKey = computed(() => normalizeRole(userRole.value))
 const isStudent = computed(() => roleKey.value === 'Student')
 const isStaff = computed(() => roleKey.value === 'Staff')
 const permissions = ref(getPermissions())
+const notificationMenu = ref(false)
+const notificationLoading = ref(false)
+const notifications = ref([])
+const unreadNotifications = computed(() =>
+  notifications.value.filter((item) => !item.isRead).length)
 const can = (permission) => roleKey.value === 'Admin' || permissions.value.includes(permission)
 const canAccessItem = (item) =>
   (!item.adminOnly || roleKey.value === 'Admin') &&
@@ -170,6 +220,7 @@ const titleByRoute = {
   BillingManagement: 'Nhập chỉ số điện nước, phát hành phiếu và đối soát thanh toán',
   AccountManage: 'Quản lý tài khoản đăng nhập của nhân viên và sinh viên',
   SystemLogs: 'Nhật ký hệ thống và kiểm tra vận hành',
+  SystemNotifications: 'Tạo, gửi và theo dõi thông báo cho người dùng',
 }
 
 const studentOverviewItems = [
@@ -290,6 +341,13 @@ const adminServiceItems = [
     label: 'Nhật ký hệ thống',
     adminOnly: true,
   },
+  {
+    to: '/system/notifications',
+    names: ['SystemNotifications'],
+    icon: 'mdi-bell-cog-outline',
+    label: 'Thông báo hệ thống',
+    adminOnly: true,
+  },
 ]
 
 const overviewItems = computed(() =>
@@ -326,13 +384,49 @@ const routeBadge = computed(() => {
   if (isStudent.value) return 'Sinh viên'
   if (isStaff.value) return 'Nhân viên'
   if (['RoomDashboard'].includes(route.name)) return 'Nhóm 1'
-  if (['IncidentManage', 'BillingManagement', 'SystemLogs', 'AccountManage'].includes(route.name)) return 'Nhóm 3'
+  if (['IncidentManage', 'BillingManagement', 'SystemLogs', 'SystemNotifications', 'AccountManage'].includes(route.name)) return 'Nhóm 3'
   return 'Nhóm 2'
 })
 
 const userInitial = computed(() => {
   return (fullName.value || 'U').trim().charAt(0).toUpperCase()
 })
+
+const loadNotifications = async () => {
+  try {
+    notificationLoading.value = true
+    const response = await api.get('/notifications')
+    notifications.value = normalizeList(response.data)
+  } catch {
+    notifications.value = []
+  } finally {
+    notificationLoading.value = false
+  }
+}
+
+const markNotificationRead = async (item) => {
+  if (item.isRead)
+    return
+
+  try {
+    await api.put(`/notifications/${item.id}/read`)
+    item.isRead = true
+  } catch {
+    await loadNotifications()
+  }
+}
+
+const normalizeList = (payload) => Array.isArray(payload) ? payload : payload?.data || []
+const notificationAudienceLabel = (value) => ({
+  All: 'Tất cả',
+  Student: 'Sinh viên',
+  Staff: 'Nhân viên',
+  Admin: 'Admin',
+}[value] || 'Tất cả')
+const severityClass = (value) => `severity-${String(value || 'Normal').toLowerCase()}`
+const formatNotificationTime = (value) => value
+  ? new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value))
+  : '-'
 
 const logout = async () => {
   localStorage.removeItem('user_token')
@@ -348,6 +442,8 @@ const logout = async () => {
   localStorage.removeItem('employee_area')
   await router.push('/')
 }
+
+onMounted(loadNotifications)
 </script>
 
 <style scoped>
@@ -705,6 +801,84 @@ const logout = async () => {
   min-height: 50px;
   border-radius: 8px;
   font-weight: 900;
+}
+
+.notification-menu {
+  width: min(420px, calc(100vw - 32px));
+  max-height: 520px;
+  overflow-y: auto;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.14);
+}
+
+.notification-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.notification-head strong {
+  font-size: 15px;
+}
+
+.notification-empty {
+  padding: 18px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.notification-row {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr);
+  gap: 10px;
+  width: 100%;
+  padding: 10px 8px;
+  border: 0;
+  border-bottom: 1px solid #edf0ee;
+  background: transparent;
+  text-align: left;
+}
+
+.notification-row.unread {
+  background: #f6ffed;
+}
+
+.notification-row strong,
+.notification-row small {
+  display: block;
+}
+
+.notification-row p {
+  margin: 4px 0;
+  color: #31443a;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.notification-row small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.notification-dot {
+  width: 9px;
+  height: 9px;
+  margin-top: 6px;
+  border-radius: 999px;
+  background: #8c8c8c;
+}
+
+.notification-dot.severity-important {
+  background: #1677ff;
+}
+
+.notification-dot.severity-urgent {
+  background: #cf1322;
 }
 
 .mobile-floating-logout {

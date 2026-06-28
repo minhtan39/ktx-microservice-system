@@ -156,6 +156,13 @@ const routes = [
           import('../modules/billing/views/SystemLogsView.vue'),
       },
       {
+        path: 'system/notifications',
+        name: 'SystemNotifications',
+        meta: { roles: ADMIN_ONLY_ROLES },
+        component: () =>
+          import('../modules/billing/views/SystemNotificationsView.vue'),
+      },
+      {
         path: 'contract/register',
         redirect: '/student-service/registrations',
       },

@@ -81,6 +81,134 @@ app.MapGet("/api/billing/contracts/{contractId:long}", (long contractId, Billing
     });
 });
 
+app.MapGet("/api/notifications", (HttpRequest httpRequest, BillingStore store) =>
+{
+    var identity = GetRequestIdentity(httpRequest);
+    if (identity.Username.Equals("anonymous", StringComparison.OrdinalIgnoreCase))
+        return Results.Unauthorized();
+
+    var notifications = store.Read(data => data.SystemNotifications
+        .Where(item => IsVisibleNotificationFor(identity, item, DateTime.UtcNow))
+        .OrderByDescending(item => item.PublishedAt ?? item.CreatedAt)
+        .Select(item => ToNotificationView(item, data.SystemNotificationReads, identity.Username))
+        .ToList());
+
+    return Results.Ok(notifications);
+});
+
+app.MapGet("/api/notifications/manage", (HttpRequest httpRequest, BillingStore store) =>
+{
+    var identity = GetRequestIdentity(httpRequest);
+    if (!identity.IsAdmin)
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+    var notifications = store.Read(data => data.SystemNotifications
+        .OrderByDescending(item => item.CreatedAt)
+        .Select(item => ToNotificationView(item, data.SystemNotificationReads, identity.Username))
+        .ToList());
+
+    return Results.Ok(notifications);
+});
+
+app.MapPost("/api/notifications", (
+    CreateSystemNotificationRequest request,
+    HttpRequest httpRequest,
+    BillingStore store) =>
+{
+    var identity = GetRequestIdentity(httpRequest);
+    if (!identity.IsAdmin)
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+    if (string.IsNullOrWhiteSpace(request.Title) || string.IsNullOrWhiteSpace(request.Content))
+        return Results.BadRequest(new { message = "Vui lòng nhập tiêu đề và nội dung thông báo." });
+
+    var targetAudience = NormalizeNotificationAudience(request.TargetAudience);
+    var severity = NormalizeNotificationSeverity(request.Severity);
+    var notification = store.Write(data =>
+    {
+        var nextId = data.SystemNotifications.Count == 0
+            ? 1
+            : data.SystemNotifications.Max(item => item.Id) + 1;
+        var created = new SystemNotification
+        {
+            Id = nextId,
+            Title = request.Title.Trim(),
+            Content = request.Content.Trim(),
+            TargetAudience = targetAudience,
+            Severity = severity,
+            Status = request.PublishNow ? "Published" : "Draft",
+            CreatedBy = identity.Username,
+            CreatedAt = DateTime.UtcNow,
+            PublishedAt = request.PublishNow ? DateTime.UtcNow : null,
+            ExpiresAt = request.ExpiresAt
+        };
+
+        data.SystemNotifications.Add(created);
+        return created;
+    });
+
+    return Results.Ok(notification);
+});
+
+app.MapPut("/api/notifications/{id:long}/read", (long id, HttpRequest httpRequest, BillingStore store) =>
+{
+    var identity = GetRequestIdentity(httpRequest);
+    if (identity.Username.Equals("anonymous", StringComparison.OrdinalIgnoreCase))
+        return Results.Unauthorized();
+
+    var result = store.Write(data =>
+    {
+        var notification = data.SystemNotifications.FirstOrDefault(item => item.Id == id);
+        if (notification == null) return (Found: false, Visible: false);
+        if (!IsVisibleNotificationFor(identity, notification, DateTime.UtcNow)) return (Found: true, Visible: false);
+
+        if (!data.SystemNotificationReads.Any(item =>
+            item.NotificationId == id &&
+            item.Username.Equals(identity.Username, StringComparison.OrdinalIgnoreCase)))
+        {
+            data.SystemNotificationReads.Add(new SystemNotificationRead(id, identity.Username, DateTime.UtcNow));
+        }
+
+        return (Found: true, Visible: true);
+    });
+
+    if (!result.Found)
+        return Results.NotFound(new { message = "Không tìm thấy thông báo." });
+
+    if (!result.Visible)
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+    return Results.Ok(new { success = true });
+});
+
+app.MapPatch("/api/notifications/{id:long}/status", (
+    long id,
+    UpdateSystemNotificationStatusRequest request,
+    HttpRequest httpRequest,
+    BillingStore store) =>
+{
+    var identity = GetRequestIdentity(httpRequest);
+    if (!identity.IsAdmin)
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+    var status = NormalizeNotificationStatus(request.Status);
+    var updated = store.Write(data =>
+    {
+        var notification = data.SystemNotifications.FirstOrDefault(item => item.Id == id);
+        if (notification == null) return null;
+
+        notification.Status = status;
+        if (status == "Published" && notification.PublishedAt == null)
+            notification.PublishedAt = DateTime.UtcNow;
+
+        return notification;
+    });
+
+    return updated == null
+        ? Results.NotFound(new { message = "Không tìm thấy thông báo." })
+        : Results.Ok(updated);
+});
+
 app.MapPost("/api/billing/contracts", (ContractBillingRequest request, BillingStore store) =>
 {
     var result = store.Write(data =>
@@ -2569,6 +2697,87 @@ static long? ResolveStudentScope(HttpRequest request, long? requestedStudentId)
 
 static IResult Forbidden(string message) =>
     Results.Json(new { message }, statusCode: StatusCodes.Status403Forbidden);
+
+static bool IsVisibleNotificationFor(
+    RequestIdentity identity,
+    SystemNotification notification,
+    DateTime now)
+{
+    if (!notification.Status.Equals("Published", StringComparison.OrdinalIgnoreCase))
+        return false;
+
+    if (notification.ExpiresAt.HasValue && notification.ExpiresAt.Value < now)
+        return false;
+
+    var audience = NormalizeNotificationAudience(notification.TargetAudience);
+
+    return audience == "All" ||
+        audience.Equals(identity.Role, StringComparison.OrdinalIgnoreCase);
+}
+
+static SystemNotificationView ToNotificationView(
+    SystemNotification notification,
+    List<SystemNotificationRead> reads,
+    string username)
+{
+    var userRead = reads.FirstOrDefault(item =>
+        item.NotificationId == notification.Id &&
+        item.Username.Equals(username, StringComparison.OrdinalIgnoreCase));
+    var readCount = reads
+        .Where(item => item.NotificationId == notification.Id)
+        .Select(item => item.Username.ToLowerInvariant())
+        .Distinct()
+        .Count();
+
+    return new SystemNotificationView(
+        notification.Id,
+        notification.Title,
+        notification.Content,
+        notification.TargetAudience,
+        notification.Severity,
+        notification.Status,
+        notification.CreatedBy,
+        notification.CreatedAt,
+        notification.PublishedAt,
+        notification.ExpiresAt,
+        userRead != null,
+        userRead?.ReadAt,
+        readCount);
+}
+
+static string NormalizeNotificationAudience(string? value)
+{
+    var normalized = value?.Trim().ToLowerInvariant();
+    return normalized switch
+    {
+        "student" or "students" or "sinhvien" or "sinh viên" => "Student",
+        "staff" or "employee" or "nhanvien" or "nhân viên" => "Staff",
+        "admin" => "Admin",
+        _ => "All"
+    };
+}
+
+static string NormalizeNotificationSeverity(string? value)
+{
+    var normalized = value?.Trim().ToLowerInvariant();
+    return normalized switch
+    {
+        "important" or "quantrong" or "quan trọng" => "Important",
+        "urgent" or "khancap" or "khẩn cấp" => "Urgent",
+        _ => "Normal"
+    };
+}
+
+static string NormalizeNotificationStatus(string? value)
+{
+    var normalized = value?.Trim().ToLowerInvariant();
+    return normalized switch
+    {
+        "draft" or "nhap" or "nháp" => "Draft",
+        "expired" or "hidden" or "an" or "ẩn" or "hethieuluc" or "hết hiệu lực" => "Expired",
+        _ => "Published"
+    };
+}
 
 static bool IsStudentActionOwner(
     RequestIdentity identity,

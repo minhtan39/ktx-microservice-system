@@ -8,6 +8,8 @@ public sealed class BillingData
     public List<WalletTransaction> WalletTransactions { get; set; } = [];
     public List<MaintenanceIncident> Incidents { get; set; } = [];
     public List<MaintenancePlan> MaintenancePlans { get; set; } = [];
+    public List<SystemNotification> SystemNotifications { get; set; } = [];
+    public List<SystemNotificationRead> SystemNotificationReads { get; set; } = [];
 }
 
 public sealed record ContractBillingRequest(
@@ -201,6 +203,50 @@ public sealed record WalletTransaction(
     DateTime CreatedAt);
 
 public sealed record WalletAutoPayRequest(bool Enabled);
+
+public sealed record CreateSystemNotificationRequest(
+    string Title,
+    string Content,
+    string TargetAudience,
+    string Severity,
+    DateTime? ExpiresAt = null,
+    bool PublishNow = true);
+
+public sealed record UpdateSystemNotificationStatusRequest(string Status);
+
+public sealed class SystemNotification
+{
+    public long Id { get; set; }
+    public string Title { get; set; } = string.Empty;
+    public string Content { get; set; } = string.Empty;
+    public string TargetAudience { get; set; } = "All";
+    public string Severity { get; set; } = "Normal";
+    public string Status { get; set; } = "Draft";
+    public string CreatedBy { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; }
+    public DateTime? PublishedAt { get; set; }
+    public DateTime? ExpiresAt { get; set; }
+}
+
+public sealed record SystemNotificationRead(
+    long NotificationId,
+    string Username,
+    DateTime ReadAt);
+
+public sealed record SystemNotificationView(
+    long Id,
+    string Title,
+    string Content,
+    string TargetAudience,
+    string Severity,
+    string Status,
+    string CreatedBy,
+    DateTime CreatedAt,
+    DateTime? PublishedAt,
+    DateTime? ExpiresAt,
+    bool IsRead,
+    DateTime? ReadAt,
+    int ReadCount);
 
 public sealed record CreateIncidentRequest(
     long StudentId,

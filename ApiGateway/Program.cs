@@ -241,6 +241,16 @@ static bool IsAuthorizedForPath(
     if (normalized == "incidents/analyze")
         return isPost;
 
+    if (normalized == "notifications")
+        return isGet;
+
+    if (normalized.StartsWith("notifications/") &&
+        HttpMethods.IsPut(method) &&
+        normalized.EndsWith("/read"))
+    {
+        return true;
+    }
+
     return normalized.StartsWith("incidents/") &&
         isPost &&
         (normalized.EndsWith("/confirm") ||
@@ -269,7 +279,7 @@ static string ResolveServiceKey(string path)
     {
         "auth" => "AuthService",
         "buildings" or "rooms" or "roomtypes" or "room-types" => "RoomService",
-        "bills" or "billing" or "maintenance" or "incidents" => "BillingService",
+        "bills" or "billing" or "maintenance" or "incidents" or "notifications" => "BillingService",
         "students" or "registrations" or "roomregistration" or "contracts"
             or "contract" or "dashboard" or "checkhistory" => "ContractStudentService",
         _ => "ContractStudentService"
