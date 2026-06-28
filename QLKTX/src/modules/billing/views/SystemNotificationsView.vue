@@ -76,6 +76,18 @@
           <div class="cell-stack">
             <strong>{{ item.title }}</strong>
             <small>{{ item.content }}</small>
+            <div v-if="item.attachments?.length" class="attachment-list table-attachments">
+              <v-btn
+                v-for="attachment in item.attachments"
+                :key="attachment.id"
+                size="x-small"
+                variant="tonal"
+                prepend-icon="mdi-paperclip"
+                @click.stop="downloadAttachment(item, attachment)"
+              >
+                {{ attachment.fileName }}
+              </v-btn>
+            </div>
           </div>
         </template>
         <template #item.targetAudience="{ item }">
@@ -86,6 +98,9 @@
         </template>
         <template #item.status="{ item }">
           <span :class="['pill', statusClass(item.status)]">{{ statusLabel(item.status) }}</span>
+        </template>
+        <template #item.attachments="{ item }">
+          <strong>{{ item.attachments?.length || 0 }}</strong>
         </template>
         <template #item.createdAt="{ item }">
           <div class="cell-stack">
@@ -149,6 +164,20 @@
             />
             <v-text-field v-model="form.expiresAt" type="datetime-local" label="Hết hiệu lực" variant="outlined" density="compact" />
             <v-textarea v-model="form.content" label="Nội dung" rows="5" variant="outlined" class="full-width" />
+            <v-file-input
+              v-model="form.attachments"
+              class="full-width"
+              label="Tệp đính kèm"
+              prepend-icon="mdi-paperclip"
+              variant="outlined"
+              density="compact"
+              multiple
+              show-size
+              counter
+              clearable
+              hint="Tối đa 5 tệp, mỗi tệp 5 MB"
+              persistent-hint
+            />
             <v-checkbox v-model="form.publishNow" label="Gửi ngay sau khi tạo" density="compact" hide-details />
           </div>
         </v-card-text>
@@ -184,6 +213,7 @@ const blankForm = () => ({
   severity: 'Normal',
   expiresAt: '',
   publishNow: true,
+  attachments: [],
 })
 const form = reactive(blankForm())
 
@@ -210,6 +240,7 @@ const headers = [
   { title: 'Đối tượng', key: 'targetAudience', sortable: false },
   { title: 'Mức độ', key: 'severity', sortable: false },
   { title: 'Trạng thái', key: 'status', sortable: false },
+  { title: 'Tệp', key: 'attachments', sortable: false },
   { title: 'Đã đọc', key: 'readCount', sortable: false },
   { title: 'Tạo lúc', key: 'createdAt', sortable: false },
   { title: '', key: 'actions', sortable: false },
@@ -257,13 +288,9 @@ const createNotification = async () => {
   try {
     saving.value = true
     error.value = ''
-    await api.post('/notifications', {
-      title: form.title.trim(),
-      content: form.content.trim(),
-      targetAudience: form.targetAudience,
-      severity: form.severity,
-      expiresAt: form.expiresAt ? new Date(form.expiresAt).toISOString() : null,
-      publishNow: form.publishNow,
+    const payload = buildNotificationPayload()
+    await api.post('/notifications', payload, {
+      headers: { 'Content-Type': 'multipart/form-data' },
     })
     dialog.value = false
     success.value = form.publishNow ? 'Đã gửi thông báo hệ thống.' : 'Đã lưu bản nháp thông báo.'
@@ -273,6 +300,31 @@ const createNotification = async () => {
   } finally {
     saving.value = false
   }
+}
+
+const buildNotificationPayload = () => {
+  const payload = new FormData()
+  payload.append('title', form.title.trim())
+  payload.append('content', form.content.trim())
+  payload.append('targetAudience', form.targetAudience)
+  payload.append('severity', form.severity)
+  payload.append('publishNow', String(form.publishNow))
+
+  if (form.expiresAt) {
+    payload.append('expiresAt', new Date(form.expiresAt).toISOString())
+  }
+
+  const files = Array.isArray(form.attachments)
+    ? form.attachments
+    : form.attachments
+      ? [form.attachments]
+      : []
+
+  files.forEach((file) => {
+    payload.append('attachments', file)
+  })
+
+  return payload
 }
 
 const setStatus = async (item, status) => {
@@ -286,6 +338,28 @@ const setStatus = async (item, status) => {
     error.value = err.response?.data?.message || 'Không cập nhật được trạng thái thông báo.'
   } finally {
     savingId.value = null
+  }
+}
+
+const downloadAttachment = async (notification, attachment) => {
+  try {
+    error.value = ''
+    const response = await api.get(`/notifications/${notification.id}/attachments/${attachment.id}`, {
+      responseType: 'blob',
+    })
+    const blob = new Blob([response.data], {
+      type: response.headers?.['content-type'] || attachment.contentType || 'application/octet-stream',
+    })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = attachment.fileName || 'tep-dinh-kem'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  } catch (err) {
+    error.value = err.response?.data?.message || 'Không tải được tệp đính kèm.'
   }
 }
 
@@ -321,6 +395,8 @@ onMounted(loadNotifications)
 .cell-stack { max-width: 440px; }
 .cell-stack strong, .cell-stack small { display: block; }
 .cell-stack small { margin-top: 4px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attachment-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.table-attachments { max-width: 420px; }
 .pill { display: inline-flex; padding: 5px 9px; border-radius: 999px; font-size: 12px; font-weight: 800; white-space: nowrap; }
 .severity-normal, .status-draft { background: #f5f5f5; color: #595959; }
 .severity-important, .status-published { background: #e6f4ff; color: #0958d9; }

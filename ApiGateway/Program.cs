@@ -245,6 +245,13 @@ static bool IsAuthorizedForPath(
         return isGet;
 
     if (normalized.StartsWith("notifications/") &&
+        isGet &&
+        normalized.Contains("/attachments/"))
+    {
+        return true;
+    }
+
+    if (normalized.StartsWith("notifications/") &&
         HttpMethods.IsPut(method) &&
         normalized.EndsWith("/read"))
     {

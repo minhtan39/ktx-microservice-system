@@ -123,21 +123,34 @@
               <div v-if="notifications.length === 0" class="notification-empty">
                 Chưa có thông báo.
               </div>
-              <button
+              <article
                 v-for="item in notifications.slice(0, 8)"
                 :key="item.id"
                 class="notification-row"
                 :class="{ unread: !item.isRead }"
-                type="button"
+                role="button"
+                tabindex="0"
                 @click="markNotificationRead(item)"
+                @keydown.enter.prevent="markNotificationRead(item)"
               >
                 <span :class="['notification-dot', severityClass(item.severity)]"></span>
                 <div>
                   <strong>{{ item.title }}</strong>
                   <p>{{ item.content }}</p>
                   <small>{{ notificationAudienceLabel(item.targetAudience) }} · {{ formatNotificationTime(item.publishedAt || item.createdAt) }}</small>
+                  <div v-if="item.attachments?.length" class="notification-attachments">
+                    <button
+                      v-for="attachment in item.attachments"
+                      :key="attachment.id"
+                      type="button"
+                      @click.stop="downloadNotificationAttachment(item, attachment)"
+                    >
+                      <span class="mdi mdi-paperclip"></span>
+                      <span>{{ attachment.fileName }}</span>
+                    </button>
+                  </div>
                 </div>
-              </button>
+              </article>
             </section>
           </v-menu>
           <div class="term-chip">
@@ -411,6 +424,31 @@ const markNotificationRead = async (item) => {
   try {
     await api.put(`/notifications/${item.id}/read`)
     item.isRead = true
+  } catch {
+    await loadNotifications()
+  }
+}
+
+const downloadNotificationAttachment = async (notification, attachment) => {
+  try {
+    const response = await api.get(`/notifications/${notification.id}/attachments/${attachment.id}`, {
+      responseType: 'blob',
+    })
+    const blob = new Blob([response.data], {
+      type: response.headers?.['content-type'] || attachment.contentType || 'application/octet-stream',
+    })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = attachment.fileName || 'tep-dinh-kem'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+
+    if (!notification.isRead) {
+      await markNotificationRead(notification)
+    }
   } catch {
     await loadNotifications()
   }
@@ -842,6 +880,7 @@ onMounted(loadNotifications)
   border-bottom: 1px solid #edf0ee;
   background: transparent;
   text-align: left;
+  cursor: pointer;
 }
 
 .notification-row.unread {
@@ -863,6 +902,33 @@ onMounted(loadNotifications)
 .notification-row small {
   color: var(--muted);
   font-size: 12px;
+}
+
+.notification-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.notification-attachments button {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  gap: 4px;
+  padding: 4px 8px;
+  border: 1px solid #b7eb8f;
+  border-radius: 6px;
+  background: #f6ffed;
+  color: #237804;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.notification-attachments button span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .notification-dot {

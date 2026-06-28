@@ -226,12 +226,31 @@ public sealed class SystemNotification
     public DateTime CreatedAt { get; set; }
     public DateTime? PublishedAt { get; set; }
     public DateTime? ExpiresAt { get; set; }
+    public List<SystemNotificationAttachment> Attachments { get; set; } = [];
 }
 
 public sealed record SystemNotificationRead(
     long NotificationId,
     string Username,
     DateTime ReadAt);
+
+public sealed class SystemNotificationAttachment
+{
+    public string Id { get; set; } = string.Empty;
+    public string FileName { get; set; } = string.Empty;
+    public string StoredFileName { get; set; } = string.Empty;
+    public string ContentType { get; set; } = "application/octet-stream";
+    public long Size { get; set; }
+    public DateTime UploadedAt { get; set; }
+}
+
+public sealed record SystemNotificationAttachmentView(
+    string Id,
+    string FileName,
+    string ContentType,
+    long Size,
+    DateTime UploadedAt,
+    string DownloadUrl);
 
 public sealed record SystemNotificationView(
     long Id,
@@ -246,7 +265,8 @@ public sealed record SystemNotificationView(
     DateTime? ExpiresAt,
     bool IsRead,
     DateTime? ReadAt,
-    int ReadCount);
+    int ReadCount,
+    List<SystemNotificationAttachmentView> Attachments);
 
 public sealed record CreateIncidentRequest(
     long StudentId,

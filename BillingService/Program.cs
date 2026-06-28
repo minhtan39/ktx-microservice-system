@@ -110,14 +110,22 @@ app.MapGet("/api/notifications/manage", (HttpRequest httpRequest, BillingStore s
     return Results.Ok(notifications);
 });
 
-app.MapPost("/api/notifications", (
-    CreateSystemNotificationRequest request,
+app.MapPost("/api/notifications", async (
     HttpRequest httpRequest,
-    BillingStore store) =>
+    BillingStore store,
+    IWebHostEnvironment environment,
+    IConfiguration configuration) =>
 {
     var identity = GetRequestIdentity(httpRequest);
     if (!identity.IsAdmin)
         return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+    var (request, attachments, uploadError) = await ReadCreateNotificationRequestAsync(httpRequest, environment, configuration);
+    if (!string.IsNullOrWhiteSpace(uploadError))
+        return Results.BadRequest(new { message = uploadError });
+
+    if (request == null)
+        return Results.BadRequest(new { message = "Dữ liệu thông báo không hợp lệ." });
 
     if (string.IsNullOrWhiteSpace(request.Title) || string.IsNullOrWhiteSpace(request.Content))
         return Results.BadRequest(new { message = "Vui lòng nhập tiêu đề và nội dung thông báo." });
@@ -140,7 +148,8 @@ app.MapPost("/api/notifications", (
             CreatedBy = identity.Username,
             CreatedAt = DateTime.UtcNow,
             PublishedAt = request.PublishNow ? DateTime.UtcNow : null,
-            ExpiresAt = request.ExpiresAt
+            ExpiresAt = request.ExpiresAt,
+            Attachments = attachments
         };
 
         data.SystemNotifications.Add(created);
@@ -179,6 +188,58 @@ app.MapPut("/api/notifications/{id:long}/read", (long id, HttpRequest httpReques
         return Results.StatusCode(StatusCodes.Status403Forbidden);
 
     return Results.Ok(new { success = true });
+});
+
+app.MapGet("/api/notifications/{id:long}/attachments/{attachmentId}", (
+    long id,
+    string attachmentId,
+    HttpRequest httpRequest,
+    BillingStore store,
+    IWebHostEnvironment environment,
+    IConfiguration configuration) =>
+{
+    var identity = GetRequestIdentity(httpRequest);
+    if (identity.Username.Equals("anonymous", StringComparison.OrdinalIgnoreCase))
+        return Results.Unauthorized();
+
+    var result = store.Read(data =>
+    {
+        var notification = data.SystemNotifications.FirstOrDefault(item => item.Id == id);
+        if (notification == null)
+            return new NotificationAttachmentLookup(null, null, false, false);
+
+        var canAccess = identity.IsAdmin || IsVisibleNotificationFor(identity, notification, DateTime.UtcNow);
+        if (!canAccess)
+            return new NotificationAttachmentLookup(notification, null, true, false);
+
+        var attachment = notification.Attachments.FirstOrDefault(item =>
+            item.Id.Equals(attachmentId, StringComparison.OrdinalIgnoreCase));
+
+        return new NotificationAttachmentLookup(notification, attachment, true, true);
+    });
+
+    if (!result.Found)
+        return Results.NotFound(new { message = "Không tìm thấy thông báo." });
+
+    if (!result.CanAccess)
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+    if (result.Attachment == null)
+        return Results.NotFound(new { message = "Không tìm thấy tệp đính kèm." });
+
+    var uploadDirectory = GetNotificationUploadDirectory(environment, configuration);
+    var storedFileName = Path.GetFileName(result.Attachment.StoredFileName);
+    var filePath = Path.Combine(uploadDirectory, storedFileName);
+
+    if (!File.Exists(filePath))
+        return Results.NotFound(new { message = "Tệp đính kèm không còn tồn tại trên máy chủ." });
+
+    return Results.File(
+        filePath,
+        string.IsNullOrWhiteSpace(result.Attachment.ContentType)
+            ? "application/octet-stream"
+            : result.Attachment.ContentType,
+        result.Attachment.FileName);
 });
 
 app.MapPatch("/api/notifications/{id:long}/status", (
@@ -2728,6 +2789,15 @@ static SystemNotificationView ToNotificationView(
         .Select(item => item.Username.ToLowerInvariant())
         .Distinct()
         .Count();
+    var attachments = notification.Attachments
+        .Select(item => new SystemNotificationAttachmentView(
+            item.Id,
+            item.FileName,
+            item.ContentType,
+            item.Size,
+            item.UploadedAt,
+            $"/api/notifications/{notification.Id}/attachments/{Uri.EscapeDataString(item.Id)}"))
+        .ToList();
 
     return new SystemNotificationView(
         notification.Id,
@@ -2742,7 +2812,137 @@ static SystemNotificationView ToNotificationView(
         notification.ExpiresAt,
         userRead != null,
         userRead?.ReadAt,
-        readCount);
+        readCount,
+        attachments);
+}
+
+static async Task<(CreateSystemNotificationRequest? Request, List<SystemNotificationAttachment> Attachments, string? ErrorMessage)>
+    ReadCreateNotificationRequestAsync(
+        HttpRequest request,
+        IWebHostEnvironment environment,
+        IConfiguration configuration)
+{
+    if (!request.HasFormContentType)
+    {
+        try
+        {
+            var jsonRequest = await JsonSerializer.DeserializeAsync<CreateSystemNotificationRequest>(
+                request.Body,
+                new JsonSerializerOptions(JsonSerializerDefaults.Web));
+
+            return (jsonRequest, [], null);
+        }
+        catch (JsonException)
+        {
+            return (null, [], "Dữ liệu thông báo không đúng định dạng JSON.");
+        }
+    }
+
+    var form = await request.ReadFormAsync();
+    var title = GetFormString(form, "title");
+    var content = GetFormString(form, "content");
+
+    if (string.IsNullOrWhiteSpace(title) || string.IsNullOrWhiteSpace(content))
+        return (null, [], "Vui lòng nhập tiêu đề và nội dung thông báo.");
+
+    var expiresAt = TryParseNullableDateTime(GetFormString(form, "expiresAt"));
+    var publishNow = !bool.TryParse(GetFormString(form, "publishNow"), out var parsedPublishNow) ||
+        parsedPublishNow;
+    var formRequest = new CreateSystemNotificationRequest(
+        title,
+        content,
+        GetFormString(form, "targetAudience") ?? "All",
+        GetFormString(form, "severity") ?? "Normal",
+        expiresAt,
+        publishNow);
+
+    var attachments = await SaveNotificationAttachmentsAsync(form.Files, environment, configuration);
+    return (formRequest, attachments.Attachments, attachments.ErrorMessage);
+}
+
+static async Task<(List<SystemNotificationAttachment> Attachments, string? ErrorMessage)> SaveNotificationAttachmentsAsync(
+    IFormFileCollection files,
+    IWebHostEnvironment environment,
+    IConfiguration configuration)
+{
+    const int maxFiles = 5;
+    const long maxFileBytes = 5 * 1024 * 1024;
+
+    var validFiles = files
+        .Where(file => file.Length > 0)
+        .ToList();
+
+    if (validFiles.Count == 0)
+        return ([], null);
+
+    if (validFiles.Count > maxFiles)
+        return ([], $"Chỉ được đính kèm tối đa {maxFiles} tệp cho một thông báo.");
+
+    if (validFiles.Any(file => file.Length > maxFileBytes))
+        return ([], "Mỗi tệp đính kèm chỉ được tối đa 5 MB.");
+
+    var uploadDirectory = GetNotificationUploadDirectory(environment, configuration);
+    Directory.CreateDirectory(uploadDirectory);
+
+    var attachments = new List<SystemNotificationAttachment>();
+    foreach (var file in validFiles)
+    {
+        var originalFileName = SanitizeAttachmentFileName(file.FileName);
+        var extension = Path.GetExtension(originalFileName);
+        var storedFileName = $"{Guid.NewGuid():N}{extension}";
+        var filePath = Path.Combine(uploadDirectory, storedFileName);
+
+        await using (var stream = File.Create(filePath))
+        {
+            await file.CopyToAsync(stream);
+        }
+
+        attachments.Add(new SystemNotificationAttachment
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            FileName = originalFileName,
+            StoredFileName = storedFileName,
+            ContentType = string.IsNullOrWhiteSpace(file.ContentType)
+                ? "application/octet-stream"
+                : file.ContentType,
+            Size = file.Length,
+            UploadedAt = DateTime.UtcNow
+        });
+    }
+
+    return (attachments, null);
+}
+
+static string GetNotificationUploadDirectory(IWebHostEnvironment environment, IConfiguration configuration) =>
+    configuration["NotificationFiles:Directory"]
+        ?? Path.Combine(environment.ContentRootPath, "data", "notification-files");
+
+static string? GetFormString(IFormCollection form, string key)
+{
+    if (form.TryGetValue(key, out var value))
+        return value.ToString();
+
+    var matchingKey = form.Keys.FirstOrDefault(item =>
+        item.Equals(key, StringComparison.OrdinalIgnoreCase));
+
+    return matchingKey == null ? null : form[matchingKey].ToString();
+}
+
+static DateTime? TryParseNullableDateTime(string? value) =>
+    DateTime.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var parsed)
+        ? parsed.ToUniversalTime()
+        : null;
+
+static string SanitizeAttachmentFileName(string? fileName)
+{
+    var safeName = Path.GetFileName(fileName ?? string.Empty);
+    if (string.IsNullOrWhiteSpace(safeName))
+        safeName = "tep-dinh-kem";
+
+    foreach (var invalidChar in Path.GetInvalidFileNameChars())
+        safeName = safeName.Replace(invalidChar, '_');
+
+    return safeName.Trim();
 }
 
 static string NormalizeNotificationAudience(string? value)
@@ -2852,6 +3052,12 @@ static RequestIdentity GetRequestIdentity(HttpRequest request)
 
     return new RequestIdentity(username, role, studentCode, studentId);
 }
+
+public sealed record NotificationAttachmentLookup(
+    SystemNotification? Notification,
+    SystemNotificationAttachment? Attachment,
+    bool Found,
+    bool CanAccess);
 
 public sealed record IncomingPayment(decimal Amount, string Content, string ReferenceCode);
 
