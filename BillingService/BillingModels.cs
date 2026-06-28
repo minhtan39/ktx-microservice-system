@@ -213,7 +213,31 @@ public sealed record CreateIncidentRequest(
     string? Priority = null,
     DateTime? PreferredVisitAt = null,
     string? ContactPhone = null,
+    string? AiSummary = null,
+    string? AiSuggestedAction = null,
+    string? AiExpectedHandlingTime = null,
+    string? AiSafetyNote = null,
+    string? AiSource = null,
     List<string>? ImageUrls = null);
+
+public sealed record AnalyzeIncidentRequest(
+    string Description,
+    string? RoomName = null,
+    string? Building = null,
+    string? Category = null,
+    string? Priority = null);
+
+public sealed record IncidentAnalysisResult(
+    string Category,
+    string CategoryLabel,
+    string Priority,
+    string PriorityLabel,
+    string Summary,
+    string SuggestedAction,
+    string ExpectedHandlingTime,
+    string SafetyNote,
+    string Source,
+    List<string> Keywords);
 
 public sealed record UpdateIncidentStatusRequest(
     string Status,
@@ -262,6 +286,12 @@ public sealed class MaintenanceIncident
     public string? ContactPhone { get; set; }
     public string? RootCause { get; set; }
     public string? Resolution { get; set; }
+    public string? AiSummary { get; set; }
+    public string? AiSuggestedAction { get; set; }
+    public string? AiExpectedHandlingTime { get; set; }
+    public string? AiSafetyNote { get; set; }
+    public string? AiSource { get; set; }
+    public DateTime? AiAnalyzedAt { get; set; }
     public decimal MaterialCost { get; set; }
     public decimal LaborCost { get; set; }
     public decimal ActualCost => MaterialCost + LaborCost;

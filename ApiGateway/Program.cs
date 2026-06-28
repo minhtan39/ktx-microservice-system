@@ -238,6 +238,9 @@ static bool IsAuthorizedForPath(
     if (normalized == "incidents")
         return isGet || isPost;
 
+    if (normalized == "incidents/analyze")
+        return isPost;
+
     return normalized.StartsWith("incidents/") &&
         isPost &&
         (normalized.EndsWith("/confirm") ||

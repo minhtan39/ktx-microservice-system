@@ -26,6 +26,7 @@ builder.Services.AddOpenApi();
 builder.Services.AddSingleton<BillingStore>();
 builder.Services.AddSingleton<BillingEmailSender>();
 builder.Services.AddSingleton<PaymentQrBuilder>();
+builder.Services.AddHttpClient<IncidentAiAnalyzer>();
 builder.Services.AddHttpClient("RoomService", client =>
 {
     var roomServiceBaseUrl = builder.Configuration["Integration:RoomServiceBaseUrl"]
@@ -813,6 +814,18 @@ app.MapGet("/api/incidents/{id:long}", (long id, BillingStore store) =>
     return incident == null
         ? Results.NotFound(new { message = "Incident request not found." })
         : Results.Ok(incident);
+});
+
+app.MapPost("/api/incidents/analyze", async Task<IResult> (
+    AnalyzeIncidentRequest request,
+    IncidentAiAnalyzer analyzer,
+    CancellationToken cancellationToken) =>
+{
+    if (string.IsNullOrWhiteSpace(request.Description))
+        return Results.BadRequest(new { message = "Vui lòng nhập mô tả sự cố trước khi phân tích." });
+
+    var result = await analyzer.AnalyzeAsync(request, cancellationToken);
+    return Results.Ok(result);
 });
 
 app.MapPost("/api/incidents", (
@@ -2255,6 +2268,12 @@ static IResult CreateIncident(CreateIncidentRequest request, RequestIdentity ide
             CreatedAt = DateTime.UtcNow,
             PreferredVisitAt = request.PreferredVisitAt,
             ContactPhone = request.ContactPhone?.Trim(),
+            AiSummary = TrimToNull(request.AiSummary),
+            AiSuggestedAction = TrimToNull(request.AiSuggestedAction),
+            AiExpectedHandlingTime = TrimToNull(request.AiExpectedHandlingTime),
+            AiSafetyNote = TrimToNull(request.AiSafetyNote),
+            AiSource = TrimToNull(request.AiSource),
+            AiAnalyzedAt = HasAiAnalysis(request) ? DateTime.UtcNow : null,
             ImageUrls = request.ImageUrls ?? []
         };
 
@@ -2266,6 +2285,14 @@ static IResult CreateIncident(CreateIncidentRequest request, RequestIdentity ide
 
     return Results.Ok(incident);
 }
+
+static bool HasAiAnalysis(CreateIncidentRequest request) =>
+    !string.IsNullOrWhiteSpace(request.AiSummary) ||
+    !string.IsNullOrWhiteSpace(request.AiSuggestedAction) ||
+    !string.IsNullOrWhiteSpace(request.AiSafetyNote);
+
+static string? TrimToNull(string? value) =>
+    string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
 static string? NormalizeIncidentStatus(string status)
 {

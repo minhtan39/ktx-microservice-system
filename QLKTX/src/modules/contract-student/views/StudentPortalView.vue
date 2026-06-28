@@ -251,9 +251,35 @@
                 density="comfortable"
               />
             </v-col>
+            <v-col v-if="incidentAiSuggestion" cols="12">
+              <div class="ai-suggestion-panel">
+                <span class="mdi mdi-auto-fix"></span>
+                <div>
+                  <strong>{{ incidentAiSuggestion.summary }}</strong>
+                  <p>{{ incidentAiSuggestion.suggestedAction }}</p>
+                  <small>
+                    {{ incidentCategoryLabel(incidentAiSuggestion.category) }}
+                    · {{ incidentPriorityLabel(incidentAiSuggestion.priority) }}
+                    · {{ incidentAiSuggestion.expectedHandlingTime }}
+                    · {{ incidentAiSuggestion.source }}
+                  </small>
+                  <small v-if="incidentAiSuggestion.safetyNote">{{ incidentAiSuggestion.safetyNote }}</small>
+                </div>
+              </div>
+            </v-col>
           </v-row>
 
           <div class="form-actions">
+            <v-btn
+              color="primary"
+              variant="tonal"
+              :loading="incidentAnalyzing"
+              :disabled="!incidentForm.description.trim()"
+              prepend-icon="mdi-auto-fix"
+              @click="analyzeIncident"
+            >
+              AI phân tích
+            </v-btn>
             <v-btn
               color="success"
               type="submit"
@@ -702,6 +728,8 @@ const incidentPriorityOptions = [
   { title: 'Khẩn cấp', value: 'urgent' },
 ]
 const incidentSubmitting = ref(false)
+const incidentAnalyzing = ref(false)
+const incidentAiSuggestion = ref(null)
 const incidentForm = reactive({
   category: 'Electric',
   priority: 'normal',
@@ -871,6 +899,38 @@ const loadAll = async () => {
   }
 }
 
+const analyzeIncident = async () => {
+  if (!incidentForm.description.trim()) {
+    error.value = 'Vui lòng nhập mô tả sự cố trước khi dùng AI phân tích.'
+    return
+  }
+
+  try {
+    incidentAnalyzing.value = true
+    error.value = ''
+    success.value = ''
+
+    const response = await api.post('/incidents/analyze', {
+      description: incidentForm.description,
+      roomName: repairRoom.value?.roomName || '',
+      building: repairRoom.value?.building || '',
+      category: incidentForm.category,
+      priority: incidentForm.priority,
+    })
+    const analysis = response.data?.data || response.data
+
+    if (analysis?.category) incidentForm.category = analysis.category
+    if (analysis?.priority) incidentForm.priority = analysis.priority
+
+    incidentAiSuggestion.value = analysis
+    success.value = 'AI đã phân tích và gợi ý mức độ xử lý.'
+  } catch (err) {
+    error.value = err.response?.data?.message || 'Không phân tích được sự cố bằng AI.'
+  } finally {
+    incidentAnalyzing.value = false
+  }
+}
+
 const submitIncident = async () => {
   if (!student.value) {
     error.value = 'Chưa tìm thấy hồ sơ sinh viên để gửi yêu cầu sửa chữa.'
@@ -905,11 +965,17 @@ const submitIncident = async () => {
         : null,
       contactPhone: incidentForm.contactPhone,
       description: incidentForm.description,
+      aiSummary: incidentAiSuggestion.value?.summary || null,
+      aiSuggestedAction: incidentAiSuggestion.value?.suggestedAction || null,
+      aiExpectedHandlingTime: incidentAiSuggestion.value?.expectedHandlingTime || null,
+      aiSafetyNote: incidentAiSuggestion.value?.safetyNote || null,
+      aiSource: incidentAiSuggestion.value?.source || null,
     })
 
     success.value = 'Đã gửi yêu cầu sửa chữa. Nhân viên/admin sẽ tiếp nhận và cập nhật trạng thái.'
     incidentForm.description = ''
     incidentForm.preferredVisitAt = ''
+    incidentAiSuggestion.value = null
     await loadIncidents()
   } catch (err) {
     error.value = 'Không gửi được yêu cầu sửa chữa. Kiểm tra Gateway và BillingService.'
@@ -1678,6 +1744,43 @@ onMounted(loadAll)
 .auto-room-field.is-missing {
   border-color: #ffd8bf;
   background: #fff7e6;
+}
+
+.ai-suggestion-panel {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #b7eb8f;
+  border-radius: 8px;
+  background: #f6ffed;
+}
+
+.ai-suggestion-panel > .mdi {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 8px;
+  background: #d9f7be;
+  color: #237804;
+  font-size: 24px;
+}
+
+.ai-suggestion-panel strong,
+.ai-suggestion-panel small {
+  display: block;
+}
+
+.ai-suggestion-panel p {
+  margin: 6px 0;
+  color: #31443a;
+  line-height: 1.5;
+}
+
+.ai-suggestion-panel small {
+  color: var(--muted);
+  overflow-wrap: anywhere;
 }
 
 .form-actions {
