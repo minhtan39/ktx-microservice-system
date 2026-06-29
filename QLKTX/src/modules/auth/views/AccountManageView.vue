@@ -21,10 +21,6 @@
 
     <v-alert v-if="error" type="error" variant="tonal">{{ error }}</v-alert>
     <v-alert v-if="success" type="success" variant="tonal">{{ success }}</v-alert>
-    <v-snackbar v-model="toastVisible" :color="toastColor" location="top right" timeout="4500" multi-line>
-      {{ toastText }}
-      <template #actions><v-btn variant="text" @click="clearToast">Đóng</v-btn></template>
-    </v-snackbar>
 
     <section class="panel">
       <div class="toolbar-row">
@@ -92,6 +88,9 @@
       <v-card>
         <v-card-title>{{ editing ? 'Cập nhật tài khoản' : 'Tạo nhân viên vận hành' }}</v-card-title>
         <v-card-text>
+          <v-alert v-if="dialogError" type="error" variant="tonal" closable class="mb-4" @click:close="dialogError = ''">
+            {{ dialogError }}
+          </v-alert>
           <v-form class="edit-form" @submit.prevent="saveAccount">
             <div class="form-grid">
               <v-text-field v-model="form.username" label="Tên đăng nhập" variant="outlined" density="comfortable" />
@@ -130,6 +129,9 @@
       <v-card v-if="accessTarget">
         <v-card-title>{{ isLocked(accessTarget) ? 'Xác nhận mở khóa tài khoản' : 'Xác nhận khóa tài khoản' }}</v-card-title>
         <v-card-text>
+          <v-alert v-if="accessError" type="error" variant="tonal" closable class="mb-4" @click:close="accessError = ''">
+            {{ accessError }}
+          </v-alert>
           <p v-if="isLocked(accessTarget)">Bạn sắp mở khóa tài khoản <strong>{{ accessTarget.username }}</strong>. Người dùng có thể đăng nhập lại nếu mật khẩu còn hợp lệ.</p>
           <p v-else>Bạn sắp khóa tài khoản <strong>{{ accessTarget.username }}</strong>. Người dùng sẽ không thể đăng nhập cho đến khi được mở khóa.</p>
           <v-alert type="info" variant="tonal">
@@ -155,15 +157,9 @@ import { exportRowsToExcel } from '@/utils/exportExcel'
 
 const loading = ref(false), saving = ref(false), locking = ref(false), sendingAccessLink = ref('')
 const error = ref(''), success = ref(''), accounts = ref([]), search = ref('')
+const dialogError = ref(''), accessError = ref('')
 const roleFilter = ref('All'), statusFilter = ref('All'), dialog = ref(false), accessDialog = ref(false)
 const editing = ref(null), accessTarget = ref(null)
-const toastVisible = computed({
-  get: () => Boolean(error.value || success.value),
-  set: (visible) => { if (!visible) clearToast() },
-})
-const toastText = computed(() => error.value || success.value)
-const toastColor = computed(() => error.value ? 'error' : 'success')
-const clearToast = () => { error.value = ''; success.value = '' }
 
 const headers = [
   { title: 'Tài khoản', key: 'username', sortable: false }, { title: 'Hồ sơ', key: 'profile', sortable: false },
@@ -202,19 +198,19 @@ const accountMetrics = computed(() => [
 ])
 
 const assignForm = (value) => Object.assign(form, emptyForm(), value, { permissions: [...(value?.permissions || emptyForm().permissions)] })
-const openCreate = () => { editing.value = null; assignForm(null); error.value = ''; dialog.value = true }
-const openEdit = (account) => { editing.value = account; assignForm(account); error.value = ''; dialog.value = true }
-const openAccessChange = (account) => { accessTarget.value = account; accessDialog.value = true }
+const openCreate = () => { editing.value = null; assignForm(null); dialogError.value = ''; error.value = ''; dialog.value = true }
+const openEdit = (account) => { editing.value = account; assignForm(account); dialogError.value = ''; error.value = ''; dialog.value = true }
+const openAccessChange = (account) => { accessTarget.value = account; accessError.value = ''; accessDialog.value = true }
 
 const saveAccount = async () => {
-  if (!form.username.trim() || !form.fullName.trim() || (isStaffForm.value && (!form.employeeCode.trim() || !form.email.trim()))) { error.value = 'Vui lòng nhập đủ tên đăng nhập, họ tên, mã nhân viên và email.'; return }
+  if (!form.username.trim() || !form.fullName.trim() || (isStaffForm.value && (!form.employeeCode.trim() || !form.email.trim()))) { dialogError.value = 'Vui lòng nhập đủ tên đăng nhập, họ tên, mã nhân viên và email.'; return }
   try {
-    saving.value = true; error.value = ''; success.value = ''
+    saving.value = true; dialogError.value = ''; error.value = ''; success.value = ''
     const payload = { ...form, permissions: [...form.permissions] }
     if (editing.value) await api.put(`/auth/accounts/${encodeURIComponent(editing.value.username)}`, payload)
     else await api.post('/auth/accounts', payload)
     dialog.value = false; success.value = editing.value ? 'Đã cập nhật tài khoản.' : 'Đã tạo nhân viên. Hãy gửi link kích hoạt qua email.'; await loadAccounts()
-  } catch (err) { error.value = err.response?.data?.message || 'Không lưu được tài khoản.'; console.error(err) } finally { saving.value = false }
+  } catch (err) { dialogError.value = err.response?.data?.message || 'Không lưu được tài khoản.'; console.error(err) } finally { saving.value = false }
 }
 
 const sendAccessLink = async (account) => {
@@ -255,6 +251,7 @@ const toggleAccountLock = async () => {
 
   try {
     locking.value = true
+    accessError.value = ''
     error.value = ''
     success.value = ''
 
@@ -269,7 +266,7 @@ const toggleAccountLock = async () => {
       : 'Đã mở khóa tài khoản.'
     await loadAccounts()
   } catch (err) {
-    error.value = err.response?.data?.detail ||
+    accessError.value = err.response?.data?.detail ||
       err.response?.data?.message ||
       'Không cập nhật được trạng thái tài khoản.'
     console.error(err)

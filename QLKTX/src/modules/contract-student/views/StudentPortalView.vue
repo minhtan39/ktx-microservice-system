@@ -33,18 +33,6 @@
     <v-alert v-if="success" type="success" variant="tonal" class="mb-4">
       {{ success }}
     </v-alert>
-    <v-snackbar
-      v-model="toastVisible"
-      :color="toastColor"
-      location="top right"
-      timeout="4500"
-      multi-line
-    >
-      {{ toastText }}
-      <template #actions>
-        <v-btn variant="text" @click="clearToast">Đóng</v-btn>
-      </template>
-    </v-snackbar>
 
     <div v-if="loading" class="loading-state">
       <v-progress-circular indeterminate color="success" />
@@ -111,6 +99,12 @@
               class="mb-4"
             >
               {{ registrationBlockReason }}
+            </v-alert>
+            <v-alert v-if="registrationError" type="error" variant="tonal" closable class="mb-4" @click:close="registrationError = ''">
+              {{ registrationError }}
+            </v-alert>
+            <v-alert v-if="registrationSuccess" type="success" variant="tonal" closable class="mb-4" @click:close="registrationSuccess = ''">
+              {{ registrationSuccess }}
             </v-alert>
 
             <v-row dense>
@@ -196,6 +190,13 @@
             <small>Sinh viên gửi sự cố phòng ở, nhân viên/admin tiếp nhận và cập nhật trạng thái</small>
           </div>
         </div>
+
+        <v-alert v-if="incidentError" type="error" variant="tonal" closable class="mb-4" @click:close="incidentError = ''">
+          {{ incidentError }}
+        </v-alert>
+        <v-alert v-if="incidentSuccess" type="success" variant="tonal" closable class="mb-4" @click:close="incidentSuccess = ''">
+          {{ incidentSuccess }}
+        </v-alert>
 
         <v-form class="registration-form" @submit.prevent="submitIncident">
           <v-row dense>
@@ -485,6 +486,12 @@
             <v-btn icon="mdi-close" variant="text" @click="signDialog = false" />
           </v-card-title>
           <v-card-text>
+            <v-alert v-if="contractError" type="error" variant="tonal" closable class="mb-4" @click:close="contractError = ''">
+              {{ contractError }}
+            </v-alert>
+            <v-alert v-if="contractSuccess" type="success" variant="tonal" closable class="mb-4" @click:close="contractSuccess = ''">
+              {{ contractSuccess }}
+            </v-alert>
             <v-alert
               v-if="!signTarget.templateFilePath"
               type="warning"
@@ -626,6 +633,9 @@
         <v-card>
           <v-card-title>Yêu cầu xử lý lại</v-card-title>
           <v-card-text>
+            <v-alert v-if="reopenError" type="error" variant="tonal" closable class="mb-4" @click:close="reopenError = ''">
+              {{ reopenError }}
+            </v-alert>
             <p class="dialog-copy">Hãy mô tả phần chưa đạt để nhân viên tiếp tục xử lý đúng vấn đề.</p>
             <v-textarea v-model="reopenNote" label="Lý do chưa đạt" rows="4" variant="outlined" autofocus />
           </v-card-text>
@@ -649,18 +659,12 @@ const loading = ref(true)
 const submitting = ref(false)
 const error = ref('')
 const success = ref('')
-const toastVisible = computed({
-  get: () => Boolean(error.value || success.value),
-  set: (visible) => {
-    if (!visible) clearToast()
-  },
-})
-const toastText = computed(() => error.value || success.value)
-const toastColor = computed(() => error.value ? 'error' : 'success')
-const clearToast = () => {
-  error.value = ''
-  success.value = ''
-}
+const registrationError = ref('')
+const registrationSuccess = ref('')
+const incidentError = ref('')
+const incidentSuccess = ref('')
+const contractError = ref('')
+const contractSuccess = ref('')
 const student = ref(null)
 const ownRegistrations = ref([])
 const ownContracts = ref([])
@@ -669,6 +673,7 @@ const incidentActionLoading = ref(null)
 const reopenDialog = ref(false)
 const reopenIncidentTarget = ref(null)
 const reopenNote = ref('')
+const reopenError = ref('')
 const signDialog = ref(false)
 const signTarget = ref(null)
 const signing = ref(false)
@@ -901,14 +906,14 @@ const loadAll = async () => {
 
 const analyzeIncident = async () => {
   if (!incidentForm.description.trim()) {
-    error.value = 'Vui lòng nhập mô tả sự cố trước khi dùng AI phân tích.'
+    incidentError.value = 'Vui lòng nhập mô tả sự cố trước khi dùng AI phân tích.'
     return
   }
 
   try {
     incidentAnalyzing.value = true
-    error.value = ''
-    success.value = ''
+    incidentError.value = ''
+    incidentSuccess.value = ''
 
     const response = await api.post('/incidents/analyze', {
       description: incidentForm.description,
@@ -923,9 +928,9 @@ const analyzeIncident = async () => {
     if (analysis?.priority) incidentForm.priority = analysis.priority
 
     incidentAiSuggestion.value = analysis
-    success.value = 'AI đã phân tích và gợi ý mức độ xử lý.'
+    incidentSuccess.value = 'AI đã phân tích và gợi ý mức độ xử lý.'
   } catch (err) {
-    error.value = err.response?.data?.message || 'Không phân tích được sự cố bằng AI.'
+    incidentError.value = err.response?.data?.message || 'Không phân tích được sự cố bằng AI.'
   } finally {
     incidentAnalyzing.value = false
   }
@@ -933,24 +938,24 @@ const analyzeIncident = async () => {
 
 const submitIncident = async () => {
   if (!student.value) {
-    error.value = 'Chưa tìm thấy hồ sơ sinh viên để gửi yêu cầu sửa chữa.'
+    incidentError.value = 'Chưa tìm thấy hồ sơ sinh viên để gửi yêu cầu sửa chữa.'
     return
   }
 
   if (!repairRoom.value) {
-    error.value = 'Bạn chưa có hợp đồng hoặc phòng đang ở để gửi yêu cầu sửa chữa.'
+    incidentError.value = 'Bạn chưa có hợp đồng hoặc phòng đang ở để gửi yêu cầu sửa chữa.'
     return
   }
 
   if (!incidentForm.description.trim()) {
-    error.value = 'Vui lòng nhập mô tả sự cố.'
+    incidentError.value = 'Vui lòng nhập mô tả sự cố.'
     return
   }
 
   try {
     incidentSubmitting.value = true
-    error.value = ''
-    success.value = ''
+    incidentError.value = ''
+    incidentSuccess.value = ''
 
     await api.post('/incidents', {
       studentId: studentId.value,
@@ -972,13 +977,13 @@ const submitIncident = async () => {
       aiSource: incidentAiSuggestion.value?.source || null,
     })
 
-    success.value = 'Đã gửi yêu cầu sửa chữa. Nhân viên/admin sẽ tiếp nhận và cập nhật trạng thái.'
+    incidentSuccess.value = 'Đã gửi yêu cầu sửa chữa. Nhân viên/admin sẽ tiếp nhận và cập nhật trạng thái.'
     incidentForm.description = ''
     incidentForm.preferredVisitAt = ''
     incidentAiSuggestion.value = null
     await loadIncidents()
   } catch (err) {
-    error.value = 'Không gửi được yêu cầu sửa chữa. Kiểm tra Gateway và BillingService.'
+    incidentError.value = 'Không gửi được yêu cầu sửa chữa. Kiểm tra Gateway và BillingService.'
     console.error(err)
   } finally {
     incidentSubmitting.value = false
@@ -988,16 +993,17 @@ const submitIncident = async () => {
 const confirmIncident = async (incident) => {
   try {
     incidentActionLoading.value = incident.id
-    error.value = ''
+    incidentError.value = ''
+    incidentSuccess.value = ''
     await api.post(`/incidents/${incident.id}/confirm`, {
       note: 'Sinh viên xác nhận yêu cầu đã được xử lý đạt yêu cầu.',
       studentId: studentId.value,
       studentCode: studentCode.value,
     })
-    success.value = 'Đã xác nhận yêu cầu sửa chữa hoàn thành.'
+    incidentSuccess.value = 'Đã xác nhận yêu cầu sửa chữa hoàn thành.'
     await loadIncidents()
   } catch (err) {
-    error.value = err.response?.data?.message || 'Không xác nhận được yêu cầu sửa chữa.'
+    incidentError.value = err.response?.data?.message || 'Không xác nhận được yêu cầu sửa chữa.'
   } finally {
     incidentActionLoading.value = null
   }
@@ -1006,28 +1012,31 @@ const confirmIncident = async (incident) => {
 const openReopenDialog = (incident) => {
   reopenIncidentTarget.value = incident
   reopenNote.value = ''
+  reopenError.value = ''
   reopenDialog.value = true
 }
 
 const submitReopen = async () => {
   if (!reopenIncidentTarget.value || !reopenNote.value.trim()) {
-    error.value = 'Vui lòng nhập lý do cần xử lý lại.'
+    reopenError.value = 'Vui lòng nhập lý do cần xử lý lại.'
     return
   }
 
   try {
     incidentActionLoading.value = reopenIncidentTarget.value.id
-    error.value = ''
+    reopenError.value = ''
+    incidentError.value = ''
+    incidentSuccess.value = ''
     await api.post(`/incidents/${reopenIncidentTarget.value.id}/reopen`, {
       note: reopenNote.value.trim(),
       studentId: studentId.value,
       studentCode: studentCode.value,
     })
     reopenDialog.value = false
-    success.value = 'Đã gửi lại yêu cầu cho nhân viên phụ trách.'
+    incidentSuccess.value = 'Đã gửi lại yêu cầu cho nhân viên phụ trách.'
     await loadIncidents()
   } catch (err) {
-    error.value = err.response?.data?.message || 'Không thể mở lại yêu cầu sửa chữa.'
+    reopenError.value = err.response?.data?.message || 'Không thể mở lại yêu cầu sửa chữa.'
   } finally {
     incidentActionLoading.value = null
   }
@@ -1042,16 +1051,17 @@ const cancelIncident = async (incident) => {
 
   try {
     incidentActionLoading.value = incident.id
-    error.value = ''
+    incidentError.value = ''
+    incidentSuccess.value = ''
     await api.post(`/incidents/${incident.id}/cancel`, {
       note: 'Sinh viên hủy yêu cầu sửa chữa.',
       studentId: studentId.value,
       studentCode: studentCode.value,
     })
-    success.value = 'Đã hủy yêu cầu sửa chữa.'
+    incidentSuccess.value = 'Đã hủy yêu cầu sửa chữa.'
     await loadIncidents()
   } catch (err) {
-    error.value = err.response?.data?.message ||
+    incidentError.value = err.response?.data?.message ||
       ([401, 403].includes(err.response?.status)
         ? 'Bạn không có quyền hủy yêu cầu sửa chữa này.'
         : 'Không hủy được yêu cầu sửa chữa.')
@@ -1062,24 +1072,24 @@ const cancelIncident = async (incident) => {
 
 const submitRegistration = async () => {
   if (!canSubmitRegistration.value) {
-    error.value = registrationBlockReason.value || 'Chưa đủ điều kiện gửi đăng ký nội trú.'
+    registrationError.value = registrationBlockReason.value || 'Chưa đủ điều kiện gửi đăng ký nội trú.'
     return
   }
 
   if (!student.value) {
-    error.value = 'Chưa tìm thấy hồ sơ sinh viên để tạo đơn đăng ký.'
+    registrationError.value = 'Chưa tìm thấy hồ sơ sinh viên để tạo đơn đăng ký.'
     return
   }
 
   if (new Date(form.endDate) <= new Date(form.startDate)) {
-    error.value = 'Ngày kết thúc phải sau ngày bắt đầu.'
+    registrationError.value = 'Ngày kết thúc phải sau ngày bắt đầu.'
     return
   }
 
   try {
     submitting.value = true
-    error.value = ''
-    success.value = ''
+    registrationError.value = ''
+    registrationSuccess.value = ''
 
     await api.post('/registrations', {
       studentId: studentId.value,
@@ -1092,12 +1102,12 @@ const submitRegistration = async () => {
       status: 'Pending',
     })
 
-    success.value = 'Đã gửi đơn đăng ký. Admin/nhân viên có thể duyệt ở mục Duyệt xếp phòng.'
+    registrationSuccess.value = 'Đã gửi đơn đăng ký. Admin/nhân viên có thể duyệt ở mục Duyệt xếp phòng.'
     form.priorityType = ''
     form.priorityNote = ''
     await loadRegistrations()
   } catch (err) {
-    error.value = 'Không gửi được đơn đăng ký. Kiểm tra dữ liệu sinh viên và service N2.'
+    registrationError.value = 'Không gửi được đơn đăng ký. Kiểm tra dữ liệu sinh viên và service N2.'
     console.error(err)
   } finally {
     submitting.value = false
@@ -1106,6 +1116,8 @@ const submitRegistration = async () => {
 
 const openSignDialog = (contract) => {
   signTarget.value = contract
+  contractError.value = ''
+  contractSuccess.value = ''
   signForm.fullName = student.value?.fullName || displayName.value || ''
   signForm.studentCode = student.value?.studentCode || studentCode.value || ''
   signAccepted.value = Boolean(contract.signedAt)
@@ -1118,24 +1130,24 @@ const submitSignContract = async () => {
   if (!signTarget.value) return
 
   if (!signAccepted.value || !signForm.fullName.trim() || !signForm.studentCode.trim()) {
-    error.value = 'Vui lòng xác nhận điều khoản và nhập đầy đủ họ tên, MSSV để ký hợp đồng.'
+    contractError.value = 'Vui lòng xác nhận điều khoản và nhập đầy đủ họ tên, MSSV để ký hợp đồng.'
     return
   }
 
   if (!signTarget.value.templateFilePath) {
-    error.value = 'Hợp đồng chưa có file PDF. Vui lòng chờ admin/nhân viên phát hành hợp đồng chuẩn.'
+    contractError.value = 'Hợp đồng chưa có file PDF. Vui lòng chờ admin/nhân viên phát hành hợp đồng chuẩn.'
     return
   }
 
   if (!hasSignature.value || !signatureCanvas.value) {
-    error.value = 'Vui lòng ký tay trên khung chữ ký trước khi xác nhận hợp đồng.'
+    contractError.value = 'Vui lòng ký tay trên khung chữ ký trước khi xác nhận hợp đồng.'
     return
   }
 
   try {
     signing.value = true
-    error.value = ''
-    success.value = ''
+    contractError.value = ''
+    contractSuccess.value = ''
     await api.post(`/contracts/${signTarget.value.id}/sign`, {
       fullName: signForm.fullName.trim(),
       studentCode: signForm.studentCode.trim(),
@@ -1146,7 +1158,7 @@ const submitSignContract = async () => {
     success.value = 'Đã ký hợp đồng online thành công. Hệ thống đã tạo bản PDF có chữ ký của bạn.'
     await loadContracts()
   } catch (err) {
-    error.value = err.response?.data?.message || 'Không ký được hợp đồng online.'
+    contractError.value = err.response?.data?.message || 'Không ký được hợp đồng online.'
     console.error(err)
   } finally {
     signing.value = false
@@ -1232,8 +1244,10 @@ const openContractPdf = async (contract, kind) => {
     window.open(url, '_blank', 'noopener')
     window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
   } catch (err) {
-    error.value = err.response?.data?.message ||
+    const message = err.response?.data?.message ||
       (kind === 'signed' ? 'Chưa có bản PDF đã ký.' : 'Chưa có file PDF mẫu.')
+    if (signDialog.value) contractError.value = message
+    else error.value = message
     console.error(err)
   }
 }

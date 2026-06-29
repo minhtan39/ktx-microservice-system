@@ -13,19 +13,6 @@
       {{ error }}
     </v-alert>
 
-    <v-snackbar
-      v-model="toastVisible"
-      color="error"
-      location="top right"
-      timeout="4500"
-      multi-line
-    >
-      {{ error }}
-      <template #actions>
-        <v-btn variant="text" @click="error = ''">Đóng</v-btn>
-      </template>
-    </v-snackbar>
-
     <section class="password-panel">
       <v-form @submit.prevent="changePassword">
         <v-text-field
@@ -78,19 +65,13 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/services/api'
 
 const router = useRouter()
 const saving = ref(false)
 const error = ref('')
-const toastVisible = computed({
-  get: () => Boolean(error.value),
-  set: (visible) => {
-    if (!visible) error.value = ''
-  },
-})
 const showCurrentPassword = ref(false)
 const showNewPassword = ref(false)
 const form = reactive({

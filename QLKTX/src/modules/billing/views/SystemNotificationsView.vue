@@ -142,6 +142,9 @@
       <v-card>
         <v-card-title>Tạo thông báo hệ thống</v-card-title>
         <v-card-text>
+          <v-alert v-if="dialogError" type="error" variant="tonal" closable class="mb-4" @click:close="dialogError = ''">
+            {{ dialogError }}
+          </v-alert>
           <div class="form-grid">
             <v-text-field v-model="form.title" label="Tiêu đề" variant="outlined" density="compact" />
             <v-select
@@ -201,6 +204,7 @@ const savingId = ref(null)
 const dialog = ref(false)
 const error = ref('')
 const success = ref('')
+const dialogError = ref('')
 const notifications = ref([])
 const search = ref('')
 const audienceFilter = ref('All')
@@ -276,18 +280,20 @@ const loadNotifications = async () => {
 
 const openCreate = () => {
   Object.assign(form, blankForm())
+  dialogError.value = ''
+  error.value = ''
   dialog.value = true
 }
 
 const createNotification = async () => {
   if (!form.title.trim() || !form.content.trim()) {
-    error.value = 'Vui lòng nhập tiêu đề và nội dung thông báo.'
+    dialogError.value = 'Vui lòng nhập tiêu đề và nội dung thông báo.'
     return
   }
 
   try {
     saving.value = true
-    error.value = ''
+    dialogError.value = ''
     const payload = buildNotificationPayload()
     await api.post('/notifications', payload, {
       headers: { 'Content-Type': 'multipart/form-data' },
@@ -296,7 +302,7 @@ const createNotification = async () => {
     success.value = form.publishNow ? 'Đã gửi thông báo hệ thống.' : 'Đã lưu bản nháp thông báo.'
     await loadNotifications()
   } catch (err) {
-    error.value = err.response?.data?.message || 'Không tạo được thông báo.'
+    dialogError.value = err.response?.data?.message || 'Không tạo được thông báo.'
   } finally {
     saving.value = false
   }

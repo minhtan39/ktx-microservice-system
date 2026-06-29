@@ -2,6 +2,10 @@
   <div>
     <h2 class="text-h5 font-weight-bold mb-4 text-primary">Đăng ký ở ký túc xá online</h2>
 
+    <v-alert v-if="feedbackMessage" :type="feedbackType" variant="tonal" closable class="mb-4" @click:close="feedbackMessage = ''">
+      {{ feedbackMessage }}
+    </v-alert>
+
     <v-card class="mx-auto" max-width="900">
       <v-stepper v-model="step" :items="['Thông tin', 'Nguyện vọng', 'Xác nhận']">
         
@@ -89,9 +93,6 @@
       </v-stepper>
     </v-card>
 
-    <v-snackbar v-model="snackbar" color="success" timeout="3000">
-      Đăng ký phòng thành công! Đang chờ Ban quản lý phê duyệt.
-    </v-snackbar>
   </div>
 </template>
 
@@ -100,7 +101,8 @@ import { ref, reactive } from 'vue'
 import api from '@/services/api'
 
 const step = ref(1)
-const snackbar = ref(false)
+const feedbackMessage = ref('')
+const feedbackType = ref('success')
 
 const registration = reactive({
   buildingType: '',
@@ -111,6 +113,7 @@ const registration = reactive({
 
 const submitRegistration = async () => {
   try {
+    feedbackMessage.value = ''
     const startDate = new Date()
 
     let endDate = new Date()
@@ -132,7 +135,8 @@ const submitRegistration = async () => {
 
     await api.post('/RoomRegistration', payload)
 
-    snackbar.value = true
+    feedbackType.value = 'success'
+    feedbackMessage.value = 'Đăng ký phòng thành công. Đơn đang chờ Ban quản lý phê duyệt.'
 
     registration.buildingType = ''
     registration.roomType = ''
@@ -142,7 +146,8 @@ const submitRegistration = async () => {
     step.value = 1
   } catch (error) {
     console.error(error)
-    alert('Đăng ký phòng thất bại!')
+    feedbackType.value = 'error'
+    feedbackMessage.value = error.response?.data?.message || 'Đăng ký phòng thất bại. Vui lòng kiểm tra lại thông tin đã nhập.'
   }
 }
 </script>

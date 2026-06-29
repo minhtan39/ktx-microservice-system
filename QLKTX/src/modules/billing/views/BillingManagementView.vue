@@ -53,6 +53,13 @@
         <span class="rate-note">Điện 4.000đ/số · Nước 20.000đ/số</span>
       </div>
 
+      <v-alert v-if="issueError" type="error" variant="tonal" closable class="mb-4" @click:close="issueError = ''">
+        {{ issueError }}
+      </v-alert>
+      <v-alert v-if="issueSuccess" type="success" variant="tonal" closable class="mb-4" @click:close="issueSuccess = ''">
+        {{ issueSuccess }}
+      </v-alert>
+
       <div class="form-grid">
         <v-select
           v-model="form.roomId"
@@ -439,6 +446,8 @@ const issuing = ref(false)
 const previewing = ref(false)
 const error = ref('')
 const success = ref('')
+const issueError = ref('')
+const issueSuccess = ref('')
 const students = ref([])
 const contracts = ref([])
 const rooms = ref([])
@@ -700,6 +709,8 @@ const resetPreview = () => {
 }
 
 const onRoomChanged = () => {
+  issueError.value = ''
+  issueSuccess.value = ''
   const room = roomMap.value.get(Number(form.roomId))
   form.roomName = getRoomLabel(room) || String(form.roomId || '')
 
@@ -739,8 +750,8 @@ const buildRoomInvoicePayload = () => ({
 
 const previewAllocation = async () => {
   previewing.value = true
-  error.value = ''
-  success.value = ''
+  issueError.value = ''
+  issueSuccess.value = ''
   try {
     const response = await api.post('/billing/monthly-invoices/room/preview', buildRoomInvoicePayload())
     roomPreview.value = normalizeList(response.data.allocations)
@@ -748,7 +759,7 @@ const previewAllocation = async () => {
   } catch (err) {
     roomPreview.value = []
     previewSummary.value = null
-    error.value = err.response?.data?.message || err.response?.data?.detail || 'Không xem trước được phân bổ hóa đơn.'
+    issueError.value = err.response?.data?.message || err.response?.data?.detail || 'Không xem trước được phân bổ hóa đơn.'
   } finally {
     previewing.value = false
   }
@@ -756,19 +767,24 @@ const previewAllocation = async () => {
 
 const issueAndPrint = async () => {
   const printWindow = window.open('', '_blank')
+  if (!printWindow) {
+    issueError.value = 'Trình duyệt đang chặn cửa sổ in.'
+    return
+  }
+
   issuing.value = true
-  error.value = ''
-  success.value = ''
+  issueError.value = ''
+  issueSuccess.value = ''
 
   try {
     const response = await api.post('/billing/monthly-invoices/room/issue', buildRoomInvoicePayload())
     const createdInvoices = normalizeList(response.data.invoices)
-    success.value = response.data.message
+    issueSuccess.value = response.data.message
     await loadAll()
     await printInvoices(createdInvoices, printWindow)
   } catch (err) {
     printWindow?.close()
-    error.value = err.response?.data?.message || err.response?.data?.detail || 'Không phát hành được phiếu thanh toán.'
+    issueError.value = err.response?.data?.message || err.response?.data?.detail || 'Không phát hành được phiếu thanh toán.'
   } finally {
     issuing.value = false
   }

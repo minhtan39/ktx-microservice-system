@@ -52,18 +52,6 @@
     <v-alert v-if="message" :type="messageType" variant="tonal" class="mb-4">
       {{ message }}
     </v-alert>
-    <v-snackbar
-      v-model="toastVisible"
-      :color="messageType"
-      location="top right"
-      timeout="4500"
-      multi-line
-    >
-      {{ message }}
-      <template #actions>
-        <v-btn variant="text" @click="message = ''">Đóng</v-btn>
-      </template>
-    </v-snackbar>
     <input
       ref="templateFileInput"
       class="hidden-file-input"
@@ -297,6 +285,16 @@
           <v-btn icon="mdi-close" variant="text" @click="generateTemplateDialog = false" />
         </v-card-title>
         <v-card-text v-if="generateTemplateTarget">
+          <v-alert
+            v-if="templateDialogError"
+            type="error"
+            variant="tonal"
+            closable
+            class="mb-4"
+            @click:close="templateDialogError = ''"
+          >
+            {{ templateDialogError }}
+          </v-alert>
           <v-alert type="info" variant="tonal" class="mb-4">
             PDF được trình bày theo thể thức Nghị định 30/2020/NĐ-CP. Hãy nhập đúng thông tin pháp lý của Bên A trước khi phát hành cho sinh viên ký.
           </v-alert>
@@ -377,6 +375,16 @@
           <v-btn icon="mdi-close" variant="text" @click="renewDialog = false" />
         </v-card-title>
         <v-card-text v-if="renewTarget">
+          <v-alert
+            v-if="renewError"
+            type="error"
+            variant="tonal"
+            closable
+            class="mb-4"
+            @click:close="renewError = ''"
+          >
+            {{ renewError }}
+          </v-alert>
           <div class="renew-summary">
             <div>
               <span>Mã hợp đồng</span>
@@ -430,12 +438,6 @@ import {
 const loading = ref(false)
 const message = ref('')
 const messageType = ref('success')
-const toastVisible = computed({
-  get: () => Boolean(message.value),
-  set: (visible) => {
-    if (!visible) message.value = ''
-  },
-})
 const contracts = ref([])
 const students = ref([])
 const rooms = ref([])
@@ -446,12 +448,14 @@ const currentPage = ref(1)
 const renewDialog = ref(false)
 const renewTarget = ref(null)
 const renewing = ref(false)
+const renewError = ref('')
 const templateFileInput = ref(null)
 const templateUploadTarget = ref(null)
 const uploadingTemplateId = ref(null)
 const generateTemplateDialog = ref(false)
 const generateTemplateTarget = ref(null)
 const generatingTemplateId = ref(null)
+const templateDialogError = ref('')
 const issuerForm = ref({
   parentOrganization: '',
   dormitoryName: 'BAN QUẢN LÝ KÝ TÚC XÁ',
@@ -589,6 +593,7 @@ const expireContract = async (id) => {
 
 const openRenewDialog = (contract) => {
   renewTarget.value = contract
+  renewError.value = ''
   renewForm.value = {
     newEndDate: nextYearDate(contract.endDate),
     note: `Gia hạn hợp đồng ${contract.contractCode}`,
@@ -600,7 +605,7 @@ const submitRenewContract = async () => {
   if (!renewTarget.value) return
 
   if (!renewForm.value.newEndDate) {
-    showMessage('Vui lòng chọn ngày kết thúc mới.', 'error')
+    renewError.value = 'Vui lòng chọn ngày kết thúc mới.'
     return
   }
 
@@ -614,7 +619,7 @@ const submitRenewContract = async () => {
     showMessage('Đã gia hạn hợp đồng thành công.')
     await loadAll()
   } catch (err) {
-    showMessage(err.response?.data?.message || 'Không gia hạn được hợp đồng.', 'error')
+    renewError.value = err.response?.data?.message || 'Không gia hạn được hợp đồng.'
     console.error(err)
   } finally {
     renewing.value = false
@@ -623,6 +628,7 @@ const submitRenewContract = async () => {
 
 const openGenerateTemplateDialog = (contract) => {
   generateTemplateTarget.value = contract
+  templateDialogError.value = ''
 
   try {
     const savedIssuer = JSON.parse(localStorage.getItem('contract_issuer_profile') || '{}')
@@ -655,7 +661,7 @@ const submitGenerateTemplate = async () => {
     .map(([, label]) => label)
 
   if (missing.length) {
-    showMessage(`Vui lòng nhập đầy đủ: ${missing.join(', ')}.`, 'error')
+    templateDialogError.value = `Vui lòng nhập đầy đủ: ${missing.join(', ')}.`
     return
   }
 
@@ -676,7 +682,7 @@ const submitGenerateTemplate = async () => {
     showMessage(`Đã tạo PDF chuẩn và phát hành hợp đồng ${contract.contractCode} cho sinh viên.`)
     await loadContracts()
   } catch (err) {
-    showMessage(err.response?.data?.message || 'Không tạo được PDF hợp đồng chuẩn.', 'error')
+    templateDialogError.value = err.response?.data?.message || 'Không tạo được PDF hợp đồng chuẩn.'
     console.error(err)
   } finally {
     generatingTemplateId.value = null

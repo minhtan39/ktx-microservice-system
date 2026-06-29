@@ -43,19 +43,6 @@
       {{ message }}
     </v-alert>
 
-    <v-snackbar
-      v-model="toastVisible"
-      :color="messageType"
-      location="top right"
-      timeout="4500"
-      multi-line
-    >
-      {{ message }}
-      <template #actions>
-        <v-btn variant="text" @click="message = ''">Đóng</v-btn>
-      </template>
-    </v-snackbar>
-
     <v-card class="filter-card">
       <div class="filter-grid">
         <v-text-field
@@ -284,12 +271,6 @@ import {
 const loading = ref(false)
 const message = ref('')
 const messageType = ref('success')
-const toastVisible = computed({
-  get: () => Boolean(message.value),
-  set: (visible) => {
-    if (!visible) message.value = ''
-  },
-})
 const contracts = ref([])
 const students = ref([])
 const rooms = ref([])

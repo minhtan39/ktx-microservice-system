@@ -67,18 +67,6 @@
     </div>
 
     <v-alert v-if="message" :type="messageType" variant="tonal" class="mb-4">{{ message }}</v-alert>
-    <v-snackbar
-      v-model="toastVisible"
-      :color="messageType"
-      location="top right"
-      timeout="4500"
-      multi-line
-    >
-      {{ message }}
-      <template #actions>
-        <v-btn variant="text" @click="message = ''">Đóng</v-btn>
-      </template>
-    </v-snackbar>
 
     <v-card v-if="!isApprovalView" class="pa-5 mb-4 form-panel">
       <div class="panel-head">
@@ -496,6 +484,16 @@
           <v-btn icon="mdi-close" variant="text" @click="rejectDialog = false" />
         </v-card-title>
         <v-card-text>
+          <v-alert
+            v-if="rejectError"
+            type="error"
+            variant="tonal"
+            closable
+            class="mb-4"
+            @click:close="rejectError = ''"
+          >
+            {{ rejectError }}
+          </v-alert>
           <div v-if="rejectTarget" class="assignment-summary single">
             <div>
               <span>Sinh viên</span>
@@ -553,12 +551,6 @@ const loading = ref(false)
 const saving = ref(false)
 const message = ref('')
 const messageType = ref('success')
-const toastVisible = computed({
-  get: () => Boolean(message.value),
-  set: (visible) => {
-    if (!visible) message.value = ''
-  },
-})
 const students = ref([])
 const registrations = ref([])
 const buildings = ref([])
@@ -577,6 +569,7 @@ const roomMapperFocusStudentId = ref(null)
 const rejectDialog = ref(false)
 const rejectTarget = ref(null)
 const rejectReason = ref('')
+const rejectError = ref('')
 const currentPage = ref(1)
 const pageSize = 8
 
@@ -903,14 +896,19 @@ const approveRegistration = async (id, roomId = null) => {
 const openRejectDialog = (registration) => {
   rejectTarget.value = registration
   rejectReason.value = ''
+  rejectError.value = ''
   message.value = ''
   rejectDialog.value = true
 }
 
 const rejectRegistration = async () => {
-  if (!rejectTarget.value || !rejectReason.value.trim()) return
+  if (!rejectTarget.value || !rejectReason.value.trim()) {
+    rejectError.value = 'Vui lòng nhập lý do từ chối trước khi xác nhận.'
+    return
+  }
 
   try {
+    rejectError.value = ''
     await api.put(`/registrations/${rejectTarget.value.id}/reject`, {
       reason: rejectReason.value.trim(),
     })
@@ -920,7 +918,7 @@ const rejectRegistration = async () => {
     rejectReason.value = ''
     await loadRegistrations()
   } catch (err) {
-    showMessage(err.response?.data?.message || 'Không từ chối được đơn đăng ký.', 'error')
+    rejectError.value = err.response?.data?.message || 'Không từ chối được đơn đăng ký.'
     console.error(err)
   }
 }

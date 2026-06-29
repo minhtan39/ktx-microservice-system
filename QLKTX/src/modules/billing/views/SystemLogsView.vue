@@ -5,6 +5,10 @@
       <button @click="fetchLogs" class="btn-refresh">🔄 Làm mới nhật ký</button>
     </div>
 
+    <v-alert v-if="errorMessage" type="error" variant="tonal" closable class="mb-4" @click:close="errorMessage = ''">
+      {{ errorMessage }}
+    </v-alert>
+
     <div class="filter-box">
       <input type="text" v-model="searchActor" placeholder="Tìm theo người thực hiện..." />
       <select v-model="filterAction">
@@ -55,17 +59,19 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
 const logs = ref([])
 const searchActor = ref('')
 const filterAction = ref('')
+const errorMessage = ref('')
 
 // Hàm gọi API lấy dữ liệu Logs từ Backend Máy 3
 const fetchLogs = async () => {
   try {
+    errorMessage.value = ''
     const token = localStorage.getItem('user_token')
     const response = await axios.get(`${API_BASE}/billing/management/system-logs`, {
       headers: { Authorization: `Bearer ${token}` }
     })
     logs.value = response.data
   } catch (error) {
-    alert('Bạn không có quyền xem nhật ký này hoặc phiên đăng nhập hết hạn!')
+    errorMessage.value = 'Bạn không có quyền xem nhật ký này hoặc phiên đăng nhập hết hạn.'
     console.error(error)
   }
 }

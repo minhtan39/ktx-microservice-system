@@ -28,18 +28,6 @@
 
     <v-alert v-if="error" type="error" variant="tonal" class="mb-4">{{ error }}</v-alert>
     <v-alert v-if="success" type="success" variant="tonal" class="mb-4">{{ success }}</v-alert>
-    <v-snackbar
-      v-model="toastVisible"
-      :color="toastColor"
-      location="top right"
-      timeout="4500"
-      multi-line
-    >
-      {{ toastText }}
-      <template #actions>
-        <v-btn variant="text" @click="clearToast">Đóng</v-btn>
-      </template>
-    </v-snackbar>
 
     <div class="student-workspace">
       <section class="roster-panel">
@@ -223,6 +211,16 @@
           <v-btn icon="mdi-close" variant="text" @click="createDialog = false" />
         </v-card-title>
         <v-card-text>
+          <v-alert
+            v-if="dialogError"
+            type="error"
+            variant="tonal"
+            closable
+            class="mb-4"
+            @click:close="dialogError = ''"
+          >
+            {{ dialogError }}
+          </v-alert>
           <v-form @submit.prevent="createStudent">
             <v-row>
               <v-col cols="12" md="3">
@@ -288,6 +286,16 @@
           <v-btn icon="mdi-close" variant="text" @click="editDialog = false" />
         </v-card-title>
         <v-card-text>
+          <v-alert
+            v-if="dialogError"
+            type="error"
+            variant="tonal"
+            closable
+            class="mb-4"
+            @click:close="dialogError = ''"
+          >
+            {{ dialogError }}
+          </v-alert>
           <v-form @submit.prevent="updateStudent">
             <v-row>
               <v-col cols="12" md="3">
@@ -409,6 +417,7 @@ const loading = ref(false)
 const saving = ref(false)
 const error = ref('')
 const success = ref('')
+const dialogError = ref('')
 const students = ref([])
 const rooms = ref([])
 const contracts = ref([])
@@ -454,19 +463,6 @@ const emptyForm = () => ({
 
 const form = ref(emptyForm())
 const editForm = ref({ ...emptyForm(), id: null })
-
-const toastVisible = computed({
-  get: () => Boolean(error.value || success.value),
-  set: (visible) => {
-    if (!visible) clearToast()
-  },
-})
-const toastText = computed(() => error.value || success.value)
-const toastColor = computed(() => error.value ? 'error' : 'success')
-const clearToast = () => {
-  error.value = ''
-  success.value = ''
-}
 
 const activeStudents = computed(() => students.value.filter((student) => student.status === 'Active').length)
 const pendingStudents = computed(() => students.value.filter((student) => student.status !== 'Active').length)
@@ -656,13 +652,14 @@ const createStudent = async () => {
   try {
     error.value = ''
     success.value = ''
+    dialogError.value = ''
     saving.value = true
 
     const normalizedStudentCode = normalizeStudentCode(form.value.studentCode)
 
     if (students.value.some((student) =>
       normalizeStudentCode(student.studentCode) === normalizedStudentCode)) {
-      error.value = `MSSV ${normalizedStudentCode} đã tồn tại. Không thể tạo trùng hồ sơ hoặc tài khoản.`
+      dialogError.value = `MSSV ${normalizedStudentCode} đã tồn tại. Không thể tạo trùng hồ sơ hoặc tài khoản.`
       return
     }
 
@@ -705,7 +702,7 @@ const createStudent = async () => {
     createDialog.value = false
     await loadStudents()
   } catch (err) {
-    error.value = err.response?.data?.message || 'Không lưu được sinh viên. Kiểm tra MSSV, CCCD, email và các trường bắt buộc.'
+    dialogError.value = err.response?.data?.message || 'Không lưu được sinh viên. Kiểm tra MSSV, CCCD, email và các trường bắt buộc.'
     console.error(err)
   } finally {
     saving.value = false
@@ -718,6 +715,7 @@ const updateStudent = async () => {
   try {
     error.value = ''
     success.value = ''
+    dialogError.value = ''
     saving.value = true
 
     const payload = {
@@ -741,7 +739,7 @@ const updateStudent = async () => {
     await loadStudents()
     selectedStudent.value = students.value.find((student) => Number(student.id) === updatedId) || null
   } catch (err) {
-    error.value = err.response?.data?.message || 'Không cập nhật được hồ sơ. Kiểm tra CCCD, email và các trường bắt buộc.'
+    dialogError.value = err.response?.data?.message || 'Không cập nhật được hồ sơ. Kiểm tra CCCD, email và các trường bắt buộc.'
     console.error(err)
   } finally {
     saving.value = false
@@ -751,6 +749,7 @@ const updateStudent = async () => {
 const openCreateDialog = () => {
   form.value = emptyForm()
   error.value = ''
+  dialogError.value = ''
   createDialog.value = true
 }
 
@@ -760,6 +759,7 @@ const openEditDialog = (student) => {
   editForm.value = mapStudentToForm(student)
   error.value = ''
   success.value = ''
+  dialogError.value = ''
   editDialog.value = true
 }
 

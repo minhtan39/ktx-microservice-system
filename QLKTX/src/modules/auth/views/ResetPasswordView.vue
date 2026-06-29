@@ -23,19 +23,6 @@
           {{ success }}
         </v-alert>
 
-        <v-snackbar
-          v-model="toastVisible"
-          :color="toastColor"
-          location="top right"
-          timeout="4500"
-          multi-line
-        >
-          {{ toastText }}
-          <template #actions>
-            <v-btn variant="text" @click="clearToast">Đóng</v-btn>
-          </template>
-        </v-snackbar>
-
         <v-form v-if="tokenValid && !success" @submit.prevent="resetPassword">
           <v-text-field
             v-model="form.newPassword"
@@ -72,7 +59,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '@/services/api'
 
@@ -88,19 +75,6 @@ const form = reactive({
   newPassword: '',
   confirmPassword: '',
 })
-const toastVisible = computed({
-  get: () => Boolean(error.value || success.value),
-  set: (visible) => {
-    if (!visible) clearToast()
-  },
-})
-const toastText = computed(() => error.value || success.value)
-const toastColor = computed(() => error.value ? 'error' : 'success')
-
-const clearToast = () => {
-  error.value = ''
-  success.value = ''
-}
 
 const validateToken = async () => {
   if (!token) {

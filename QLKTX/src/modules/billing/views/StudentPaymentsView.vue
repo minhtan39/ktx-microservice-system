@@ -65,6 +65,7 @@
               <v-btn prepend-icon="mdi-content-copy" variant="tonal" size="small" @click="copyWalletCode">
                 Sao chép mã ví
               </v-btn>
+              <small v-if="walletCopyMessage" class="copy-note">{{ walletCopyMessage }}</small>
             </div>
           </div>
         </div>
@@ -150,6 +151,7 @@
           <div class="transfer-note">
             <span>Nội dung chuyển khoản bắt buộc</span>
             <div><strong>{{ selectedInvoice.paymentCode }}</strong><v-btn icon="mdi-content-copy" variant="text" density="compact" @click="copyPaymentCode" /></div>
+            <small v-if="paymentCopyMessage" class="copy-note">{{ paymentCopyMessage }}</small>
             <small>Hệ thống chỉ tự động xác nhận khi nội dung đúng và số tiền đủ.</small>
           </div>
           <p class="due-note"><span class="mdi mdi-calendar-clock-outline"></span> Hạn thanh toán: <strong>{{ formatDate(selectedInvoice.dueDate) }}</strong></p>
@@ -173,8 +175,6 @@
         <p v-if="history.length === 0" class="empty-history">Chưa có lịch sử thanh toán.</p>
       </div>
     </section>
-
-    <v-snackbar v-model="copied" color="success" timeout="1800">{{ copyMessage }}</v-snackbar>
   </section>
 </template>
 
@@ -193,8 +193,8 @@ const walletQrLoading = ref(false)
 const topUpAmount = ref(500000)
 const selectedInvoice = ref(null)
 const analyticsRefreshKey = ref(0)
-const copied = ref(false)
-const copyMessage = ref('Đã sao chép nội dung chuyển khoản.')
+const paymentCopyMessage = ref('')
+const walletCopyMessage = ref('')
 const studentId = Number(localStorage.getItem('student_id') || 0)
 
 const normalizeList = (payload) => {
@@ -266,15 +266,15 @@ const selectPeriodInvoice = (period) => {
 
 const copyPaymentCode = async () => {
   await navigator.clipboard.writeText(selectedInvoice.value.paymentCode)
-  copyMessage.value = 'Đã sao chép nội dung chuyển khoản.'
-  copied.value = true
+  paymentCopyMessage.value = 'Đã sao chép nội dung chuyển khoản.'
+  walletCopyMessage.value = ''
 }
 
 const copyWalletCode = async () => {
   if (!topUpCode.value) return
   await navigator.clipboard.writeText(topUpCode.value)
-  copyMessage.value = 'Đã sao chép mã nạp ví.'
-  copied.value = true
+  walletCopyMessage.value = 'Đã sao chép mã nạp ví.'
+  paymentCopyMessage.value = ''
 }
 
 const refreshTopUpQr = async () => {
@@ -336,6 +336,7 @@ onMounted(() => loadPayments(false))
 .wallet-transfer > div { display: grid; gap: 8px; min-width: 0; }
 .wallet-transfer span { color: #66746b; }
 .wallet-transfer strong { color: #0f7f51; font-size: 20px; overflow-wrap: anywhere; }
+.copy-note { display: block; color: #087947 !important; font-weight: 700; }
 .qr-missing.small { display: grid; place-items: center; min-height: 130px; color: #8a9690; text-align: center; }
 .qr-missing.small .mdi { font-size: 42px; }
 .wallet-history article { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 12px 0; border-bottom: 1px solid #e3e9e5; }
