@@ -1052,6 +1052,9 @@ app.MapMethods(
         if (existing == null)
             return Results.NotFound(new { message = "Incident request not found." });
 
+        if (IsFinalIncidentStatus(existing.Status))
+            return Results.BadRequest(new { message = "Yêu cầu đã kết thúc nên không thể phân công hoặc cập nhật lại." });
+
         var assignee = await ValidateStaffAssigneeAsync(
             request.AssignedTo,
             "manage_incidents",
@@ -1066,6 +1069,7 @@ app.MapMethods(
         {
             var incident = data.Incidents.FirstOrDefault(item => item.Id == id);
             if (incident == null) return null;
+            if (IsFinalIncidentStatus(incident.Status)) return new MaintenanceIncident { Id = -2 };
 
             incident.AssignedTo = assignee.Username;
             incident.AssignedName = assignee.DisplayName;
@@ -1080,6 +1084,8 @@ app.MapMethods(
 
         if (updated == null)
             return Results.NotFound(new { message = "Incident request not found." });
+        if (updated.Id == -2)
+            return Results.BadRequest(new { message = "Yêu cầu đã kết thúc nên không thể phân công hoặc cập nhật lại." });
 
         var roomSyncResult = await SyncRoomForIncidentAsync(
             updated,
@@ -1122,6 +1128,9 @@ app.MapMethods(
         if (existing == null)
             return Results.NotFound(new { message = "Incident request not found." });
 
+        if (IsFinalIncidentStatus(existing.Status))
+            return Results.BadRequest(new { message = "Yêu cầu đã kết thúc nên không thể cập nhật tiến độ." });
+
         if (!identity.IsAdmin &&
             !string.Equals(existing.AssignedTo, identity.Username, StringComparison.OrdinalIgnoreCase))
         {
@@ -1139,6 +1148,7 @@ app.MapMethods(
         {
             var incident = data.Incidents.FirstOrDefault(item => item.Id == id);
             if (incident == null) return null;
+            if (IsFinalIncidentStatus(incident.Status)) return new MaintenanceIncident { Id = -2 };
 
             incident.Status = nextStatus;
             incident.HandledBy = string.IsNullOrWhiteSpace(request.HandledBy)
@@ -1167,6 +1177,8 @@ app.MapMethods(
 
         if (updated == null)
             return Results.NotFound(new { message = "Incident request not found." });
+        if (updated.Id == -2)
+            return Results.BadRequest(new { message = "Yêu cầu đã kết thúc nên không thể cập nhật tiến độ." });
 
         var roomSyncResult = await SyncRoomForIncidentAsync(
             updated,
