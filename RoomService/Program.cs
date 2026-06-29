@@ -522,6 +522,26 @@ app.MapPost("/api/rooms/{roomId:long}/occupy", (
 
         if (existingReference != null)
         {
+            NormalizeBedAssignments(room);
+
+            if (request.BedNumber.HasValue &&
+                request.BedNumber.Value != existingReference.BedNumber)
+            {
+                var targetBed = request.BedNumber.Value;
+
+                if (targetBed < 1 || targetBed > room.Capacity)
+                    return Results.BadRequest(new { message = "Bed number is outside room capacity." });
+
+                if (room.OccupancyReferences.Any(reference =>
+                    reference.StudentId != existingReference.StudentId &&
+                    reference.BedNumber == targetBed))
+                {
+                    return Results.BadRequest(new { message = "Target bed is already occupied." });
+                }
+
+                existingReference.BedNumber = targetBed;
+            }
+
             room.LastContractCode = request.ContractCode;
             room.RefreshStatus();
             SaveRoomState(roomDataFilePath, buildings, roomTypes, rooms);
@@ -532,14 +552,66 @@ app.MapPost("/api/rooms/{roomId:long}/occupy", (
         if (room.AvailableBeds <= 0)
             return Results.BadRequest(new { message = "Room is full." });
 
+        int assignedBedNumber;
+
+        try
+        {
+            assignedBedNumber = ResolveBedNumber(room, request.BedNumber);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+
         room.OccupancyReferences.Add(new RoomOccupancyReference(
             request.StudentId,
             request.RegistrationId,
             request.ContractCode,
-            DateTime.UtcNow));
+            DateTime.UtcNow,
+            assignedBedNumber));
         room.OccupiedBeds++;
 
         room.LastContractCode = request.ContractCode;
+        room.RefreshStatus();
+        SaveRoomState(roomDataFilePath, buildings, roomTypes, rooms);
+
+        return Results.Ok(RoomResponse.FromRoom(room, buildings));
+    }
+});
+
+app.MapPost("/api/rooms/{roomId:long}/beds/move", (
+    long roomId,
+    MoveBedRequest request) =>
+{
+    lock (roomLock)
+    {
+        var room = rooms.FirstOrDefault(item => item.RoomId == roomId);
+
+        if (room == null)
+            return Results.NotFound(new { message = "Room not found." });
+
+        if (request.StudentId <= 0)
+            return Results.BadRequest(new { message = "StudentId is required." });
+
+        if (request.TargetBedNumber < 1 || request.TargetBedNumber > room.Capacity)
+            return Results.BadRequest(new { message = "Target bed is outside room capacity." });
+
+        NormalizeBedAssignments(room);
+
+        var reference = room.OccupancyReferences.FirstOrDefault(item =>
+            item.StudentId == request.StudentId);
+
+        if (reference == null)
+            return Results.NotFound(new { message = "Student is not occupying this room." });
+
+        var occupiedByOther = room.OccupancyReferences.Any(item =>
+            item.StudentId != request.StudentId &&
+            item.BedNumber == request.TargetBedNumber);
+
+        if (occupiedByOther)
+            return Results.BadRequest(new { message = "Target bed is already occupied." });
+
+        reference.BedNumber = request.TargetBedNumber;
         room.RefreshStatus();
         SaveRoomState(roomDataFilePath, buildings, roomTypes, rooms);
 
@@ -698,8 +770,55 @@ static void NormalizeRoomState(RoomStoreState state)
         room.OccupiedBeds = Math.Min(
             room.Capacity,
             Math.Max(room.OccupiedBeds, room.OccupancyReferences.Count));
+        NormalizeBedAssignments(room);
         room.RefreshStatus();
     }
+}
+
+static void NormalizeBedAssignments(DormRoom room)
+{
+    if (room.Capacity <= 0)
+        return;
+
+    var usedBeds = new HashSet<int>();
+
+    foreach (var reference in room.OccupancyReferences.OrderBy(reference => reference.OccupiedAt))
+    {
+        if (reference.BedNumber >= 1 &&
+            reference.BedNumber <= room.Capacity &&
+            usedBeds.Add(reference.BedNumber))
+        {
+            continue;
+        }
+
+        var nextBed = Enumerable.Range(1, room.Capacity)
+            .FirstOrDefault(bedNumber => !usedBeds.Contains(bedNumber));
+
+        reference.BedNumber = nextBed == 0 ? room.Capacity : nextBed;
+        usedBeds.Add(reference.BedNumber);
+    }
+}
+
+static int ResolveBedNumber(DormRoom room, int? requestedBedNumber)
+{
+    NormalizeBedAssignments(room);
+
+    if (requestedBedNumber.HasValue)
+    {
+        var targetBed = requestedBedNumber.Value;
+
+        if (targetBed < 1 || targetBed > room.Capacity)
+            throw new InvalidOperationException("Bed number is outside room capacity.");
+
+        if (room.OccupancyReferences.Any(reference => reference.BedNumber == targetBed))
+            throw new InvalidOperationException("Target bed is already occupied.");
+
+        return targetBed;
+    }
+
+    return Enumerable.Range(1, Math.Max(room.Capacity, 1))
+        .FirstOrDefault(bedNumber =>
+            room.OccupancyReferences.All(reference => reference.BedNumber != bedNumber));
 }
 
 static List<DormBuilding> SeedBuildings()
@@ -1044,12 +1163,17 @@ public sealed record RoomRequest(
 public sealed record OccupyRoomRequest(
     long StudentId,
     long RegistrationId,
-    string ContractCode);
+    string ContractCode,
+    int? BedNumber);
 
 public sealed record ReleaseRoomRequest(
     long? StudentId,
     long? RegistrationId,
     string? ContractCode);
+
+public sealed record MoveBedRequest(
+    long StudentId,
+    int TargetBedNumber);
 
 public sealed record BuildingResponse(
     string BuildingName,
@@ -1185,17 +1309,43 @@ public sealed record FloorMapResponse(
     int AvailableBeds,
     IReadOnlyList<RoomResponse> Rooms);
 
-public sealed record RoomOccupancyReference(
-    long StudentId,
-    long RegistrationId,
-    string ContractCode,
-    DateTime OccupiedAt);
+public sealed class RoomOccupancyReference
+{
+    public RoomOccupancyReference()
+    {
+    }
+
+    public RoomOccupancyReference(
+        long studentId,
+        long registrationId,
+        string contractCode,
+        DateTime occupiedAt,
+        int bedNumber = 0)
+    {
+        StudentId = studentId;
+        RegistrationId = registrationId;
+        ContractCode = contractCode;
+        OccupiedAt = occupiedAt;
+        BedNumber = bedNumber;
+    }
+
+    public long StudentId { get; set; }
+
+    public long RegistrationId { get; set; }
+
+    public string ContractCode { get; set; } = string.Empty;
+
+    public DateTime OccupiedAt { get; set; }
+
+    public int BedNumber { get; set; }
+}
 
 public sealed record RoomOccupancyResponse(
     long StudentId,
     long RegistrationId,
     string ContractCode,
-    DateTime OccupiedAt)
+    DateTime OccupiedAt,
+    int BedNumber)
 {
     public static RoomOccupancyResponse FromReference(
         RoomOccupancyReference reference)
@@ -1204,7 +1354,8 @@ public sealed record RoomOccupancyResponse(
             reference.StudentId,
             reference.RegistrationId,
             reference.ContractCode,
-            reference.OccupiedAt);
+            reference.OccupiedAt,
+            reference.BedNumber);
     }
 }
 

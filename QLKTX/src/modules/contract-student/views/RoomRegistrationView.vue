@@ -231,10 +231,10 @@
         </thead>
         <tbody>
           <tr v-if="loading" class="table-empty">
-            <td :colspan="isApprovalView ? 7 : 6">Đang tải dữ liệu...</td>
+            <td :colspan="isApprovalView ? 8 : 6">Đang tải dữ liệu...</td>
           </tr>
           <tr v-else-if="filteredRegistrations.length === 0" class="table-empty">
-            <td :colspan="isApprovalView ? 7 : 6">{{ emptyText }}</td>
+            <td :colspan="isApprovalView ? 8 : 6">{{ emptyText }}</td>
           </tr>
           <tr v-for="registration in paginatedRegistrations" :key="registration.id">
             <td>
@@ -376,6 +376,16 @@
           >
             Phòng gợi ý: {{ roomOptionLabel(suggestedRoomForRegistration(selectedRegistration)) }}.
             Hệ thống ưu tiên đúng giới tính, còn giường, khớp nguyện vọng rồi mới xét phí phòng và số giường trống.
+            <v-btn
+              class="ml-2"
+              color="info"
+              size="small"
+              variant="tonal"
+              prepend-icon="mdi-cube-scan"
+              @click="openRoomMapper(suggestedRoomForRegistration(selectedRegistration), selectedRegistration)"
+            >
+              Xem sơ đồ giường
+            </v-btn>
           </v-alert>
 
           <div class="assignment-table-wrap">
@@ -390,6 +400,7 @@
                   <th>Giường trống</th>
                   <th>Tiền phòng</th>
                   <th>Đánh giá</th>
+                  <th>Sơ đồ</th>
                 </tr>
               </thead>
               <tbody>
@@ -417,6 +428,17 @@
                   <td><strong>{{ Number(room.availableBeds ?? 0) }}/{{ room.capacity }}</strong></td>
                   <td>{{ Number(room.monthlyFee || 0).toLocaleString('vi-VN') }}đ</td>
                   <td>{{ roomFitNote(selectedRegistration, room) }}</td>
+                  <td>
+                    <v-btn
+                      color="primary"
+                      density="comfortable"
+                      icon="mdi-cube-scan"
+                      size="small"
+                      variant="tonal"
+                      title="Xem sơ đồ giường 2D/3D"
+                      @click.stop="openRoomMapper(room, selectedRegistration)"
+                    />
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -502,6 +524,15 @@
         </v-card-actions>
       </v-card>
     </v-dialog>
+
+    <RoomBedMapperDialog
+      v-model="roomMapperDialog"
+      :room="roomMapperRoom"
+      :students="students"
+      :contracts="[]"
+      :focus-student-id="roomMapperFocusStudentId"
+      @room-updated="handleRoomUpdated"
+    />
   </section>
 </template>
 
@@ -510,6 +541,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '@/services/api'
 import { exportRowsToExcel } from '@/utils/exportExcel'
+import RoomBedMapperDialog from '../components/RoomBedMapperDialog.vue'
 import {
   buildStudentNameMap,
   cleanStudents,
@@ -539,6 +571,9 @@ const buildingFilter = ref('All')
 const roomTypeFilter = ref('All')
 const approvalDialog = ref(false)
 const selectedRegistration = ref(null)
+const roomMapperDialog = ref(false)
+const roomMapperRoom = ref(null)
+const roomMapperFocusStudentId = ref(null)
 const rejectDialog = ref(false)
 const rejectTarget = ref(null)
 const rejectReason = ref('')
@@ -783,7 +818,41 @@ const loadRoomCatalog = async () => {
 
   buildings.value = normalizeList(buildingRes.data)
   roomTypes.value = normalizeList(roomTypeRes.data)
-  rooms.value = normalizeList(roomRes.data)
+  rooms.value = normalizeList(roomRes.data).map(normalizeRoom)
+}
+
+const normalizeRoom = (room) => {
+  const capacity = Number(room.capacity ?? 0)
+  const occupiedBeds = Number(room.occupiedBeds ?? room.currentOccupancy ?? 0)
+  const availableBeds = Number(room.availableBeds ?? Math.max(capacity - occupiedBeds, 0))
+  const buildingName = String(room.buildingName ?? '').replace(/^Tòa\s*/i, '')
+
+  return {
+    ...room,
+    roomId: Number(room.roomId ?? room.id ?? 0),
+    roomNumber: String(room.roomNumber ?? room.name ?? room.roomId ?? ''),
+    buildingName,
+    buildingDisplayName: room.buildingDisplayName || `Tòa ${buildingName}`,
+    floor: Number(room.floor ?? 1),
+    floorName: room.floorName || `Tầng ${room.floor ?? 1}`,
+    roomType: room.roomType ?? '',
+    gender: parseGender(room.gender),
+    genderText: room.genderText || (parseGender(room.gender) ? 'Nam' : 'Nữ'),
+    capacity,
+    occupiedBeds,
+    availableBeds,
+    monthlyFee: Number(room.monthlyFee ?? room.price ?? 0),
+    status: room.status || (availableBeds > 0 ? 'Available' : 'Full'),
+    amenities: room.amenities || '',
+    occupancyReferences: Array.isArray(room.occupancyReferences) ? room.occupancyReferences : [],
+  }
+}
+
+const parseGender = (value) => {
+  if (typeof value === 'boolean') return value
+
+  const normalized = String(value || '').toLowerCase()
+  return normalized === 'true' || normalized === 'nam' || normalized === 'male'
 }
 
 const loadAll = async () => {
@@ -900,6 +969,27 @@ const openApprovalDialog = (registration) => {
   }
 
   approvalDialog.value = true
+}
+
+const openRoomMapper = (room, registration = null) => {
+  if (!room) return
+
+  roomMapperRoom.value = room
+  roomMapperFocusStudentId.value = registration?.studentId || null
+  roomMapperDialog.value = true
+}
+
+const handleRoomUpdated = (updatedRoom) => {
+  const normalizedRoom = normalizeRoom(updatedRoom)
+  const index = rooms.value.findIndex((room) => Number(room.roomId) === Number(normalizedRoom.roomId))
+
+  if (index >= 0) {
+    rooms.value.splice(index, 1, normalizedRoom)
+  }
+
+  if (Number(roomMapperRoom.value?.roomId) === Number(normalizedRoom.roomId)) {
+    roomMapperRoom.value = normalizedRoom
+  }
 }
 
 const approveSelectedRoom = async () => {

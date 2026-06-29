@@ -6,7 +6,7 @@
         <h2>Hồ sơ sinh viên</h2>
         <p>Quản lý hồ sơ, lớp, khoa và lịch sử lưu trú theo dạng roster gọn. Bấm một sinh viên để đọc chi tiết thay vì nhìn một bảng quá dày.</p>
         <div class="heading-actions">
-          <v-btn color="primary" variant="tonal" prepend-icon="mdi-refresh" :loading="loading" @click="loadStudents">
+          <v-btn color="primary" variant="tonal" prepend-icon="mdi-refresh" :loading="loading" @click="loadAll">
             Làm mới
           </v-btn>
           <v-btn color="success" variant="flat" prepend-icon="mdi-account-plus-outline" @click="openCreateDialog">
@@ -187,6 +187,17 @@
             </div>
           </div>
 
+          <v-btn
+            v-if="currentRoomForStudent(highlightedStudent)"
+            block
+            color="info"
+            variant="tonal"
+            prepend-icon="mdi-cube-scan"
+            @click="openRoomMapperForStudent(highlightedStudent)"
+          >
+            Xem sơ đồ phòng & giường
+          </v-btn>
+
           <v-btn block color="primary" variant="flat" prepend-icon="mdi-card-account-details-outline" @click="openStudentDetails(highlightedStudent)">
             Xem hồ sơ đầy đủ
           </v-btn>
@@ -362,10 +373,28 @@
         </v-card-text>
         <v-card-actions>
           <v-spacer />
+          <v-btn
+            v-if="currentRoomForStudent(selectedStudent)"
+            color="info"
+            variant="tonal"
+            prepend-icon="mdi-cube-scan"
+            @click="openRoomMapperForStudent(selectedStudent)"
+          >
+            Sơ đồ giường
+          </v-btn>
           <v-btn color="primary" variant="tonal" @click="detailDialog = false">Đóng</v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>
+
+    <RoomBedMapperDialog
+      v-model="roomMapperDialog"
+      :room="roomMapperRoom"
+      :students="students"
+      :contracts="contracts"
+      :focus-student-id="roomMapperFocusStudentId"
+      @room-updated="handleRoomUpdated"
+    />
   </section>
 </template>
 
@@ -373,6 +402,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import api from '@/services/api'
 import { exportRowsToExcel } from '@/utils/exportExcel'
+import RoomBedMapperDialog from '../components/RoomBedMapperDialog.vue'
 import { cleanStudents } from '../utils/studentDisplay'
 
 const loading = ref(false)
@@ -380,6 +410,8 @@ const saving = ref(false)
 const error = ref('')
 const success = ref('')
 const students = ref([])
+const rooms = ref([])
+const contracts = ref([])
 const search = ref('')
 const facultyFilter = ref('All')
 const statusFilter = ref('All')
@@ -387,6 +419,9 @@ const currentPage = ref(1)
 const createDialog = ref(false)
 const editDialog = ref(false)
 const detailDialog = ref(false)
+const roomMapperDialog = ref(false)
+const roomMapperRoom = ref(null)
+const roomMapperFocusStudentId = ref(null)
 const selectedStudent = ref(null)
 const pageSize = 8
 const managedSchoolName = 'Trường quản lý ký túc xá'
@@ -545,6 +580,78 @@ const loadStudents = async () => {
   }
 }
 
+const loadRooms = async () => {
+  const res = await api.get('/rooms')
+  rooms.value = normalizeList(res.data).map(normalizeRoom)
+}
+
+const loadContracts = async () => {
+  const res = await api.get('/contracts')
+  contracts.value = normalizeList(res.data)
+}
+
+const loadAll = async () => {
+  try {
+    error.value = ''
+    loading.value = true
+    const [studentRes, roomRes, contractRes] = await Promise.all([
+      api.get('/students'),
+      api.get('/rooms').catch(() => ({ data: [] })),
+      api.get('/contracts').catch(() => ({ data: [] })),
+    ])
+
+    students.value = cleanStudents(studentRes.data)
+    rooms.value = normalizeList(roomRes.data).map(normalizeRoom)
+    contracts.value = normalizeList(contractRes.data)
+  } catch (err) {
+    error.value = 'Không tải được dữ liệu hồ sơ sinh viên.'
+    console.error(err)
+  } finally {
+    loading.value = false
+  }
+}
+
+const normalizeList = (payload) => {
+  if (Array.isArray(payload)) return payload
+  if (Array.isArray(payload?.data)) return payload.data
+  if (Array.isArray(payload?.value)) return payload.value
+  return []
+}
+
+const normalizeRoom = (room) => {
+  const capacity = Number(room.capacity ?? 0)
+  const occupiedBeds = Number(room.occupiedBeds ?? room.currentOccupancy ?? 0)
+  const availableBeds = Number(room.availableBeds ?? Math.max(capacity - occupiedBeds, 0))
+  const buildingName = String(room.buildingName ?? '').replace(/^Tòa\s*/i, '')
+
+  return {
+    ...room,
+    roomId: Number(room.roomId ?? room.id ?? 0),
+    roomNumber: String(room.roomNumber ?? room.name ?? room.roomId ?? ''),
+    buildingName,
+    buildingDisplayName: room.buildingDisplayName || `Tòa ${buildingName}`,
+    floor: Number(room.floor ?? 1),
+    floorName: room.floorName || `Tầng ${room.floor ?? 1}`,
+    roomType: room.roomType ?? '',
+    gender: parseGender(room.gender),
+    genderText: room.genderText || (parseGender(room.gender) ? 'Nam' : 'Nữ'),
+    capacity,
+    occupiedBeds,
+    availableBeds,
+    monthlyFee: Number(room.monthlyFee ?? room.price ?? 0),
+    status: room.status || (availableBeds > 0 ? 'Available' : 'Full'),
+    amenities: room.amenities || '',
+    occupancyReferences: Array.isArray(room.occupancyReferences) ? room.occupancyReferences : [],
+  }
+}
+
+const parseGender = (value) => {
+  if (typeof value === 'boolean') return value
+
+  const normalized = String(value || '').toLowerCase()
+  return normalized === 'true' || normalized === 'nam' || normalized === 'male'
+}
+
 const createStudent = async () => {
   try {
     error.value = ''
@@ -665,6 +772,50 @@ const openStudentDetails = (student) => {
   detailDialog.value = true
 }
 
+const activeContractForStudent = (student) => {
+  if (!student) return null
+
+  return contracts.value
+    .filter((contract) =>
+      Number(contract.studentId) === Number(student.id) &&
+      ['active', 'pendingsignature'].includes(String(contract.status || '').toLowerCase()))
+    .sort((first, second) => new Date(second.startDate || 0) - new Date(first.startDate || 0))[0] || null
+}
+
+const currentRoomForStudent = (student) => {
+  const contract = activeContractForStudent(student)
+  if (!contract) return null
+
+  return rooms.value.find((room) => Number(room.roomId) === Number(contract.roomId)) || null
+}
+
+const openRoomMapperForStudent = (student) => {
+  const room = currentRoomForStudent(student)
+
+  if (!room) {
+    error.value = 'Sinh viên này chưa có phòng đang lưu trú hoặc hợp đồng chờ ký.'
+    return
+  }
+
+  selectedStudent.value = student
+  roomMapperRoom.value = room
+  roomMapperFocusStudentId.value = student.id
+  roomMapperDialog.value = true
+}
+
+const handleRoomUpdated = (updatedRoom) => {
+  const normalizedRoom = normalizeRoom(updatedRoom)
+  const index = rooms.value.findIndex((room) => Number(room.roomId) === Number(normalizedRoom.roomId))
+
+  if (index >= 0) {
+    rooms.value.splice(index, 1, normalizedRoom)
+  }
+
+  if (Number(roomMapperRoom.value?.roomId) === Number(normalizedRoom.roomId)) {
+    roomMapperRoom.value = normalizedRoom
+  }
+}
+
 const clearStudentFilters = () => {
   search.value = ''
   facultyFilter.value = 'All'
@@ -727,7 +878,7 @@ const statusLabel = (status) => {
 
 const statusClass = (status) => String(status || 'pending').toLowerCase()
 
-onMounted(loadStudents)
+onMounted(loadAll)
 </script>
 
 <style scoped>
