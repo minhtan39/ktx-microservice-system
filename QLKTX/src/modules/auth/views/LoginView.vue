@@ -159,8 +159,8 @@ const login = async () => {
   min-height: 100vh;
   padding: 40px 18px;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.76), rgba(255, 255, 255, 0)),
-    #f5f5f5;
+    radial-gradient(circle at 18% 12%, rgba(243, 111, 33, 0.24), transparent 30%),
+    linear-gradient(135deg, #1a120d 0%, #24150e 42%, #fff8f1 42%, #fffaf6 100%);
 }
 
 .back-home {
@@ -172,10 +172,10 @@ const login = async () => {
   gap: 8px;
   min-height: 36px;
   padding: 0 12px;
-  border: 1px solid var(--line-strong);
+  border: 1px solid #f0d7c6;
   border-radius: 6px;
-  background: #ffffff;
-  color: rgba(0, 0, 0, 0.72);
+  background: rgba(255, 255, 255, 0.92);
+  color: #7c2d12;
   font-size: 14px;
   font-weight: 800;
   text-decoration: none;
@@ -200,9 +200,10 @@ const login = async () => {
   width: 46px;
   height: 46px;
   border-radius: 8px;
-  background: #1677ff;
+  background: linear-gradient(135deg, #f36f21, #ffb347);
   color: #ffffff;
   font-size: 28px;
+  box-shadow: 0 14px 28px rgba(243, 111, 33, 0.26);
 }
 
 .login-brand strong,
@@ -211,7 +212,7 @@ const login = async () => {
 }
 
 .login-brand strong {
-  color: rgba(0, 0, 0, 0.88);
+  color: #ffffff;
   font-family: var(--font-heading);
   font-size: 24px;
   line-height: 1;
@@ -219,7 +220,7 @@ const login = async () => {
 
 .login-brand small {
   margin-top: 5px;
-  color: rgba(0, 0, 0, 0.45);
+  color: #ffd8b8;
   font-size: 12px;
   font-weight: 900;
   letter-spacing: 0;
@@ -228,7 +229,10 @@ const login = async () => {
 
 .login-card {
   padding: 34px;
-  background: #ffffff;
+  border-color: #f0d7c6 !important;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 28px 70px rgba(124, 45, 18, 0.16) !important;
+  backdrop-filter: blur(18px);
 }
 
 .card-head {
@@ -269,7 +273,7 @@ const login = async () => {
 
 .login-meta a {
   flex: 0 0 auto;
-  color: #1677ff;
+  color: #c2410c;
   font-weight: 900;
   text-decoration: none;
 }
@@ -286,14 +290,14 @@ const login = async () => {
   display: flex;
   justify-content: center;
   gap: 8px;
-  color: rgba(0, 0, 0, 0.45);
+  color: #ffe4cf;
   font-size: 13px;
   line-height: 1.45;
   text-align: center;
 }
 
 .login-foot .mdi {
-  color: #52c41a;
+  color: #ffb347;
   font-size: 18px;
 }
 

@@ -537,14 +537,14 @@ onMounted(loadDashboard)
   padding: 30px;
   overflow: hidden;
   background:
-    linear-gradient(135deg, rgba(22, 155, 99, 0.10), transparent 44%),
-    linear-gradient(120deg, #ffffff, #f4fbf7);
+    linear-gradient(135deg, rgba(243, 111, 33, 0.13), transparent 44%),
+    linear-gradient(120deg, #ffffff, #fff7ed);
 }
 
 .dashboard-hero h2 {
   max-width: 640px;
   margin: 0;
-  color: #0b2f28;
+  color: #24150e;
   font-size: 44px;
   line-height: 1.05;
 }
@@ -552,7 +552,7 @@ onMounted(loadDashboard)
 .dashboard-hero p {
   max-width: 590px;
   margin: 12px 0 0;
-  color: #50665f;
+  color: #6f5747;
   font-size: 16px;
   line-height: 1.6;
 }
@@ -589,7 +589,7 @@ onMounted(loadDashboard)
 }
 
 .secondary-action {
-  border: 1px solid #cfe7da;
+  border: 1px solid #fed7aa;
   background: #ffffff;
   color: var(--brand-dark);
 }
@@ -602,7 +602,7 @@ onMounted(loadDashboard)
 .hero-summary div {
   min-height: 116px;
   padding: 18px;
-  border: 1px solid #dceee6;
+  border: 1px solid #fed7aa;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.82);
 }
@@ -617,7 +617,7 @@ onMounted(loadDashboard)
 .hero-summary strong {
   display: block;
   margin: 7px 0;
-  color: #0f513f;
+  color: #c2410c;
   font-size: 40px;
   line-height: 1;
 }

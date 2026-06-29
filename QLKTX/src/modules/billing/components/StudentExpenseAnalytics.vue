@@ -209,10 +209,10 @@ const renderCharts = async () => {
             type: 'line',
             label: 'Tổng chi phí',
             data: rows.map((item) => item.totalAmount),
-            borderColor: '#0f7f51',
-            backgroundColor: '#0f7f51',
+            borderColor: '#f36f21',
+            backgroundColor: '#f36f21',
             pointBackgroundColor: '#ffffff',
-            pointBorderColor: '#0f7f51',
+            pointBorderColor: '#f36f21',
             pointBorderWidth: 2,
             pointRadius: 4,
             stack: 'total',
@@ -281,24 +281,24 @@ onBeforeUnmount(destroyCharts)
 </script>
 
 <style scoped>
-.analytics-section { display: grid; gap: 16px; padding: 24px 0; border-top: 1px solid #dce5df; border-bottom: 1px solid #dce5df; }
+.analytics-section { display: grid; gap: 16px; padding: 24px 0; border-top: 1px solid #f4ded0; border-bottom: 1px solid #f4ded0; }
 .analytics-heading, .heading-copy, .chart-title { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .heading-copy { justify-content: flex-start; min-width: 0; }
-.heading-copy > .mdi { display: grid; width: 44px; height: 44px; place-items: center; flex: 0 0 auto; border-radius: 7px; background: #e8f7ef; color: #0f8b5a; font-size: 25px; }
-.heading-copy h3, .chart-title h4 { margin: 0; color: #14261c; }
-.heading-copy p, .chart-title p { margin: 4px 0 0; color: #68756d; }
-.eyebrow { color: #108657; font-size: 12px; font-weight: 900; }
+.heading-copy > .mdi { display: grid; width: 44px; height: 44px; place-items: center; flex: 0 0 auto; border-radius: 7px; background: #fff3e8; color: #f36f21; font-size: 25px; }
+.heading-copy h3, .chart-title h4 { margin: 0; color: #24150e; }
+.heading-copy p, .chart-title p { margin: 4px 0 0; color: #7a6a5d; }
+.eyebrow { color: #c2410c; font-size: 12px; font-weight: 900; }
 .analytics-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
-.analytics-kpis article { display: grid; min-width: 0; gap: 6px; padding: 17px; border: 1px solid #dce5df; border-radius: 8px; background: #fff; }
+.analytics-kpis article { display: grid; min-width: 0; gap: 6px; padding: 17px; border: 1px solid #f4ded0; border-radius: 8px; background: #fff; }
 .analytics-kpis span, .analytics-kpis small { color: #66746c; }
 .analytics-kpis strong { color: #14261c; font-size: 22px; overflow-wrap: anywhere; }
-.analytics-kpis strong.positive { color: #0f7f51; }
+.analytics-kpis strong.positive { color: #c2410c; }
 .analytics-kpis strong.warning { color: #b45309; }
 .analytics-kpis strong.neutral { color: #66746c; font-size: 17px; }
 .chart-grid { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(300px, .75fr); gap: 14px; }
-.chart-panel { min-width: 0; padding: 18px; border: 1px solid #dce5df; border-radius: 8px; background: #fff; }
+.chart-panel { min-width: 0; padding: 18px; border: 1px solid #f4ded0; border-radius: 8px; background: #fff; }
 .chart-title { align-items: flex-start; }
-.chart-title > span { padding: 5px 9px; border-radius: 6px; background: #eef6f1; color: #0f7f51; font-size: 12px; font-weight: 800; white-space: nowrap; }
+.chart-title > span { padding: 5px 9px; border-radius: 6px; background: #fff3e8; color: #c2410c; font-size: 12px; font-weight: 800; white-space: nowrap; }
 .chart-canvas { position: relative; width: 100%; margin-top: 14px; }
 .trend-canvas { height: 330px; }
 .composition-canvas { height: 330px; }

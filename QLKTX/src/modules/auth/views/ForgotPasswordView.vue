@@ -40,7 +40,7 @@
 
           <v-btn
             block
-            color="success"
+            color="primary"
             size="large"
             type="submit"
             prepend-icon="mdi-email-arrow-right-outline"
@@ -111,7 +111,7 @@ const submitRequest = async () => {
   min-height: 100vh;
   padding: 44px;
   background:
-    linear-gradient(rgba(5, 56, 37, 0.9), rgba(8, 93, 61, 0.9)),
+    linear-gradient(135deg, rgba(26, 18, 13, 0.94), rgba(124, 45, 18, 0.86)),
     url('/src/assets/hero.png') center/cover;
   color: #ffffff;
 }
@@ -128,7 +128,7 @@ const submitRequest = async () => {
 }
 
 .brand-link .mdi {
-  color: #c8f4df;
+  color: #ffb347;
   font-size: 34px;
 }
 
@@ -142,13 +142,13 @@ const submitRequest = async () => {
 .recovery-visual p {
   max-width: 520px;
   margin: 18px 0 0;
-  color: #e7fff1;
+  color: #ffe7d3;
   font-size: 17px;
   line-height: 1.6;
 }
 
 .recovery-visual .page-kicker {
-  color: #c8f4df;
+  color: #ffcf9f;
 }
 
 .recovery-panel {
@@ -172,8 +172,8 @@ const submitRequest = async () => {
   height: 48px;
   margin-bottom: 18px;
   border-radius: 8px;
-  background: #e8f8f0;
-  color: var(--brand-dark);
+  background: #fff3e8;
+  color: var(--brand);
   font-size: 26px;
 }
 

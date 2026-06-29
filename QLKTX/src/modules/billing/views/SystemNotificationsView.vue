@@ -385,12 +385,12 @@ onMounted(loadNotifications)
 <style scoped>
 .notifications-page { display: grid; gap: 18px; min-width: 0; max-width: 100%; }
 .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
-.page-head strong { color: #00875a; font-size: 12px; letter-spacing: 0; }
+.page-head strong { color: #c2410c; font-size: 12px; letter-spacing: 0; }
 .page-head h2 { margin: 4px 0 6px; font-size: 30px; }
 .page-head p { margin: 0; color: var(--muted); }
 .metric-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
 .metric-card { display: grid; grid-template-columns: 46px minmax(0, 1fr); gap: 14px; align-items: center; padding: 18px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
-.metric-card > .mdi { display: grid; place-items: center; width: 46px; height: 46px; border-radius: 8px; background: #e6f4ff; color: #1677ff; font-size: 24px; }
+.metric-card > .mdi { display: grid; place-items: center; width: 46px; height: 46px; border-radius: 8px; background: #fff3e8; color: #f36f21; font-size: 24px; }
 .metric-card small, .metric-card strong { display: block; }
 .metric-card small { color: var(--muted); }
 .metric-card strong { font-size: 28px; }
@@ -405,7 +405,7 @@ onMounted(loadNotifications)
 .table-attachments { max-width: 420px; }
 .pill { display: inline-flex; padding: 5px 9px; border-radius: 999px; font-size: 12px; font-weight: 800; white-space: nowrap; }
 .severity-normal, .status-draft { background: #f5f5f5; color: #595959; }
-.severity-important, .status-published { background: #e6f4ff; color: #0958d9; }
+.severity-important, .status-published { background: #fff3e8; color: #c2410c; }
 .severity-urgent, .status-expired { background: #fff1f0; color: #cf1322; }
 .action-row { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }

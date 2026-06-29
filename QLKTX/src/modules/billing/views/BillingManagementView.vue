@@ -868,7 +868,7 @@ const printInvoices = async (invoiceList, targetWindow = null) => {
     return `<section class="invoice-print"><h1>PHIẾU THANH TOÁN HÀNG THÁNG</h1><p><b>Mã phiếu:</b> ${invoice.invoiceCode}</p><p><b>Sinh viên:</b> ${invoice.studentName} (${invoice.studentCode})</p><p><b>Phòng:</b> ${invoice.roomName} &nbsp; <b>Kỳ:</b> ${invoice.billingPeriod}</p><p><b>Cách chia:</b> ${invoice.allocationNote || 'Phiếu lập trực tiếp cho sinh viên.'}</p><table><tr><th>Khoản thu</th><th class="right">Thành tiền</th></tr><tr><td>Tiền phòng</td><td class="right">${formatMoney(invoice.roomFee)}</td></tr><tr><td>Điện phân bổ: ${invoice.electricityUsage} số từ ${invoice.roomElectricityUsage || invoice.electricityUsage} số phòng</td><td class="right">${formatMoney(invoice.electricityAmount)}</td></tr><tr><td>Nước phân bổ: ${invoice.waterUsage} số từ ${invoice.roomWaterUsage || invoice.waterUsage} số phòng</td><td class="right">${formatMoney(invoice.waterAmount)}</td></tr><tr class="total"><td>Tổng cộng</td><td class="right">${formatMoney(invoice.totalAmount)}</td></tr></table><p><b>Hạn thanh toán:</b> ${formatDate(invoice.dueDate)}</p><div class="qr">${qr}</div></section>`
   }).join('')
 
-  popup.document.write(`<!doctype html><html lang="vi"><head><meta charset="utf-8"><title>Phiếu thanh toán</title><style>body{font-family:Arial,sans-serif;color:#17201b;max-width:820px;margin:30px auto;padding:0 20px}h1{color:#0f7f51}table{width:100%;border-collapse:collapse;margin:20px 0}th,td{border:1px solid #cfd8d2;padding:11px}th{text-align:left;background:#eaf7ef}.right{text-align:right}.total{font-size:20px;font-weight:700;color:#0f7f51}.qr{text-align:center;margin-top:24px}.invoice-print{page-break-after:always}.invoice-print:last-child{page-break-after:auto}@media print{button{display:none}}</style></head><body>${body}</body></html>`)
+  popup.document.write(`<!doctype html><html lang="vi"><head><meta charset="utf-8"><title>Phiếu thanh toán</title><style>body{font-family:Arial,sans-serif;color:#24150e;max-width:820px;margin:30px auto;padding:0 20px}h1{color:#c2410c}table{width:100%;border-collapse:collapse;margin:20px 0}th,td{border:1px solid #f1dfd0;padding:11px}th{text-align:left;background:#fff3e8}.right{text-align:right}.total{font-size:20px;font-weight:700;color:#c2410c}.qr{text-align:center;margin-top:24px}.invoice-print{page-break-after:always}.invoice-print:last-child{page-break-after:auto}@media print{button{display:none}}</style></head><body>${body}</body></html>`)
   popup.document.close()
 
   const images = Array.from(popup.document.images)
@@ -923,8 +923,8 @@ onMounted(loadAll)
 .metric-grid strong { font-size: 26px; color: #12251b; }
 .issue-panel, .list-panel, .history-panel { padding: 22px; }
 .section-title { margin-bottom: 20px; }
-.section-title > div > .mdi { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 7px; background: #e8f7ef; color: #0f8b5a; font-size: 23px; }
-.rate-note { color: #0f7f51; font-weight: 800; text-align: right; }
+.section-title > div > .mdi { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 7px; background: #fff3e8; color: #f36f21; font-size: 23px; }
+.rate-note { color: #c2410c; font-weight: 800; text-align: right; }
 .form-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
 .meter-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 2px; }
 .meter-box { padding: 18px; border: 1px solid #dce5df; border-left: 4px solid; border-radius: 7px; background: #fbfdfb; }
@@ -950,7 +950,7 @@ onMounted(loadAll)
 .issue-footer { margin-top: 18px; padding-top: 18px; border-top: 1px solid #e1e8e3; }
 .issue-footer > div { display: grid; gap: 2px; }
 .issue-footer span { color: #647168; }
-.issue-footer strong { color: #0f7f51; font-size: 28px; }
+.issue-footer strong { color: #c2410c; font-size: 28px; }
 .issue-summary { grid-template-columns: repeat(2, minmax(0, max-content)); gap: 28px !important; }
 .issue-summary > div { display: grid; gap: 2px; }
 .table-heading { align-items: flex-end; }
@@ -972,7 +972,7 @@ onMounted(loadAll)
 .cell-stack small { color: #748078; font-size: 12px; }
 .history-student strong { display: flex; align-items: center; gap: 7px; }
 .history-student .mdi { color: #0f985d; font-size: 19px; }
-.money { color: #0f7f51; }
+.money { color: #c2410c; }
 .status-pill { display: inline-flex; padding: 5px 9px; border-radius: 999px; font-size: 12px; font-weight: 800; }
 .status-pill.unpaid { background: #fff2d7; color: #9b6200; }
 .status-pill.paid { background: #def7e8; color: #087947; }
@@ -981,7 +981,7 @@ onMounted(loadAll)
 .invoice-detail { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 24px; }
 .detail-lines p { display: flex; justify-content: space-between; gap: 20px; padding: 10px 0; margin: 0; border-bottom: 1px solid #e5ebe7; }
 .detail-lines span { color: #67746c; }
-.detail-lines .total strong { color: #0f7f51; font-size: 22px; }
+.detail-lines .total strong { color: #c2410c; font-size: 22px; }
 .qr-panel { display: grid; place-items: center; text-align: center; }
 .qr-panel img { width: 280px; max-width: 100%; }
 .qr-missing .mdi { font-size: 64px; color: #9aa49e; }

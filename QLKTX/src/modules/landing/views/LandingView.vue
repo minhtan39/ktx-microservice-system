@@ -273,7 +273,7 @@ const displayStats = ref(stats.map((item) => ({ ...item, value: 0 })))
 const features = [
   {
     icon: 'mdi-account-school-outline',
-    tone: 'green',
+    tone: 'orange',
     title: 'Quản lý hồ sơ sinh viên',
     text: 'Lưu thông tin cá nhân, lớp, khoa, liên hệ và lịch sử lưu trú theo đúng endpoint /students.',
   },
@@ -285,7 +285,7 @@ const features = [
   },
   {
     icon: 'mdi-clipboard-check-multiple-outline',
-    tone: 'green',
+    tone: 'orange',
     title: 'Duyệt xếp phòng thông minh',
     text: 'Nhân viên đối chiếu giường trống từ RoomService, có thể chọn tòa và phòng phù hợp khi phòng mong muốn đã đầy.',
   },
@@ -337,9 +337,9 @@ const workflow = [
 ]
 
 const mockCards = [
-  { value: '486', label: 'Sinh viên', tone: 'green' },
+  { value: '486', label: 'Sinh viên', tone: 'orange' },
   { value: '12', label: 'Đơn chờ', tone: 'amber' },
-  { value: '34', label: 'Giường trống', tone: 'green' },
+  { value: '34', label: 'Giường trống', tone: 'orange' },
 ]
 
 const scrollTo = (target) => {
@@ -665,7 +665,7 @@ onUnmounted(() => {
   width: 8px;
   height: 8px;
   border-radius: 999px;
-  background: #3ef0a4;
+  background: #ffb347;
   animation: pulse-dot 1.4s infinite;
 }
 
@@ -679,7 +679,7 @@ onUnmounted(() => {
 }
 
 .hero-content h1 span {
-  color: #78f2bd;
+  color: #ffb347;
 }
 
 .hero-content h1 b {
@@ -688,7 +688,7 @@ onUnmounted(() => {
   height: 0.78em;
   margin-left: 8px;
   border-radius: 999px;
-  background: #78f2bd;
+  background: #ffb347;
   vertical-align: -0.08em;
   animation: cursor-blink 0.85s infinite;
 }
@@ -713,7 +713,7 @@ onUnmounted(() => {
   padding: 0 24px;
   background: var(--primary-500);
   color: #ffffff;
-  box-shadow: 0 16px 30px rgba(19, 157, 113, 0.32);
+  box-shadow: 0 16px 30px rgba(243, 111, 33, 0.34);
 }
 
 .primary-cta .mdi {
@@ -847,7 +847,7 @@ onUnmounted(() => {
 .feature-card:hover,
 .workflow-card:hover {
   transform: translateY(-4px);
-  border-color: rgba(20, 157, 113, 0.32);
+  border-color: rgba(249, 115, 22, 0.32);
 }
 
 .stat-icon,
@@ -862,6 +862,7 @@ onUnmounted(() => {
 
 .stat-icon,
 .feature-icon.green,
+.feature-icon.orange,
 .step-icon {
   background: var(--primary-50);
   color: var(--primary-700);
@@ -1045,7 +1046,7 @@ onUnmounted(() => {
 }
 
 .mock-sidebar i:nth-child(4) {
-  background: rgba(20, 157, 113, 0.28);
+  background: rgba(243, 111, 33, 0.28);
 }
 
 .mock-main {
@@ -1096,7 +1097,7 @@ onUnmounted(() => {
   min-height: 140px;
   padding: 20px;
   border-radius: 16px;
-  background: linear-gradient(135deg, #ffffff, #effaf4);
+  background: linear-gradient(135deg, #ffffff, #fff3e8);
   border: 1px solid var(--background-200);
 }
 
@@ -1148,7 +1149,8 @@ onUnmounted(() => {
   border-radius: 10px;
 }
 
-.mock-cards span.green {
+.mock-cards span.green,
+.mock-cards span.orange {
   background: var(--primary-100);
 }
 

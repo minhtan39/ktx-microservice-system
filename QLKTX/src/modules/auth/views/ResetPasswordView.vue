@@ -14,7 +14,7 @@
         <h1>Đặt lại mật khẩu</h1>
         <p>Tạo mật khẩu mới có ít nhất 8 ký tự, gồm cả chữ và số.</p>
 
-        <v-progress-linear v-if="validating" indeterminate color="success" class="mb-5" />
+        <v-progress-linear v-if="validating" indeterminate color="primary" class="mb-5" />
 
         <v-alert v-if="error" type="error" variant="tonal" class="mb-4">
           {{ error }}
@@ -44,7 +44,7 @@
             density="comfortable"
           />
 
-          <v-btn block color="success" size="large" type="submit" :loading="saving">
+          <v-btn block color="primary" size="large" type="submit" :loading="saving">
             Đặt lại mật khẩu
           </v-btn>
         </v-form>
@@ -134,7 +134,8 @@ onMounted(validateToken)
   place-items: center;
   padding: 30px;
   background:
-    linear-gradient(rgba(247, 248, 250, 0.94), rgba(247, 248, 250, 0.94)),
+    radial-gradient(circle at 16% 12%, rgba(243, 111, 33, 0.20), transparent 32%),
+    linear-gradient(rgba(255, 248, 241, 0.94), rgba(255, 250, 246, 0.96)),
     url('/src/assets/hero.png') center/cover;
 }
 
@@ -142,8 +143,9 @@ onMounted(validateToken)
   width: min(100%, 540px);
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #ffffff;
-  box-shadow: var(--shadow-soft);
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 24px 60px rgba(124, 45, 18, 0.14);
+  backdrop-filter: blur(16px);
 }
 
 .brand-link {
@@ -173,8 +175,8 @@ onMounted(validateToken)
   height: 50px;
   margin-bottom: 18px;
   border-radius: 8px;
-  background: #e8f8f0;
-  color: var(--brand-dark);
+  background: #fff3e8;
+  color: var(--brand);
   font-size: 28px;
 }
 

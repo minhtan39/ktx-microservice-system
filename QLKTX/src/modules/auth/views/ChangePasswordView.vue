@@ -163,7 +163,7 @@ const changePassword = async () => {
   height: 58px;
   flex: 0 0 58px;
   border-radius: 8px;
-  background: #e8f8f0;
+  background: #fff3e8;
   color: var(--brand-dark);
   font-size: 32px;
 }

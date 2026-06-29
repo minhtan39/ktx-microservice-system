@@ -1370,7 +1370,7 @@ onMounted(loadAll)
 }
 
 .priority-low { background: #f5f5f5; color: #595959; }
-.priority-normal { background: #e6f4ff; color: #0958d9; }
+.priority-normal { background: #fff3e8; color: #c2410c; }
 .priority-high { background: #fff7e6; color: #d46b08; }
 .priority-urgent { background: #fff1f0; color: #cf1322; }
 .dialog-copy { margin: 0 0 14px; color: var(--muted); }

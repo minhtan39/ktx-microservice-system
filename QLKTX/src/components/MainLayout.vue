@@ -1,5 +1,5 @@
 <template>
-  <div class="app-shell">
+  <div class="app-shell" :class="shellModeClass">
     <aside class="sidebar">
       <div class="sidebar-top">
         <router-link to="/" class="brand">
@@ -8,7 +8,7 @@
           </div>
           <div>
             <div class="brand-name">DormManager</div>
-            <span class="brand-subtitle">Smart Residence</span>
+            <span class="brand-subtitle">Dai Nam Residence</span>
           </div>
         </router-link>
 
@@ -96,6 +96,15 @@
         </div>
 
         <div class="topbar-actions">
+          <v-btn
+            class="theme-toggle"
+            :icon="isDarkMode ? 'mdi-white-balance-sunny' : 'mdi-weather-night'"
+            variant="tonal"
+            color="primary"
+            density="comfortable"
+            :title="isDarkMode ? 'Chuyển sang giao diện sáng' : 'Chuyển sang giao diện tối'"
+            @click="toggleTheme"
+          />
           <v-menu v-model="notificationMenu" location="bottom end" :close-on-content-click="false">
             <template #activator="{ props }">
               <v-badge
@@ -205,6 +214,14 @@ const fullName = ref(localStorage.getItem('fullName') || 'demo_admin')
 const roleKey = computed(() => normalizeRole(userRole.value))
 const isStudent = computed(() => roleKey.value === 'Student')
 const isStaff = computed(() => roleKey.value === 'Staff')
+const isDarkMode = ref(localStorage.getItem('ktx_theme_mode') === 'dark')
+const shellModeClass = computed(() => ({
+  'student-shell': isStudent.value,
+  'operations-shell': !isStudent.value,
+  'staff-shell': isStaff.value,
+  'admin-shell': roleKey.value === 'Admin',
+  'dark-shell': isDarkMode.value,
+}))
 const permissions = ref(getPermissions())
 const notificationMenu = ref(false)
 const notificationLoading = ref(false)
@@ -216,6 +233,10 @@ const canAccessItem = (item) =>
   (!item.adminOnly || roleKey.value === 'Admin') &&
   (!item.permission || can(item.permission)) &&
   (!item.permissionsAny || item.permissionsAny.some((permission) => can(permission)))
+const toggleTheme = () => {
+  isDarkMode.value = !isDarkMode.value
+  localStorage.setItem('ktx_theme_mode', isDarkMode.value ? 'dark' : 'light')
+}
 
 const titleByRoute = {
   StudentPortal: 'Theo dõi hồ sơ, đăng ký nội trú và hợp đồng của bạn',
@@ -535,9 +556,10 @@ onMounted(loadNotifications)
   height: 44px;
   border: 0;
   border-radius: 8px;
-  background: #1677ff;
+  background: linear-gradient(135deg, #f97316, #c2410c);
   color: #ffffff;
   font-size: 28px;
+  box-shadow: 0 14px 26px rgba(194, 65, 12, 0.32);
 }
 
 .brand-name {
@@ -674,8 +696,9 @@ onMounted(loadNotifications)
 .nav-item:hover,
 .nav-item.active {
   border-color: transparent;
-  background: #1677ff;
+  background: linear-gradient(135deg, #f97316, #ea580c);
   color: #ffffff;
+  box-shadow: 0 14px 28px rgba(234, 88, 12, 0.22);
 }
 
 .nav-item.active .mdi,
@@ -940,7 +963,7 @@ onMounted(loadNotifications)
 }
 
 .notification-dot.severity-important {
-  background: #1677ff;
+  background: var(--brand);
 }
 
 .notification-dot.severity-urgent {
@@ -1150,6 +1173,503 @@ onMounted(loadNotifications)
   .page-body {
     width: 100%;
     padding: 18px 18px 88px;
+  }
+}
+
+.app-shell {
+  grid-template-columns: 288px minmax(0, 1fr);
+  background:
+    radial-gradient(circle at 18% 0%, rgba(243, 111, 33, 0.12), transparent 32%),
+    linear-gradient(135deg, #fff8f1 0%, #fffaf6 42%, #ffffff 100%);
+}
+
+.operations-shell {
+  background:
+    radial-gradient(circle at 0 0, rgba(243, 111, 33, 0.18), transparent 34%),
+    linear-gradient(135deg, #140f0c 0%, #241510 36%, #fff8f1 36%, #fffaf6 100%);
+}
+
+.sidebar {
+  padding: 0 14px 16px;
+  background:
+    linear-gradient(180deg, rgba(124, 45, 18, 0.28), transparent 34%),
+    linear-gradient(180deg, #1a120d 0%, #24150e 58%, #140f0c 100%);
+  box-shadow: 10px 0 32px rgba(124, 45, 18, 0.18);
+}
+
+.sidebar-top {
+  margin: 0 -14px 12px;
+  padding: 18px 14px 14px;
+  border-bottom: 1px solid rgba(255, 184, 116, 0.14);
+  background:
+    linear-gradient(135deg, rgba(243, 111, 33, 0.24), transparent 52%),
+    rgba(255, 255, 255, 0.02);
+}
+
+.brand-mark {
+  border-radius: 10px;
+  background: linear-gradient(135deg, #f36f21, #ffb347);
+  color: #fff;
+  box-shadow: 0 14px 28px rgba(243, 111, 33, 0.26);
+}
+
+.brand-name {
+  font-size: 21px;
+  letter-spacing: 0;
+}
+
+.brand-subtitle {
+  color: #ffd8b8;
+  letter-spacing: 0.12em;
+}
+
+.system-pill {
+  border-color: rgba(255, 184, 116, 0.22);
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffe6d3;
+}
+
+.live-dot {
+  background: #ffb347;
+  box-shadow: 0 0 0 4px rgba(255, 179, 71, 0.18);
+}
+
+.nav {
+  padding: 6px 0 4px;
+  scrollbar-color: rgba(255, 184, 116, 0.38) transparent;
+}
+
+.nav::-webkit-scrollbar-thumb {
+  background: rgba(255, 184, 116, 0.26);
+}
+
+.nav:hover::-webkit-scrollbar-thumb {
+  background: rgba(255, 184, 116, 0.48);
+}
+
+.nav-section {
+  margin: 18px 10px 8px;
+  color: rgba(255, 226, 203, 0.58);
+  font-size: 10.5px;
+}
+
+.nav-item {
+  grid-template-columns: 30px minmax(0, 1fr);
+  min-height: 44px;
+  margin: 3px 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  color: rgba(255, 247, 237, 0.76);
+}
+
+.nav-item.rubric-item {
+  grid-template-columns: 28px 28px minmax(0, 1fr);
+}
+
+.nav-item b {
+  width: 26px;
+  height: 26px;
+  background: rgba(255, 184, 116, 0.12);
+  color: #ffd8b8;
+}
+
+.nav-item .mdi {
+  color: rgba(255, 216, 184, 0.78);
+  font-size: 22px;
+}
+
+.nav-item:hover {
+  border-color: rgba(255, 184, 116, 0.18);
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.nav-item.active {
+  border-color: rgba(255, 184, 116, 0.32);
+  background: linear-gradient(135deg, #f36f21, #d95712);
+  color: #fff;
+  box-shadow: 0 12px 24px rgba(124, 45, 18, 0.26);
+}
+
+.nav-item.active b {
+  background: rgba(255, 255, 255, 0.20);
+}
+
+.sidebar-note {
+  border-color: rgba(255, 184, 116, 0.18);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.sidebar-note .mdi {
+  color: #ffb347;
+}
+
+.sidebar-note p {
+  color: #f7d8bf;
+}
+
+.account-box {
+  border-top-color: rgba(255, 184, 116, 0.16);
+}
+
+.account-avatar,
+.user-avatar {
+  background: #fff3e8;
+  color: #9a3412;
+}
+
+.account-meta span {
+  color: #eac4aa;
+}
+
+.main-panel {
+  background:
+    linear-gradient(180deg, rgba(255, 243, 232, 0.92), rgba(255, 248, 241, 0.76) 260px, #fffaf6 100%);
+}
+
+.topbar {
+  min-height: 96px;
+  border-bottom: 1px solid rgba(232, 196, 173, 0.72);
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 10px 28px rgba(124, 45, 18, 0.07);
+  backdrop-filter: blur(18px);
+}
+
+.breadcrumb-line {
+  color: #8a5a3f;
+}
+
+.breadcrumb-line i {
+  background: var(--brand);
+  color: var(--brand);
+}
+
+.breadcrumb-line strong {
+  color: var(--brand);
+}
+
+.topbar h1 {
+  color: #24150e;
+  font-size: clamp(22px, 1.7vw, 28px);
+}
+
+.topbar p {
+  color: #6f5747;
+}
+
+.term-chip,
+.user-chip {
+  border-color: #f0d7c6;
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: 0 10px 22px rgba(124, 45, 18, 0.06);
+}
+
+.term-chip .mdi {
+  color: var(--brand);
+}
+
+.notification-menu {
+  border-color: #f0d7c6;
+  box-shadow: 0 20px 46px rgba(124, 45, 18, 0.16);
+}
+
+.notification-row.unread {
+  background: #fff7ed;
+}
+
+.notification-attachments button {
+  border-color: #fed7aa;
+  background: #fff7ed;
+  color: #c2410c;
+}
+
+.notification-dot.severity-important {
+  background: #f36f21;
+}
+
+.page-body {
+  max-width: 1540px;
+  padding: 28px 32px 54px;
+}
+
+.dark-shell {
+  --app-bg: #160f0b;
+  --surface: #201610;
+  --surface-soft: #291b13;
+  --line: rgba(255, 190, 135, 0.18);
+  --line-strong: rgba(255, 190, 135, 0.32);
+  --ink: #fff7ed;
+  --muted: #d6b9a2;
+  --muted-strong: #f2d7c2;
+  background:
+    radial-gradient(circle at 88% 0, rgba(243, 111, 33, 0.16), transparent 32%),
+    linear-gradient(135deg, #140f0c 0%, #1f130d 58%, #25160e 100%);
+}
+
+.dark-shell .main-panel {
+  background:
+    radial-gradient(circle at 100% 0, rgba(243, 111, 33, 0.16), transparent 38%),
+    linear-gradient(180deg, #1a120d 0%, #21150f 100%);
+}
+
+.dark-shell .topbar {
+  border-bottom-color: rgba(255, 190, 135, 0.14);
+  background: rgba(24, 15, 10, 0.88);
+  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.22);
+}
+
+.dark-shell .topbar h1,
+.dark-shell .page-heading h2,
+.dark-shell .page-head h2,
+.dark-shell .section-title h3,
+.dark-shell .detail-header h3,
+.dark-shell .cell-title,
+.dark-shell .term-chip strong,
+.dark-shell .user-chip strong,
+.dark-shell .account-meta strong,
+.dark-shell h2,
+.dark-shell h3 {
+  color: #fff7ed !important;
+}
+
+.dark-shell .topbar p,
+.dark-shell .page-heading p,
+.dark-shell .page-head p,
+.dark-shell .section-title p,
+.dark-shell .cell-subtitle,
+.dark-shell small,
+.dark-shell .muted {
+  color: #d6b9a2 !important;
+}
+
+.dark-shell .term-chip,
+.dark-shell .user-chip,
+.dark-shell .notification-menu,
+.dark-shell :where(.v-card, .panel, .table-card, .filter-card, .dashboard-hero, .hero-summary div, .metric-card, .registration-metric, .stat-tile, .invoice-list, .invoice-detail, .history-panel, .wallet-panel, .topup-box, .wallet-history, .analytics-card, .chart-panel, .summary-band) {
+  border-color: rgba(255, 190, 135, 0.18) !important;
+  background: rgba(32, 22, 16, 0.92) !important;
+  color: #fff7ed !important;
+}
+
+.dark-shell :where(.v-field, .v-table, .data-table, .account-table, .operations-table, .notifications-table) {
+  background: rgba(32, 22, 16, 0.92) !important;
+  color: #fff7ed !important;
+}
+
+.dark-shell :where(.data-table th, .v-table thead th) {
+  background: #2f1d12 !important;
+  color: #ffedd5 !important;
+}
+
+.dark-shell :where(.data-table td, .v-table tbody td) {
+  border-color: rgba(255, 190, 135, 0.14) !important;
+}
+
+.dark-shell :where(.data-table tbody tr:hover, .v-table tbody tr:hover, .invoice-row:hover, .invoice-row.active, .notification-row.unread) {
+  background: rgba(243, 111, 33, 0.10) !important;
+}
+
+.dark-shell :where(.v-label, .v-field__input, .v-select__selection-text, input, textarea) {
+  color: #fff7ed !important;
+}
+
+.dark-shell :where(.v-field__outline, .v-field__outline__start, .v-field__outline__end) {
+  border-color: rgba(255, 190, 135, 0.22) !important;
+}
+
+.dark-shell :where(.wallet-main, .wallet-transfer, .transfer-note, .allocation-row, .sidebar-note, .detail-summary > div, .description-box, .action-panel, .timeline-panel, .checklist-panel) {
+  border-color: rgba(255, 190, 135, 0.20) !important;
+  background: rgba(44, 28, 18, 0.92) !important;
+}
+
+.dark-shell .theme-toggle {
+  box-shadow: 0 10px 22px rgba(243, 111, 33, 0.18);
+}
+
+@media (max-width: 1180px) {
+  .app-shell {
+    grid-template-columns: 260px minmax(0, 1fr);
+  }
+
+  .topbar-actions {
+    gap: 10px;
+  }
+
+  .topbar-logout {
+    padding-inline: 12px !important;
+  }
+}
+
+@media (max-width: 920px) {
+  .app-shell,
+  .operations-shell {
+    display: block;
+    background: #fff8f1;
+  }
+
+  .sidebar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    width: 100%;
+    height: auto;
+    max-height: none;
+    padding: 12px 14px;
+    box-shadow: 0 10px 28px rgba(124, 45, 18, 0.16);
+  }
+
+  .sidebar-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 0 0 10px;
+    padding: 0 0 10px;
+    background: transparent;
+  }
+
+  .brand {
+    margin: 0;
+  }
+
+  .brand-mark {
+    width: 42px;
+    height: 42px;
+    font-size: 25px;
+  }
+
+  .brand-name {
+    font-size: 18px;
+  }
+
+  .brand-subtitle {
+    font-size: 10px;
+  }
+
+  .system-pill {
+    display: inline-flex;
+    flex: 0 0 auto;
+    max-width: 42%;
+  }
+
+  .nav {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(142px, 176px);
+    gap: 8px;
+    overflow-x: auto;
+    padding: 2px 0 6px;
+    scroll-snap-type: x proximity;
+  }
+
+  .nav-section,
+  .sidebar-note,
+  .account-box {
+    display: none;
+  }
+
+  .nav-item,
+  .nav-item.rubric-item {
+    display: grid;
+    grid-template-columns: 24px minmax(0, 1fr);
+    scroll-snap-align: start;
+    min-height: 42px;
+    margin: 0;
+    padding: 9px 10px;
+    font-size: 12px;
+  }
+
+  .nav-item.rubric-item b {
+    display: none;
+  }
+
+  .nav-item .mdi {
+    font-size: 20px;
+  }
+
+  .mobile-nav-logout {
+    display: none;
+  }
+
+  .topbar {
+    position: static;
+    min-height: auto;
+    padding: 18px;
+    border-bottom: 1px solid #f0d7c6;
+  }
+
+  .topbar-actions {
+    display: grid;
+    grid-template-columns: auto auto minmax(0, 1fr);
+    align-items: center;
+    width: 100%;
+  }
+
+  .topbar-actions > .v-badge {
+    justify-self: start;
+  }
+
+  .term-chip,
+  .user-chip,
+  .topbar-logout {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .term-chip,
+  .user-chip {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .page-body {
+    padding: 18px 14px 92px;
+  }
+
+  .mobile-floating-logout {
+    display: none !important;
+    background: linear-gradient(135deg, #f36f21, #c2410c);
+    box-shadow: 0 16px 30px rgba(194, 65, 12, 0.30);
+  }
+}
+
+@media (max-width: 560px) {
+  .sidebar {
+    padding: 10px 10px 12px;
+  }
+
+  .sidebar-top {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .system-pill {
+    max-width: 100%;
+  }
+
+  .nav {
+    grid-auto-columns: minmax(128px, 152px);
+  }
+
+  .topbar {
+    padding: 16px 14px;
+  }
+
+  .topbar h1 {
+    font-size: 22px;
+  }
+
+  .topbar-actions {
+    grid-template-columns: auto auto;
+  }
+
+  .user-chip strong,
+  .user-chip span {
+    text-align: left;
+  }
+
+  .page-body {
+    padding-inline: 10px;
   }
 }
 </style>
