@@ -41,7 +41,6 @@
           class="nav-item rubric-item"
           :class="{ active: item.names.includes(route.name) }"
         >
-          <b>{{ item.step }}</b>
           <span :class="['mdi', item.icon]"></span>
           <span>{{ item.label }}</span>
         </router-link>
@@ -298,7 +297,6 @@ const staffOverviewItems = [
 
 const adminRubricItems = [
   {
-    step: '5',
     to: '/student-service/students',
     names: ['StudentManage'],
     icon: 'mdi-account-school-outline',
@@ -306,7 +304,6 @@ const adminRubricItems = [
     permission: 'view_students',
   },
   {
-    step: '6',
     to: '/student-service/registrations',
     names: ['RoomRegistrationCreate'],
     icon: 'mdi-form-select',
@@ -314,7 +311,6 @@ const adminRubricItems = [
     adminOnly: true,
   },
   {
-    step: '7',
     to: '/student-service/registrations/approval',
     names: ['RoomRegistrationApproval'],
     icon: 'mdi-clipboard-check-outline',
@@ -322,7 +318,6 @@ const adminRubricItems = [
     permission: 'approve_registrations',
   },
   {
-    step: '8',
     to: '/student-service/contracts',
     names: ['ContractList'],
     icon: 'mdi-file-document-outline',
@@ -330,7 +325,6 @@ const adminRubricItems = [
     permission: 'manage_contracts',
   },
   {
-    step: '+',
     to: '/student-service/contracts/manage',
     names: ['ContractManage'],
     icon: 'mdi-file-cog-outline',
@@ -665,22 +659,6 @@ onMounted(loadNotifications)
   transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
 }
 
-.nav-item.rubric-item {
-  grid-template-columns: 24px 24px minmax(0, 1fr);
-}
-
-.nav-item b {
-  display: grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.10);
-  color: rgba(255, 255, 255, 0.76);
-  font-size: 12px;
-  font-weight: 900;
-}
-
 .nav-item .mdi {
   color: rgba(255, 255, 255, 0.58);
   font-size: 21px;
@@ -703,11 +681,6 @@ onMounted(loadNotifications)
 
 .nav-item.active .mdi,
 .nav-item.active span:last-child {
-  color: #ffffff;
-}
-
-.nav-item.active b {
-  background: rgba(255, 255, 255, 0.20);
   color: #ffffff;
 }
 

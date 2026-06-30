@@ -17,7 +17,7 @@
         class="mode-card"
         :class="{ active: !isApprovalView }"
       >
-        <span>6</span>
+        <span class="mdi mdi-form-select"></span>
         <div>
           <strong>Đăng ký nội trú online</strong>
           <small>Nhập nguyện vọng, thời hạn ở và diện ưu tiên của sinh viên.</small>
@@ -29,7 +29,7 @@
         class="mode-card"
         :class="{ active: isApprovalView }"
       >
-        <span>7</span>
+        <span class="mdi mdi-clipboard-check-outline"></span>
         <div>
           <strong>Duyệt đơn xếp phòng</strong>
           <small>N2 gọi RoomService để tìm giường trống, cập nhật phòng và sinh hợp đồng.</small>
@@ -574,7 +574,7 @@ const currentPage = ref(1)
 const pageSize = 8
 
 const isApprovalView = computed(() => route.name === 'RoomRegistrationApproval')
-const pageKicker = computed(() => isApprovalView.value ? 'Rubric 7 - Approval' : 'Rubric 6 - Online Registration')
+const pageKicker = computed(() => isApprovalView.value ? 'Room Approval' : 'Online Registration')
 const pageTitle = computed(() => isApprovalView.value ? 'Duyệt đơn xếp phòng' : 'Đăng ký ở ký túc xá online')
 const pageDescription = computed(() =>
   isApprovalView.value
@@ -1327,12 +1327,13 @@ onMounted(loadAll)
   border-radius: 8px;
   background: #111827;
   color: #ffffff;
+  font-size: 22px;
   font-weight: 900;
 }
 
 .mode-card.active > span {
   background: var(--brand);
-  color: #052e1c;
+  color: #ffffff;
 }
 
 .mode-card strong {

@@ -2,7 +2,7 @@
   <section class="student-page">
     <div class="student-hero">
       <div class="hero-copy">
-        <span class="page-kicker">Rubric 5 - Student Profile</span>
+        <span class="page-kicker">Student Profile</span>
         <h2>Hồ sơ sinh viên</h2>
         <p>Quản lý hồ sơ, lớp, khoa và lịch sử lưu trú theo dạng roster gọn. Bấm một sinh viên để đọc chi tiết thay vì nhìn một bảng quá dày.</p>
         <div class="heading-actions">
@@ -95,7 +95,7 @@
               type="button"
               class="student-row-card"
               :class="{ active: highlightedStudent?.id === student.id }"
-              @click="selectStudent(student)"
+              @click="openStudentDetails(student)"
             >
               <span class="avatar-badge">{{ initials(student.fullName) }}</span>
               <span class="student-main">
@@ -401,6 +401,7 @@
       :students="students"
       :contracts="contracts"
       :focus-student-id="roomMapperFocusStudentId"
+      readonly
       @room-updated="handleRoomUpdated"
     />
   </section>

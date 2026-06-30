@@ -2,7 +2,7 @@
   <section class="contract-page">
     <div class="contract-hero">
       <div>
-        <span class="hero-kicker">Rubric 8 - Contract Registry</span>
+        <span class="hero-kicker">Contract Registry</span>
         <h2>Hợp đồng thuê phòng</h2>
         <p>
           Đây là sổ hợp đồng được sinh sau khi đơn đăng ký được duyệt. Màn này

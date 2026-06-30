@@ -9,7 +9,7 @@
     <v-card class="bed-mapper-card">
       <v-card-title class="mapper-title">
         <div>
-          <span class="page-kicker">Interactive Room & Bed Mapping</span>
+          <span class="page-kicker">{{ mapperKicker }}</span>
           <strong>{{ roomTitle }}</strong>
           <small>{{ roomSubtitle }}</small>
         </div>
@@ -25,11 +25,8 @@
           <div class="room-map-panel">
             <div class="panel-headline">
               <div>
-                <h3>Sơ đồ giường 2D</h3>
-                <p>
-                  Kéo sinh viên sang giường trống trong cùng phòng, hoặc chọn sinh viên rồi bấm
-                  "Chuyển đến đây" trên thiết bị cảm ứng.
-                </p>
+                <h3>{{ mapTitle }}</h3>
+                <p>{{ mapDescription }}</p>
               </div>
               <div class="room-capacity-pill">
                 <strong>{{ occupiedCount }}/{{ capacity }}</strong>
@@ -48,6 +45,7 @@
                   empty: !bed.occupant,
                   focus: bed.isFocus,
                   selected: selectedStudentId && bed.occupant?.studentId === selectedStudentId,
+                  readonly,
                 }"
                 :draggable="Boolean(bed.occupant) && !readonly"
                 @dragstart="startDrag(bed, $event)"
@@ -65,7 +63,7 @@
                 <template v-else>
                   <span class="empty-icon mdi mdi-bed-empty"></span>
                   <strong>Giường trống</strong>
-                  <small>Sẵn sàng xếp sinh viên</small>
+                  <small>{{ emptyBedHint }}</small>
                   <span
                     v-if="selectedStudentId && !readonly"
                     class="move-target"
@@ -97,7 +95,7 @@
 
       <v-card-actions>
         <span class="mapper-note">
-          Dữ liệu lấy từ RoomService occupancyReferences và đối chiếu tên sinh viên từ N2.
+          {{ mapperNote }}
         </span>
         <v-spacer />
         <v-btn variant="text" @click="emit('update:modelValue', false)">Đóng</v-btn>
@@ -169,6 +167,30 @@ const roomSubtitle = computed(() => {
 
   return `${props.room.floorName || `Tầng ${props.room.floor || '-'}`} · ${props.room.roomType || 'Loại phòng'} · ${props.room.genderText || (props.room.gender ? 'Nam' : 'Nữ')}`
 })
+
+const mapperKicker = computed(() =>
+  props.readonly ? 'Room & Bed Profile' : 'Interactive Room & Bed Mapping',
+)
+
+const mapTitle = computed(() =>
+  props.readonly ? 'Sơ đồ vị trí giường' : 'Sơ đồ giường 2D',
+)
+
+const mapDescription = computed(() =>
+  props.readonly
+    ? 'Màn này chỉ dùng để xem vị trí giường và bạn cùng phòng của sinh viên. Thao tác đổi giường được xử lý ở luồng duyệt hoặc điều chuyển phòng.'
+    : 'Kéo sinh viên sang giường trống trong cùng phòng, hoặc chọn sinh viên rồi bấm "Chuyển đến đây" trên thiết bị cảm ứng.',
+)
+
+const emptyBedHint = computed(() =>
+  props.readonly ? 'Giường còn trống trong phòng' : 'Sẵn sàng xếp sinh viên',
+)
+
+const mapperNote = computed(() =>
+  props.readonly
+    ? 'Chế độ xem hồ sơ: không thay đổi dữ liệu giường/phòng từ màn này.'
+    : 'Dữ liệu lấy từ RoomService occupancyReferences và đối chiếu tên sinh viên từ N2.',
+)
 
 const bedGridStyle = computed(() => ({
   gridTemplateColumns: `repeat(${capacity.value <= 4 ? 2 : 3}, minmax(0, 1fr))`,
@@ -538,6 +560,16 @@ onBeforeUnmount(cleanupThree)
   border-color: #60a5fa;
   box-shadow: 0 12px 28px rgba(37, 99, 235, .12);
   transform: translateY(-1px);
+}
+
+.bed-tile.readonly {
+  cursor: default;
+}
+
+.bed-tile.readonly:hover {
+  border-color: #dbeafe;
+  box-shadow: none;
+  transform: none;
 }
 
 .bed-tile.occupied {
