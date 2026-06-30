@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <main class="landing-page">
     <nav :class="['landing-nav', { scrolled: navScrolled, open: mobileOpen }]">
       <a class="landing-brand" href="#hero" @click.prevent="scrollTo('hero')">
@@ -13,8 +13,8 @@
       </div>
 
       <div class="landing-actions">
-        <router-link class="nav-login" to="/login">ÄÄƒng nháº­p</router-link>
-        <button class="mobile-toggle" type="button" aria-label="Má»Ÿ menu" @click="mobileOpen = !mobileOpen">
+        <router-link class="nav-login" to="/login">Đăng nhập</router-link>
+        <button class="mobile-toggle" type="button" aria-label="Mở menu" @click="mobileOpen = !mobileOpen">
           <span :class="['mdi', mobileOpen ? 'mdi-close' : 'mdi-menu']"></span>
         </button>
       </div>
@@ -23,7 +23,7 @@
         <a v-for="link in navLinks" :key="`mobile-${link.target}`" :href="`#${link.target}`" @click.prevent="scrollTo(link.target)">
           {{ link.label }}
         </a>
-        <router-link to="/login">ÄÄƒng nháº­p há»‡ thá»‘ng</router-link>
+        <router-link to="/login">Đăng nhập hệ thống</router-link>
       </div>
     </nav>
 
@@ -34,32 +34,32 @@
       <div class="landing-container hero-content">
         <span class="hero-badge">
           <i></i>
-          Há»‡ thá»‘ng quáº£n lĂ½ kĂ½ tĂºc xĂ¡ sinh viĂªn
+          Hệ thống quản lý ký túc xá sinh viên
         </span>
 
         <h1>
-          Quáº£n lĂ½ kĂ½ tĂºc xĂ¡
+          Quản lý ký túc xá
           <span>{{ typedWord }}</span><b aria-hidden="true"></b>
         </h1>
 
         <p>
-          Má»™t cá»•ng ná»™i trĂº gá»n gĂ ng cho sinh viĂªn Ä‘Äƒng kĂ½ phĂ²ng, theo dĂµi há»£p Ä‘á»“ng,
-          cĂ²n nhĂ¢n viĂªn cĂ³ thá»ƒ duyá»‡t Ä‘Æ¡n, xáº¿p phĂ²ng vĂ  phá»‘i há»£p cĂ¡c dá»‹ch vá»¥ trong cĂ¹ng há»‡ thá»‘ng.
+          Một cổng nội trú gọn gàng cho sinh viên đăng ký phòng, theo dõi hợp đồng,
+          còn nhân viên có thể duyệt đơn, xếp phòng và phối hợp các dịch vụ trong cùng hệ thống.
         </p>
 
         <div class="hero-cta">
           <router-link class="primary-cta" to="/login">
-            Báº¯t Ä‘áº§u ngay
+            Bắt đầu ngay
             <span class="mdi mdi-arrow-right"></span>
           </router-link>
           <a class="secondary-cta" href="#preview" @click.prevent="scrollTo('preview')">
-            Xem giao diá»‡n
+            Xem giao diện
           </a>
         </div>
       </div>
 
       <a class="scroll-cue" href="#stats" @click.prevent="scrollTo('stats')">
-        <span>KhĂ¡m phĂ¡ thĂªm</span>
+        <span>Khám phá thêm</span>
         <i></i>
       </a>
     </section>
@@ -67,8 +67,8 @@
     <section id="stats" ref="statsRef" class="stats-section">
       <div class="landing-container">
         <div class="section-heading compact">
-          <span>Sá»‘ liá»‡u váº­n hĂ nh</span>
-          <h2>KĂ½ tĂºc xĂ¡ nhĂ¬n má»™t láº§n lĂ  hiá»ƒu</h2>
+          <span>Số liệu vận hành</span>
+          <h2>Ký túc xá nhìn một lần là hiểu</h2>
         </div>
 
         <div class="stats-grid">
@@ -86,11 +86,11 @@
     <section id="features" class="features-section">
       <div class="landing-container">
         <div class="section-heading">
-          <span>TĂ­nh nÄƒng Ä‘Ăºng Ä‘á» tĂ i</span>
-          <h2>Táº­p trung vĂ o nghiá»‡p vá»¥ kĂ½ tĂºc xĂ¡, khĂ´ng lan man</h2>
+          <span>Tính năng đúng đề tài</span>
+          <h2>Tập trung vào nghiệp vụ ký túc xá, không lan man</h2>
           <p>
-            Giao diá»‡n Ä‘Æ°á»£c sáº¯p láº¡i theo Ä‘Ăºng luá»“ng tháº§y cháº¥m: há»“ sÆ¡ sinh viĂªn,
-            Ä‘Äƒng kĂ½ phĂ²ng online, duyá»‡t xáº¿p phĂ²ng, há»£p Ä‘á»“ng vĂ  liĂªn thĂ´ng dá»‹ch vá»¥.
+            Giao diện được sắp lại theo đúng luồng thầy chấm: hồ sơ sinh viên,
+            đăng ký phòng online, duyệt xếp phòng, hợp đồng và liên thông dịch vụ.
           </p>
         </div>
 
@@ -109,8 +109,8 @@
     <section id="workflow" class="workflow-section">
       <div class="landing-container">
         <div class="section-heading">
-          <span>Quy trĂ¬nh ná»™i trĂº</span>
-          <h2>Tá»« Ä‘Äƒng kĂ½ Ä‘áº¿n nháº­n phĂ²ng trong má»™t máº¡ch rĂµ rĂ ng</h2>
+          <span>Quy trình nội trú</span>
+          <h2>Từ đăng ký đến nhận phòng trong một mạch rõ ràng</h2>
         </div>
 
         <div class="workflow-track" aria-hidden="true">
@@ -133,20 +133,20 @@
     <section id="preview" class="preview-section">
       <div class="landing-container preview-layout">
         <div class="preview-copy">
-          <span class="section-pill">Tá»•ng quan há»‡ thá»‘ng</span>
-          <h2>MĂ n hĂ¬nh quáº£n trá»‹ Ä‘Æ°á»£c lĂ m cho ngÆ°á»i váº­n hĂ nh tháº­t sá»± dĂ¹ng</h2>
+          <span class="section-pill">Tổng quan hệ thống</span>
+          <h2>Màn hình quản trị được làm cho người vận hành thật sự dùng</h2>
           <p>
-            Admin vĂ  nhĂ¢n viĂªn tháº¥y nhanh Ä‘Æ¡n cáº§n duyá»‡t, giÆ°á»ng cĂ²n trá»‘ng, há»£p Ä‘á»“ng hiá»‡u lá»±c
-            vĂ  tráº¡ng thĂ¡i káº¿t ná»‘i giá»¯a Room, Contract & Student, Billing qua Gateway.
+            Admin và nhân viên thấy nhanh đơn cần duyệt, giường còn trống, hợp đồng hiệu lực
+            và trạng thái kết nối giữa Room, Contract & Student, Billing qua Gateway.
           </p>
           <div class="preview-points">
-            <span><i class="mdi mdi-check-circle-outline"></i> Dá»¯ liá»‡u phĂ²ng theo RoomService</span>
-            <span><i class="mdi mdi-check-circle-outline"></i> Há»£p Ä‘á»“ng sinh tá»± Ä‘á»™ng sau khi duyá»‡t</span>
-            <span><i class="mdi mdi-check-circle-outline"></i> Sinh viĂªn cĂ³ cá»•ng theo dĂµi riĂªng</span>
+            <span><i class="mdi mdi-check-circle-outline"></i> Dữ liệu phòng theo RoomService</span>
+            <span><i class="mdi mdi-check-circle-outline"></i> Hợp đồng sinh tự động sau khi duyệt</span>
+            <span><i class="mdi mdi-check-circle-outline"></i> Sinh viên có cổng theo dõi riêng</span>
           </div>
         </div>
 
-        <div class="dashboard-preview" aria-label="Báº£n xem trÆ°á»›c dashboard DormManager">
+        <div class="dashboard-preview" aria-label="Bản xem trước dashboard DormManager">
           <div class="preview-sidebar">
             <span></span>
             <b></b>
@@ -179,8 +179,8 @@
               <span v-for="n in 5" :key="n"></span>
             </div>
           </div>
-          <div class="floating-badge realtime"><i></i>Dá»¯ liá»‡u thá»i gian thá»±c</div>
-          <div class="floating-badge roles"><span class="mdi mdi-shield-check-outline"></span>PhĂ¢n quyá»n 3 vai trĂ²</div>
+          <div class="floating-badge realtime"><i></i>Dữ liệu thời gian thực</div>
+          <div class="floating-badge roles"><span class="mdi mdi-shield-check-outline"></span>Phân quyền 3 vai trò</div>
         </div>
       </div>
     </section>
@@ -189,16 +189,16 @@
       <div class="cta-media" aria-hidden="true"></div>
       <div class="cta-overlay" aria-hidden="true"></div>
       <div class="landing-container cta-content">
-        <h2>VĂ o DormManager Ä‘á»ƒ tiáº¿p tá»¥c nghiá»‡p vá»¥ ná»™i trĂº</h2>
-        <p>Sinh viĂªn Ä‘Äƒng kĂ½ vĂ  theo dĂµi há»“ sÆ¡. NhĂ¢n viĂªn xá»­ lĂ½ Ä‘Æ¡n, xáº¿p phĂ²ng, há»£p Ä‘á»“ng vĂ  liĂªn thĂ´ng dá»‹ch vá»¥.</p>
+        <h2>Vào DormManager để tiếp tục nghiệp vụ nội trú</h2>
+        <p>Sinh viên đăng ký và theo dõi hồ sơ. Nhân viên xử lý đơn, xếp phòng, hợp đồng và liên thông dịch vụ.</p>
         <div class="hero-cta">
           <router-link class="white-cta" to="/login">
             <span class="mdi mdi-login"></span>
-            ÄÄƒng nháº­p há»‡ thá»‘ng
+            Đăng nhập hệ thống
           </router-link>
           <a class="outline-cta" href="#hero" @click.prevent="scrollTo('hero')">
             <span class="mdi mdi-arrow-up"></span>
-            Vá» Ä‘áº§u trang
+            Về đầu trang
           </a>
         </div>
       </div>
@@ -211,29 +211,29 @@
             <span class="mdi mdi-home-city-outline"></span>
             <strong>DormManager</strong>
           </a>
-          <p>Há»‡ thá»‘ng quáº£n lĂ½ kĂ½ tĂºc xĂ¡ sinh viĂªn theo kiáº¿n trĂºc microservice.</p>
+          <p>Hệ thống quản lý ký túc xá sinh viên theo kiến trúc microservice.</p>
         </div>
         <div>
-          <h3>TĂ­nh nÄƒng</h3>
-          <a href="#features" @click.prevent="scrollTo('features')">Há»“ sÆ¡ sinh viĂªn</a>
-          <a href="#features" @click.prevent="scrollTo('features')">ÄÄƒng kĂ½ ná»™i trĂº</a>
-          <a href="#features" @click.prevent="scrollTo('features')">Há»£p Ä‘á»“ng phĂ²ng</a>
+          <h3>Tính năng</h3>
+          <a href="#features" @click.prevent="scrollTo('features')">Hồ sơ sinh viên</a>
+          <a href="#features" @click.prevent="scrollTo('features')">Đăng ký nội trú</a>
+          <a href="#features" @click.prevent="scrollTo('features')">Hợp đồng phòng</a>
         </div>
         <div>
-          <h3>Dá»‹ch vá»¥</h3>
+          <h3>Dịch vụ</h3>
           <a href="#workflow" @click.prevent="scrollTo('workflow')">Room & Building</a>
           <a href="#workflow" @click.prevent="scrollTo('workflow')">Contract & Student</a>
           <a href="#workflow" @click.prevent="scrollTo('workflow')">Billing & Maintenance</a>
         </div>
         <div>
-          <h3>LiĂªn há»‡</h3>
-          <p>Khoa CĂ´ng nghá»‡ thĂ´ng tin</p>
+          <h3>Liên hệ</h3>
+          <p>Khoa Công nghệ thông tin</p>
           <p>dormmanager@school.local</p>
-          <p>Hotline ná»™i trĂº: 1900 2026</p>
+          <p>Hotline nội trú: 1900 2026</p>
         </div>
       </div>
       <div class="footer-bottom">
-        <span>Â© 2026 DormManager. Student Dormitory Microservice System.</span>
+        <span>© 2026 DormManager. Student Dormitory Microservice System.</span>
       </div>
     </footer>
   </main>
@@ -249,23 +249,23 @@ const statsRef = ref(null)
 const workflowProgress = ref('0%')
 
 const navLinks = [
-  { label: 'TĂ­nh nÄƒng', target: 'features' },
-  { label: 'Quy trĂ¬nh', target: 'workflow' },
-  { label: 'Tá»•ng quan', target: 'preview' },
-  { label: 'LiĂªn há»‡', target: 'contact' },
+  { label: 'Tính năng', target: 'features' },
+  { label: 'Quy trình', target: 'workflow' },
+  { label: 'Tổng quan', target: 'preview' },
+  { label: 'Liên hệ', target: 'contact' },
 ]
 
-const words = ['thĂ´ng minh', 'hiá»‡u quáº£', 'minh báº¡ch', 'hiá»‡n Ä‘áº¡i']
+const words = ['thông minh', 'hiệu quả', 'minh bạch', 'hiện đại']
 let typeTimer = null
 let wordIndex = 0
 let charIndex = 0
 let deleting = false
 
 const stats = [
-  { icon: 'mdi-account-star-outline', target: 486, suffix: '+', label: 'Sinh viĂªn ná»™i trĂº' },
-  { icon: 'mdi-office-building-outline', target: 4, suffix: '', label: 'TĂ²a nhĂ  hiá»‡n Ä‘áº¡i' },
-  { icon: 'mdi-emoticon-happy-outline', target: 98, suffix: '%', label: 'Tá»‰ lá»‡ hĂ i lĂ²ng' },
-  { icon: 'mdi-bed-outline', target: 34, suffix: '', label: 'GiÆ°á»ng cĂ²n trá»‘ng' },
+  { icon: 'mdi-account-star-outline', target: 486, suffix: '+', label: 'Sinh viên nội trú' },
+  { icon: 'mdi-office-building-outline', target: 4, suffix: '', label: 'Tòa nhà hiện đại' },
+  { icon: 'mdi-emoticon-happy-outline', target: 98, suffix: '%', label: 'Tỉ lệ hài lòng' },
+  { icon: 'mdi-bed-outline', target: 34, suffix: '', label: 'Giường còn trống' },
 ]
 
 const displayStats = ref(stats.map((item) => ({ ...item, value: 0 })))
@@ -274,38 +274,38 @@ const features = [
   {
     icon: 'mdi-account-school-outline',
     tone: 'orange',
-    title: 'Quáº£n lĂ½ há»“ sÆ¡ sinh viĂªn',
-    text: 'LÆ°u thĂ´ng tin cĂ¡ nhĂ¢n, lá»›p, khoa, liĂªn há»‡ vĂ  lá»‹ch sá»­ lÆ°u trĂº theo Ä‘Ăºng endpoint /students.',
+    title: 'Quản lý hồ sơ sinh viên',
+    text: 'Lưu thông tin cá nhân, lớp, khoa, liên hệ và lịch sử lưu trú theo đúng endpoint /students.',
   },
   {
     icon: 'mdi-file-document-edit-outline',
     tone: 'amber',
-    title: 'ÄÄƒng kĂ½ phĂ²ng trá»±c tuyáº¿n',
-    text: 'Sinh viĂªn gá»­i nguyá»‡n vá»ng phĂ²ng, há»‡ thá»‘ng ghi nháº­n Æ°u tiĂªn vĂ  thá»i gian á»Ÿ táº¡i /registrations.',
+    title: 'Đăng ký phòng trực tuyến',
+    text: 'Sinh viên gửi nguyện vọng phòng, hệ thống ghi nhận ưu tiên và thời gian ở tại /registrations.',
   },
   {
     icon: 'mdi-clipboard-check-multiple-outline',
     tone: 'orange',
-    title: 'Duyá»‡t xáº¿p phĂ²ng thĂ´ng minh',
-    text: 'NhĂ¢n viĂªn Ä‘á»‘i chiáº¿u giÆ°á»ng trá»‘ng tá»« RoomService, cĂ³ thá»ƒ chá»n tĂ²a vĂ  phĂ²ng phĂ¹ há»£p khi phĂ²ng mong muá»‘n Ä‘Ă£ Ä‘áº§y.',
+    title: 'Duyệt xếp phòng thông minh',
+    text: 'Nhân viên đối chiếu giường trống từ RoomService, có thể chọn tòa và phòng phù hợp khi phòng mong muốn đã đầy.',
   },
   {
     icon: 'mdi-file-sign',
     tone: 'amber',
-    title: 'Táº¡o há»£p Ä‘á»“ng thuĂª phĂ²ng',
-    text: 'Tá»± táº¡o há»£p Ä‘á»“ng, thá»i háº¡n á»Ÿ, Ä‘iá»u khoáº£n, tiá»n cá»c vĂ  tiá»n phĂ²ng sau khi Ä‘Æ¡n Ä‘Æ°á»£c duyá»‡t táº¡i /contracts.',
+    title: 'Tạo hợp đồng thuê phòng',
+    text: 'Tự tạo hợp đồng, thời hạn ở, điều khoản, tiền cọc và tiền phòng sau khi đơn được duyệt tại /contracts.',
   },
   {
     icon: 'mdi-view-grid-outline',
     tone: 'slate',
-    title: 'SÆ¡ Ä‘á»“ phĂ²ng trá»±c quan',
-    text: 'Theo dĂµi tĂ²a, phĂ²ng, sá»©c chá»©a, giá»›i tĂ­nh phĂ²ng vĂ  sá»‘ giÆ°á»ng cĂ²n trá»‘ng tá»« nhĂ³m Room & Building.',
+    title: 'Sơ đồ phòng trực quan',
+    text: 'Theo dõi tòa, phòng, sức chứa, giới tính phòng và số giường còn trống từ nhóm Room & Building.',
   },
   {
     icon: 'mdi-tools',
     tone: 'amber',
-    title: 'Sá»± cá»‘ vĂ  báº£o trĂ¬',
-    text: 'LiĂªn thĂ´ng Billing & Maintenance Ä‘á»ƒ theo dĂµi sá»± cá»‘ phĂ²ng á»Ÿ vĂ  cĂ¡c khoáº£n thu phĂ¡t sinh tá»« há»£p Ä‘á»“ng.',
+    title: 'Sự cố và bảo trì',
+    text: 'Liên thông Billing & Maintenance để theo dõi sự cố phòng ở và các khoản thu phát sinh từ hợp đồng.',
   },
 ]
 
@@ -313,33 +313,33 @@ const workflow = [
   {
     index: '01',
     icon: 'mdi-account-plus-outline',
-    title: 'Táº¡o tĂ i khoáº£n sinh viĂªn',
-    text: 'Admin táº¡o há»“ sÆ¡, tĂ i khoáº£n máº·c Ä‘á»‹nh dĂ¹ng mĂ£ sinh viĂªn Ä‘á»ƒ sinh viĂªn Ä‘Äƒng nháº­p láº§n Ä‘áº§u.',
+    title: 'Tạo tài khoản sinh viên',
+    text: 'Admin tạo hồ sơ, tài khoản mặc định dùng mã sinh viên để sinh viên đăng nhập lần đầu.',
   },
   {
     index: '02',
     icon: 'mdi-form-select',
-    title: 'Ná»™p Ä‘Æ¡n ná»™i trĂº',
-    text: 'Sinh viĂªn chá»n nguyá»‡n vá»ng tĂ²a, loáº¡i phĂ²ng, thá»i háº¡n á»Ÿ vĂ  thĂ´ng tin Æ°u tiĂªn.',
+    title: 'Nộp đơn nội trú',
+    text: 'Sinh viên chọn nguyện vọng tòa, loại phòng, thời hạn ở và thông tin ưu tiên.',
   },
   {
     index: '03',
     icon: 'mdi-home-search-outline',
-    title: 'Duyá»‡t vĂ  xáº¿p phĂ²ng',
-    text: 'NhĂ¢n viĂªn kiá»ƒm tra phĂ²ng trá»‘ng, cháº¥p nháº­n nguyá»‡n vá»ng hoáº·c chá»n phĂ²ng thay tháº¿ phĂ¹ há»£p.',
+    title: 'Duyệt và xếp phòng',
+    text: 'Nhân viên kiểm tra phòng trống, chấp nhận nguyện vọng hoặc chọn phòng thay thế phù hợp.',
   },
   {
     index: '04',
     icon: 'mdi-file-check-outline',
-    title: 'KĂ½ há»£p Ä‘á»“ng',
-    text: 'Há»‡ thá»‘ng sinh há»£p Ä‘á»“ng vĂ  gá»­i khoáº£n thu sang BillingService Ä‘á»ƒ hoĂ n táº¥t luá»“ng liĂªn thĂ´ng.',
+    title: 'Ký hợp đồng',
+    text: 'Hệ thống sinh hợp đồng và gửi khoản thu sang BillingService để hoàn tất luồng liên thông.',
   },
 ]
 
 const previewCards = [
-  { value: '486', label: 'Sinh viĂªn', tone: 'orange' },
-  { value: '12', label: 'ÄÆ¡n chá»', tone: 'amber' },
-  { value: '34', label: 'GiÆ°á»ng trá»‘ng', tone: 'orange' },
+  { value: '486', label: 'Sinh viên', tone: 'orange' },
+  { value: '12', label: 'Đơn chờ', tone: 'amber' },
+  { value: '34', label: 'Giường trống', tone: 'orange' },
 ]
 
 const scrollTo = (target) => {
@@ -1443,4 +1443,3 @@ onUnmounted(() => {
   }
 }
 </style>
-
