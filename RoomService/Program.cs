@@ -1350,7 +1350,6 @@ static DormRoom NewSeedRoom(
 {
     return new DormRoom
     {
-        RoomId = roomId,
         RoomNumber = roomNumber,
         BuildingName = buildingName,
         Floor = floor,
