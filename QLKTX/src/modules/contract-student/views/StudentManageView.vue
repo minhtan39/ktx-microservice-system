@@ -135,70 +135,6 @@
         </div>
       </section>
 
-      <aside class="profile-panel">
-        <template v-if="highlightedStudent">
-          <div class="profile-cover">
-            <span class="avatar-badge profile-avatar">{{ initials(highlightedStudent.fullName) }}</span>
-            <div>
-              <span class="page-kicker">Selected Profile</span>
-              <h3>{{ highlightedStudent.fullName }}</h3>
-              <p>{{ highlightedStudent.studentCode }} · {{ highlightedStudent.gender ? 'Nam' : 'Nữ' }}</p>
-            </div>
-          </div>
-
-          <div class="profile-badges">
-            <span class="status-pill" :class="statusClass(highlightedStudent.status)">
-              {{ statusLabel(highlightedStudent.status) }}
-            </span>
-            <span>{{ highlightedStudent.facultyName || 'Chưa cập nhật khoa' }}</span>
-            <span>{{ highlightedStudent.className || 'Chưa cập nhật lớp' }}</span>
-          </div>
-
-          <div class="profile-section">
-            <h4>Liên hệ</h4>
-            <p><span>Số điện thoại</span><strong>{{ highlightedStudent.phone || '-' }}</strong></p>
-            <p><span>Email</span><strong>{{ highlightedStudent.email || '-' }}</strong></p>
-            <p><span>CCCD</span><strong>{{ highlightedStudent.cccd || '-' }}</strong></p>
-          </div>
-
-          <div class="profile-section soft">
-            <h4>Tài khoản sinh viên</h4>
-            <p><span>Tên đăng nhập</span><strong>{{ highlightedStudent.studentCode || '-' }}</strong></p>
-            <p><span>Mật khẩu mặc định</span><strong>{{ highlightedStudent.studentCode || '-' }}</strong></p>
-          </div>
-
-          <div class="residence-box">
-            <span class="mdi mdi-bed-outline"></span>
-            <div>
-              <strong>Lịch sử lưu trú</strong>
-              <p>{{ highlightedStudent.residenceHistory || 'Chưa có lịch sử lưu trú' }}</p>
-            </div>
-          </div>
-
-          <v-btn
-            v-if="currentRoomForStudent(highlightedStudent)"
-            block
-            color="info"
-            variant="tonal"
-            prepend-icon="mdi-cube-scan"
-            @click="openRoomMapperForStudent(highlightedStudent)"
-          >
-            Xem sơ đồ phòng & giường
-          </v-btn>
-
-          <v-btn block color="primary" variant="flat" prepend-icon="mdi-card-account-details-outline" @click="openStudentDetails(highlightedStudent)">
-            Xem hồ sơ đầy đủ
-          </v-btn>
-          <v-btn block color="success" variant="tonal" prepend-icon="mdi-account-edit-outline" @click="openEditDialog(highlightedStudent)">
-            Cập nhật hồ sơ
-          </v-btn>
-        </template>
-        <div v-else class="empty-profile">
-          <span class="mdi mdi-account-outline"></span>
-          <strong>Chưa có hồ sơ để hiển thị</strong>
-          <p>Thêm sinh viên hoặc điều chỉnh bộ lọc để xem chi tiết tại đây.</p>
-        </div>
-      </aside>
     </div>
 
     <v-dialog v-model="createDialog" max-width="980">
@@ -536,7 +472,7 @@ const highlightedStudent = computed(() => {
     return selectedStudent.value
   }
 
-  return paginatedStudents.value[0] || filteredStudents.value[0] || null
+  return null
 })
 
 const selectedStudentFields = computed(() => {
@@ -764,10 +700,6 @@ const openEditDialog = (student) => {
   editDialog.value = true
 }
 
-const selectStudent = (student) => {
-  selectedStudent.value = student
-}
-
 const openStudentDetails = (student) => {
   selectedStudent.value = student
   detailDialog.value = true
@@ -985,14 +917,10 @@ onMounted(loadAll)
 }
 
 .student-workspace {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 380px;
-  gap: 18px;
-  align-items: start;
+  display: block;
 }
 
-.roster-panel,
-.profile-panel {
+.roster-panel {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #ffffff;
@@ -1182,165 +1110,6 @@ onMounted(loadAll)
   color: #ffffff;
 }
 
-.profile-panel {
-  position: sticky;
-  top: 18px;
-  display: grid;
-  gap: 18px;
-  padding: 22px;
-}
-
-.profile-cover {
-  display: grid;
-  grid-template-columns: 68px minmax(0, 1fr);
-  gap: 15px;
-  align-items: center;
-  padding: 18px;
-  border-radius: 8px;
-  background:
-    linear-gradient(135deg, rgba(22, 155, 99, 0.16), transparent 58%),
-    #f7fbf8;
-}
-
-.profile-avatar {
-  width: 68px;
-  height: 68px;
-  font-size: 20px !important;
-}
-
-.profile-cover h3,
-.profile-cover p,
-.profile-section h4,
-.profile-section p,
-.residence-box p {
-  margin: 0;
-}
-
-.profile-cover h3 {
-  overflow: hidden;
-  color: var(--ink);
-  font-family: var(--font-heading);
-  font-size: 22px;
-  line-height: 1.2;
-  text-overflow: ellipsis;
-}
-
-.profile-cover p {
-  margin-top: 6px;
-  color: var(--muted);
-  font-weight: 800;
-}
-
-.profile-badges {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.profile-badges > span:not(.status-pill) {
-  display: inline-flex;
-  align-items: center;
-  min-height: 28px;
-  padding: 0 10px;
-  border-radius: 999px;
-  background: #f3f6f4;
-  color: var(--muted-strong);
-  font-size: 12px;
-  font-weight: 900;
-}
-
-.profile-section {
-  display: grid;
-  gap: 12px;
-  padding: 16px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #ffffff;
-}
-
-.profile-section.soft {
-  background: #fbfdfc;
-}
-
-.profile-section h4 {
-  color: var(--ink);
-  font-family: var(--font-heading);
-  font-size: 15px;
-}
-
-.profile-section p {
-  display: flex;
-  justify-content: space-between;
-  gap: 14px;
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.profile-section strong {
-  max-width: 190px;
-  overflow: hidden;
-  color: var(--ink);
-  text-align: right;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.residence-box {
-  display: grid;
-  grid-template-columns: 42px minmax(0, 1fr);
-  gap: 12px;
-  padding: 16px;
-  border-radius: 8px;
-  background: #0f172a;
-  color: #ffffff;
-}
-
-.residence-box .mdi {
-  display: grid;
-  place-items: center;
-  width: 42px;
-  height: 42px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.1);
-  color: #86efac;
-  font-size: 22px;
-}
-
-.residence-box strong {
-  display: block;
-}
-
-.residence-box p {
-  margin-top: 5px;
-  color: rgba(255, 255, 255, 0.78);
-  font-size: 13px;
-  line-height: 1.45;
-}
-
-.empty-profile {
-  display: grid;
-  place-items: center;
-  min-height: 380px;
-  color: var(--muted);
-  text-align: center;
-}
-
-.empty-profile .mdi {
-  color: var(--brand);
-  font-size: 42px;
-}
-
-.empty-profile strong {
-  margin-top: 8px;
-  color: var(--ink);
-}
-
-.empty-profile p {
-  max-width: 260px;
-  margin: 6px 0 0;
-  line-height: 1.45;
-}
-
 .dialog-card {
   background: #ffffff;
 }
@@ -1425,13 +1194,8 @@ onMounted(loadAll)
 }
 
 @media (max-width: 980px) {
-  .student-hero,
-  .student-workspace {
+  .student-hero {
     grid-template-columns: 1fr;
-  }
-
-  .profile-panel {
-    position: static;
   }
 }
 
