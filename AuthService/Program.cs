@@ -204,8 +204,7 @@ app.MapPost("/api/auth/forgot-password", async (
         return Results.Ok(new { message = genericMessage });
 
     var contact = await TryResolveStudentContactAsync(
-        account.StudentId,
-        account.StudentCode ?? studentCode,
+        account,
         httpClientFactory);
 
     if (contact == null || string.IsNullOrWhiteSpace(contact.Email))
@@ -357,6 +356,8 @@ app.MapPost("/api/auth/student-accounts", (
         request.FullName.Trim(),
         request.StudentId,
         studentCode,
+        Email: request.Email?.Trim(),
+        Phone: request.Phone?.Trim(),
         AccountStatus: "Pending",
         PasswordChangedAt: null,
         MustChangePassword: true);
@@ -431,8 +432,7 @@ app.MapPost("/api/auth/accounts/{username}/access-link", async (
     if (account.Role.Equals("Student", StringComparison.OrdinalIgnoreCase))
     {
         var contact = await TryResolveStudentContactAsync(
-            account.StudentId,
-            account.StudentCode ?? account.Username,
+            account,
             httpClientFactory);
 
         if (contact != null)
@@ -1014,6 +1014,8 @@ static async Task SynchronizeStudentAccountsAsync(
                 string.IsNullOrWhiteSpace(fullName) ? studentCode : fullName,
                 GetInt64(student, "id"),
                 studentCode,
+                Email: GetString(student, "email"),
+                Phone: GetString(student, "phone"),
                 AccountStatus: "Pending",
                 PasswordChangedAt: null,
                 MustChangePassword: true));
@@ -1036,8 +1038,7 @@ static async Task SynchronizeStudentAccountsAsync(
 }
 
 static async Task<StudentContact?> TryResolveStudentContactAsync(
-    long? studentId,
-    string studentCode,
+    AccountUser account,
     IHttpClientFactory httpClientFactory)
 {
     try
@@ -1055,13 +1056,23 @@ static async Task<StudentContact?> TryResolveStudentContactAsync(
         if (students.ValueKind != JsonValueKind.Array)
             return null;
 
+        var candidateCodes = new[]
+            {
+                account.StudentCode,
+                account.Username
+            }
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value!.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
         foreach (var student in students.EnumerateArray())
         {
             var id = GetInt64(student, "id");
             var code = GetString(student, "studentCode");
 
-            if ((studentId.HasValue && studentId.Value > 0 && id == studentId.Value) ||
-                studentCode.Equals(code, StringComparison.OrdinalIgnoreCase))
+            if ((account.StudentId.HasValue && account.StudentId.Value > 0 && id == account.StudentId.Value) ||
+                candidateCodes.Any(candidate => candidate.Equals(code, StringComparison.OrdinalIgnoreCase)))
             {
                 return new StudentContact(
                     GetString(student, "email"),
@@ -1103,7 +1114,7 @@ static JsonElement TryGetStudentArray(JsonElement root)
 
 static string GetString(JsonElement element, string propertyName)
 {
-    return element.TryGetProperty(propertyName, out var property) &&
+    return TryGetProperty(element, propertyName, out var property) &&
         property.ValueKind == JsonValueKind.String
             ? property.GetString() ?? string.Empty
             : string.Empty;
@@ -1111,10 +1122,28 @@ static string GetString(JsonElement element, string propertyName)
 
 static long GetInt64(JsonElement element, string propertyName)
 {
-    return element.TryGetProperty(propertyName, out var property) &&
+    return TryGetProperty(element, propertyName, out var property) &&
         property.TryGetInt64(out var value)
             ? value
             : 0;
+}
+
+static bool TryGetProperty(JsonElement element, string propertyName, out JsonElement property)
+{
+    if (element.TryGetProperty(propertyName, out property))
+        return true;
+
+    foreach (var item in element.EnumerateObject())
+    {
+        if (item.Name.Equals(propertyName, StringComparison.OrdinalIgnoreCase))
+        {
+            property = item.Value;
+            return true;
+        }
+    }
+
+    property = default;
+    return false;
 }
 
 public sealed record LoginRequest(string Username, string Password);
@@ -1132,7 +1161,9 @@ public sealed record ResetPasswordRequest(
 public sealed record StudentAccountRequest(
     long StudentId,
     string StudentCode,
-    string FullName);
+    string FullName,
+    string? Email = null,
+    string? Phone = null);
 
 public sealed record UpdateAccountRequest(
     string? Username,

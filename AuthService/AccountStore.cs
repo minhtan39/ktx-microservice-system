@@ -110,15 +110,45 @@ public sealed class AccountStore
 
             foreach (var student in students)
             {
-                var alreadyExists = Users.Values.Any(user =>
+                var existing = Users.Values.FirstOrDefault(user =>
                     user.Role.Equals("Student", StringComparison.OrdinalIgnoreCase) &&
                     ((student.StudentId.HasValue && user.StudentId == student.StudentId) ||
-                     (!string.IsNullOrWhiteSpace(student.StudentCode) &&
-                      user.StudentCode?.Equals(
-                          student.StudentCode,
-                          StringComparison.OrdinalIgnoreCase) == true)));
+                      (!string.IsNullOrWhiteSpace(student.StudentCode) &&
+                       user.StudentCode?.Equals(
+                           student.StudentCode,
+                           StringComparison.OrdinalIgnoreCase) == true) ||
+                      user.Username.Equals(student.Username, StringComparison.OrdinalIgnoreCase)));
 
-                if (alreadyExists || Users.ContainsKey(student.Username))
+                if (existing != null)
+                {
+                    var enriched = existing with
+                    {
+                        StudentId = existing.StudentId ?? student.StudentId,
+                        StudentCode = string.IsNullOrWhiteSpace(existing.StudentCode)
+                            ? student.StudentCode
+                            : existing.StudentCode,
+                        FullName = string.IsNullOrWhiteSpace(student.FullName) ||
+                            student.FullName.Equals(student.Username, StringComparison.OrdinalIgnoreCase)
+                                ? existing.FullName
+                                : student.FullName,
+                        Email = string.IsNullOrWhiteSpace(student.Email)
+                            ? existing.Email
+                            : student.Email,
+                        Phone = string.IsNullOrWhiteSpace(student.Phone)
+                            ? existing.Phone
+                            : student.Phone
+                    };
+
+                    if (!Equals(existing, enriched))
+                    {
+                        Users[existing.Username] = enriched;
+                        changed = true;
+                    }
+
+                    continue;
+                }
+
+                if (Users.ContainsKey(student.Username))
                     continue;
 
                 Users[student.Username] = student;

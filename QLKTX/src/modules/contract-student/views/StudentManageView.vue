@@ -614,6 +614,8 @@ const createStudent = async () => {
         studentId: createdStudent.id,
         studentCode: createdStudent.studentCode || payload.studentCode,
         fullName: createdStudent.fullName || payload.fullName,
+        email: createdStudent.email || payload.email,
+        phone: createdStudent.phone || payload.phone,
       })
 
       const accountUsername = accountResponse.data?.data?.username || payload.studentCode

@@ -45,7 +45,7 @@
           <div class="cell-stack"><strong>{{ item.username }}</strong><small>{{ item.employeeCode || item.studentCode || '-' }}</small></div>
         </template>
         <template #item.profile="{ item }">
-          <div class="cell-stack"><strong>{{ item.fullName }}</strong><small>{{ item.department || item.email || 'Chưa cập nhật hồ sơ' }}</small></div>
+          <div class="cell-stack"><strong>{{ item.fullName }}</strong><small>{{ profileHint(item) }}</small></div>
         </template>
         <template #item.role="{ item }"><span :class="['role-pill', item.role.toLowerCase()]">{{ roleLabel(item.role) }}</span></template>
         <template #item.accountStatus="{ item }"><span :class="['status-pill', String(item.accountStatus || 'Active').toLowerCase()]">{{ statusLabel(item.accountStatus) }}</span></template>
@@ -189,7 +189,7 @@ const normalizeList = (data) => Array.isArray(data) ? data : data?.data || []
 const isLocked = (account) => (account?.accountStatus || 'Active') === 'Locked'
 
 const loadAccounts = async () => { try { loading.value = true; error.value = ''; accounts.value = normalizeList((await api.get('/auth/accounts')).data) } catch (err) { error.value = 'Không tải được danh sách tài khoản.'; console.error(err) } finally { loading.value = false } }
-const filteredAccounts = computed(() => { const keyword = search.value.trim().toLowerCase(); return accounts.value.filter((item) => (roleFilter.value === 'All' || item.role === roleFilter.value) && (statusFilter.value === 'All' || (item.accountStatus || 'Active') === statusFilter.value) && (!keyword || [item.username, item.fullName, item.employeeCode, item.studentCode, item.department].join(' ').toLowerCase().includes(keyword))) })
+const filteredAccounts = computed(() => { const keyword = search.value.trim().toLowerCase(); return accounts.value.filter((item) => (roleFilter.value === 'All' || item.role === roleFilter.value) && (statusFilter.value === 'All' || (item.accountStatus || 'Active') === statusFilter.value) && (!keyword || [item.username, item.fullName, item.employeeCode, item.studentCode, item.department, item.email].join(' ').toLowerCase().includes(keyword))) })
 const accountMetrics = computed(() => [
   { icon: 'mdi-account-group-outline', value: accounts.value.length, label: 'Tổng tài khoản' },
   { icon: 'mdi-account-hard-hat-outline', value: accounts.value.filter((item) => item.role === 'Staff').length, label: 'Nhân viên vận hành' },
@@ -284,6 +284,7 @@ const exportAccounts = () => {
       { header: 'Tên đăng nhập', value: (account) => account.username },
       { header: 'Vai trò', value: (account) => roleLabel(account.role) },
       { header: 'Họ tên', value: (account) => account.fullName || '-' },
+      { header: 'Email', value: (account) => account.email || '-' },
       { header: 'Mã nhân viên', value: (account) => account.employeeCode || '-' },
       { header: 'Mã sinh viên', value: (account) => account.studentCode || '-' },
       { header: 'Bộ phận', value: (account) => account.department || '-' },
@@ -297,6 +298,10 @@ const exportAccounts = () => {
 
 const roleLabel = (role) => role === 'Staff' ? 'Nhân viên' : role === 'Student' ? 'Sinh viên' : role
 const statusLabel = (status) => ({ Active: 'Đang hoạt động', Pending: 'Chờ kích hoạt', Locked: 'Tạm khóa', Inactive: 'Ngừng hoạt động' }[status || 'Active'])
+const profileHint = (account) => {
+  const details = [account.department, account.email].filter(Boolean)
+  return details.length ? details.join(' · ') : 'Chưa cập nhật hồ sơ'
+}
 const securityLabel = (account) => ({
   PendingActivation: 'Chờ kích hoạt',
   NeedsPasswordSetup: 'Cần đặt mật khẩu',
