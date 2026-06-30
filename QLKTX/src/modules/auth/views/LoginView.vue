@@ -80,7 +80,7 @@
 <script setup>
 import { reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import api from '@/services/api'
+import api, { recordAuditLog } from '@/services/api'
 import { defaultHomeForRole } from '@/utils/auth'
 
 const router = useRouter()
@@ -139,6 +139,20 @@ const login = async () => {
     } else {
       localStorage.removeItem('student_code')
     }
+
+    recordAuditLog({
+      module: 'AuthService',
+      action: 'Đăng nhập',
+      status: 'Success',
+      targetType: 'Account',
+      targetId: payload.username || form.username,
+      targetName: payload.fullName || payload.username || form.username,
+      description: `${payload.fullName || payload.username || form.username} đăng nhập vào hệ thống.`,
+      metadata: {
+        role,
+        homePath,
+      },
+    }).catch(() => {})
 
     await router.push(homePath)
   } catch (err) {

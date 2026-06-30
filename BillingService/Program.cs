@@ -64,6 +64,76 @@ app.MapGet("/health", (BillingStore store, PaymentQrBuilder qrBuilder, BillingEm
         paymentQrConfigured = qrBuilder.IsConfigured
     }));
 
+app.MapGet("/api/system/logs", (
+    string? module,
+    string? status,
+    string? actor,
+    string? role,
+    string? action,
+    DateTime? from,
+    DateTime? to,
+    int? take,
+    HttpRequest httpRequest,
+    BillingStore store) =>
+    GetSystemLogs(module, status, actor, role, action, from, to, take, httpRequest, store));
+
+app.MapGet("/api/billing/management/system-logs", (
+    string? module,
+    string? status,
+    string? actor,
+    string? role,
+    string? action,
+    DateTime? from,
+    DateTime? to,
+    int? take,
+    HttpRequest httpRequest,
+    BillingStore store) =>
+    GetSystemLogs(module, status, actor, role, action, from, to, take, httpRequest, store));
+
+app.MapGet("/api/system/logs/statistics", (HttpRequest httpRequest, BillingStore store) =>
+{
+    var identity = GetRequestIdentity(httpRequest);
+    if (!identity.IsAdmin)
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+    var today = DateTime.UtcNow.Date;
+    var logs = store.Read(data => data.SystemAuditLogs.ToList());
+    var topActor = logs
+        .Where(item => !string.IsNullOrWhiteSpace(item.ActorName))
+        .GroupBy(item => item.ActorName)
+        .OrderByDescending(group => group.Count())
+        .Select(group => new { name = group.Key, count = group.Count() })
+        .FirstOrDefault();
+    var modules = logs
+        .GroupBy(item => string.IsNullOrWhiteSpace(item.Module) ? "Khác" : item.Module)
+        .OrderByDescending(group => group.Count())
+        .Select(group => new { module = group.Key, count = group.Count() })
+        .ToList();
+
+    return Results.Ok(new
+    {
+        total = logs.Count,
+        today = logs.Count(item => item.CreatedAt >= today),
+        failures = logs.Count(item => item.Status.Equals("Failed", StringComparison.OrdinalIgnoreCase)),
+        warnings = logs.Count(item => item.Status.Equals("Warning", StringComparison.OrdinalIgnoreCase)),
+        sensitive = logs.Count(IsSensitiveAuditLog),
+        topActor,
+        modules
+    });
+});
+
+app.MapPost("/api/system/logs", (
+    CreateSystemAuditLogRequest request,
+    HttpRequest httpRequest,
+    BillingStore store) =>
+{
+    var identity = GetRequestIdentity(httpRequest);
+    if (identity.Username.Equals("anonymous", StringComparison.OrdinalIgnoreCase))
+        return Results.Unauthorized();
+
+    return Results.Ok(AddSystemAuditLog(store, httpRequest, identity, request));
+});
+
 app.MapGet("/api/billing/contracts", (BillingStore store) =>
     Results.Ok(store.Read(data => data.ContractItems.ToList())));
 
@@ -1551,6 +1621,137 @@ app.MapMethods(
     });
 
 app.Run();
+
+static IResult GetSystemLogs(
+    string? module,
+    string? status,
+    string? actor,
+    string? role,
+    string? action,
+    DateTime? from,
+    DateTime? to,
+    int? take,
+    HttpRequest httpRequest,
+    BillingStore store)
+{
+    var identity = GetRequestIdentity(httpRequest);
+    if (!identity.IsAdmin)
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+    var limit = Math.Clamp(take ?? 250, 1, 1000);
+    var fromDate = from?.Date;
+    var toExclusive = to?.Date.AddDays(1);
+    var rows = store.Read(data => data.SystemAuditLogs
+        .Where(item => string.IsNullOrWhiteSpace(module) ||
+            item.Module.Equals(module, StringComparison.OrdinalIgnoreCase))
+        .Where(item => string.IsNullOrWhiteSpace(status) ||
+            item.Status.Equals(status, StringComparison.OrdinalIgnoreCase))
+        .Where(item => string.IsNullOrWhiteSpace(role) ||
+            item.ActorRole.Equals(role, StringComparison.OrdinalIgnoreCase))
+        .Where(item => string.IsNullOrWhiteSpace(action) ||
+            item.Action.Contains(action, StringComparison.OrdinalIgnoreCase))
+        .Where(item => string.IsNullOrWhiteSpace(actor) ||
+            item.ActorName.Contains(actor, StringComparison.OrdinalIgnoreCase) ||
+            item.ActorId.Contains(actor, StringComparison.OrdinalIgnoreCase))
+        .Where(item => !fromDate.HasValue || item.CreatedAt >= fromDate.Value)
+        .Where(item => !toExclusive.HasValue || item.CreatedAt < toExclusive.Value)
+        .OrderByDescending(item => item.CreatedAt)
+        .Take(limit)
+        .ToList());
+
+    return Results.Ok(rows);
+}
+
+static SystemAuditLog AddSystemAuditLog(
+    BillingStore store,
+    HttpRequest request,
+    RequestIdentity identity,
+    CreateSystemAuditLogRequest auditRequest)
+{
+    return store.Write(data =>
+    {
+        var nextId = data.SystemAuditLogs.Count == 0
+            ? 1
+            : data.SystemAuditLogs.Max(item => item.Id) + 1;
+        var metadataJson = auditRequest.Metadata.HasValue &&
+            auditRequest.Metadata.Value.ValueKind is not JsonValueKind.Null and not JsonValueKind.Undefined
+            ? auditRequest.Metadata.Value.GetRawText()
+            : string.Empty;
+        var actorName = string.IsNullOrWhiteSpace(identity.Username)
+            ? "anonymous"
+            : identity.Username.Trim();
+        var log = new SystemAuditLog
+        {
+            Id = nextId,
+            CreatedAt = DateTime.UtcNow,
+            ActorId = actorName,
+            ActorName = actorName,
+            ActorRole = string.IsNullOrWhiteSpace(identity.Role) ? "User" : identity.Role.Trim(),
+            Module = CleanAuditText(auditRequest.Module, "Hệ thống"),
+            Action = CleanAuditText(auditRequest.Action, "Thao tác hệ thống"),
+            Status = NormalizeAuditStatus(auditRequest.Status),
+            TargetType = CleanAuditText(auditRequest.TargetType, string.Empty),
+            TargetId = CleanAuditText(auditRequest.TargetId, string.Empty),
+            TargetName = CleanAuditText(auditRequest.TargetName, string.Empty),
+            Description = CleanAuditText(auditRequest.Description, "Người dùng thực hiện thao tác trên hệ thống."),
+            IpAddress = ResolveClientIp(request),
+            UserAgent = request.Headers["User-Agent"].ToString(),
+            MetadataJson = metadataJson
+        };
+
+        data.SystemAuditLogs.Add(log);
+
+        if (data.SystemAuditLogs.Count > 5000)
+        {
+            data.SystemAuditLogs = data.SystemAuditLogs
+                .OrderByDescending(item => item.CreatedAt)
+                .Take(5000)
+                .OrderBy(item => item.Id)
+                .ToList();
+        }
+
+        return log;
+    });
+}
+
+static string CleanAuditText(string? value, string fallback)
+{
+    var text = string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
+    return text.Length <= 500 ? text : text[..500];
+}
+
+static string NormalizeAuditStatus(string? status)
+{
+    var normalized = (status ?? "Success").Trim().ToLowerInvariant();
+    return normalized switch
+    {
+        "failed" or "fail" or "error" or "thất bại" => "Failed",
+        "warning" or "warn" or "cảnh báo" => "Warning",
+        _ => "Success"
+    };
+}
+
+static bool IsSensitiveAuditLog(SystemAuditLog log)
+{
+    var text = $"{log.Module} {log.Action} {log.TargetType} {log.Description}";
+    return text.Contains("mật khẩu", StringComparison.OrdinalIgnoreCase) ||
+        text.Contains("password", StringComparison.OrdinalIgnoreCase) ||
+        text.Contains("khóa", StringComparison.OrdinalIgnoreCase) ||
+        text.Contains("tài khoản", StringComparison.OrdinalIgnoreCase) ||
+        text.Contains("thanh toán", StringComparison.OrdinalIgnoreCase) ||
+        text.Contains("phân công", StringComparison.OrdinalIgnoreCase) ||
+        text.Contains("hợp đồng", StringComparison.OrdinalIgnoreCase) ||
+        text.Contains("webhook", StringComparison.OrdinalIgnoreCase);
+}
+
+static string ResolveClientIp(HttpRequest request)
+{
+    var forwardedFor = request.Headers["X-Forwarded-For"].FirstOrDefault();
+    if (!string.IsNullOrWhiteSpace(forwardedFor))
+        return forwardedFor.Split(',')[0].Trim();
+
+    return request.HttpContext.Connection.RemoteIpAddress?.ToString() ?? string.Empty;
+}
 
 static RoomPreviewBuildResult BuildRoomInvoicePreview(CreateRoomMonthlyInvoicesRequest request)
 {

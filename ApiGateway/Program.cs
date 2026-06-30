@@ -258,6 +258,9 @@ static bool IsAuthorizedForPath(
         return true;
     }
 
+    if (normalized == "system/logs")
+        return isPost;
+
     return normalized.StartsWith("incidents/") &&
         isPost &&
         (normalized.EndsWith("/confirm") ||
@@ -286,7 +289,7 @@ static string ResolveServiceKey(string path)
     {
         "auth" => "AuthService",
         "buildings" or "rooms" or "roomtypes" or "room-types" => "RoomService",
-        "bills" or "billing" or "maintenance" or "incidents" or "notifications" => "BillingService",
+        "bills" or "billing" or "maintenance" or "incidents" or "notifications" or "system" => "BillingService",
         "students" or "registrations" or "roomregistration" or "contracts"
             or "contract" or "dashboard" or "checkhistory" => "ContractStudentService",
         _ => "ContractStudentService"

@@ -27,6 +27,12 @@ public sealed class BillingStore
             _data.MaintenancePlans = SeedMaintenancePlans();
             SaveUnsafe();
         }
+
+        if (_data.SystemAuditLogs.Count == 0)
+        {
+            _data.SystemAuditLogs = SeedSystemAuditLogs();
+            SaveUnsafe();
+        }
     }
 
     public T Read<T>(Func<BillingData, T> reader)
@@ -134,6 +140,42 @@ public sealed class BillingStore
             AssignedName = "Nhân viên ký túc xá",
             Checklist = ["Kiểm tra niêm phong", "Kiểm tra áp suất", "Ghi nhận hạn sử dụng"],
             CreatedAt = DateTime.UtcNow.AddDays(-10)
+        }
+    ];
+
+    private static List<SystemAuditLog> SeedSystemAuditLogs() =>
+    [
+        new()
+        {
+            Id = 1,
+            CreatedAt = DateTime.UtcNow.AddHours(-5),
+            ActorId = "system",
+            ActorName = "Hệ thống",
+            ActorRole = "System",
+            Module = "BillingService",
+            Action = "Khởi tạo dữ liệu",
+            Status = "Success",
+            TargetType = "BillingData",
+            TargetId = "seed",
+            TargetName = "Dữ liệu demo",
+            Description = "Tạo dữ liệu mẫu cho hóa đơn, ví sinh viên, sửa chữa và bảo trì.",
+            MetadataJson = "{\"source\":\"seed\"}"
+        },
+        new()
+        {
+            Id = 2,
+            CreatedAt = DateTime.UtcNow.AddHours(-3),
+            ActorId = "admin",
+            ActorName = "Quản trị hệ thống",
+            ActorRole = "Admin",
+            Module = "Sửa chữa & bảo trì",
+            Action = "Theo dõi yêu cầu",
+            Status = "Success",
+            TargetType = "MaintenanceIncident",
+            TargetId = "1",
+            TargetName = "Yêu cầu sửa chữa phòng 101",
+            Description = "Admin mở trung tâm vận hành sửa chữa để kiểm tra các yêu cầu đang chờ xử lý.",
+            MetadataJson = "{\"priority\":\"high\"}"
         }
     ];
 }

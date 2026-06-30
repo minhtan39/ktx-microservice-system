@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 public sealed class BillingData
 {
     public List<BillingItem> ContractItems { get; set; } = [];
@@ -10,7 +12,37 @@ public sealed class BillingData
     public List<MaintenancePlan> MaintenancePlans { get; set; } = [];
     public List<SystemNotification> SystemNotifications { get; set; } = [];
     public List<SystemNotificationRead> SystemNotificationReads { get; set; } = [];
+    public List<SystemAuditLog> SystemAuditLogs { get; set; } = [];
 }
+
+public sealed class SystemAuditLog
+{
+    public long Id { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public string ActorId { get; set; } = string.Empty;
+    public string ActorName { get; set; } = string.Empty;
+    public string ActorRole { get; set; } = string.Empty;
+    public string Module { get; set; } = string.Empty;
+    public string Action { get; set; } = string.Empty;
+    public string Status { get; set; } = "Success";
+    public string TargetType { get; set; } = string.Empty;
+    public string TargetId { get; set; } = string.Empty;
+    public string TargetName { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+    public string IpAddress { get; set; } = string.Empty;
+    public string UserAgent { get; set; } = string.Empty;
+    public string MetadataJson { get; set; } = string.Empty;
+}
+
+public sealed record CreateSystemAuditLogRequest(
+    string? Module,
+    string? Action,
+    string? Status,
+    string? TargetType,
+    string? TargetId,
+    string? TargetName,
+    string? Description,
+    JsonElement? Metadata = null);
 
 public sealed record ContractBillingRequest(
     long ContractId,
