@@ -49,12 +49,16 @@ services:
       context: ./RoomService
     container_name: ktx-room-service
     restart: unless-stopped
+    depends_on:
+      sqlserver:
+        condition: service_healthy
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_URLS: "http://+:8080"
-      RoomData__FilePath: "/app/data/room-data.json"
-    volumes:
-      - room-data:/app/data
+      ConnectionStrings__DefaultConnection: "Server=sqlserver,1433;Database=SmartDormitory_RoomBuildingDB;User Id=sa;Password=${SQL_SA_PASSWORD:?Set SQL_SA_PASSWORD in .env};TrustServerCertificate=True;Encrypt=False"
+      Database__Provider: "SqlServer"
+      Database__AutoCreate: "true"
+      Database__FallbackToInMemory: "false"
 
   billing-service:
     build:
@@ -153,5 +157,4 @@ volumes:
   sqlserver-data:
   auth-data:
   billing-data:
-  room-data:
   contract-files:

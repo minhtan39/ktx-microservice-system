@@ -1,4 +1,5 @@
-using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Data.SqlClient;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -14,6 +15,25 @@ builder.Services.AddCors(options =>
 
 builder.Services.AddOpenApi();
 
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
+    ?? "Server=localhost,1433;Database=SmartDormitory_RoomBuildingDB;User Id=sa;Password=KtxServer@2026Demo!;TrustServerCertificate=True;Encrypt=False";
+
+var configuredProvider = builder.Configuration["Database:Provider"];
+var fallbackToInMemory = builder.Configuration.GetValue("Database:FallbackToInMemory", builder.Environment.IsDevelopment());
+var useInMemoryDatabase =
+    string.Equals(configuredProvider, "InMemory", StringComparison.OrdinalIgnoreCase) ||
+    (fallbackToInMemory && !CanOpenSqlServer(connectionString));
+var databaseProvider = useInMemoryDatabase ? "InMemoryLocalDemo" : "SqlServer";
+
+builder.Services.AddSingleton(new RoomDatabaseRuntime(databaseProvider));
+builder.Services.AddDbContext<RoomBuildingDbContext>(options =>
+{
+    if (useInMemoryDatabase)
+        options.UseInMemoryDatabase("SmartDormitory_RoomBuildingDB");
+    else
+        options.UseSqlServer(connectionString);
+});
+
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
@@ -23,839 +43,918 @@ if (app.Environment.IsDevelopment())
 
 app.UseCors("AllowGateway");
 
-var roomDataFilePath = app.Configuration["RoomData:FilePath"]
-    ?? Path.Combine(app.Environment.ContentRootPath, "data", "room-data.json");
-var roomStore = LoadRoomState(roomDataFilePath);
-var buildings = roomStore.Buildings;
-var roomTypes = roomStore.RoomTypes;
-var rooms = roomStore.Rooms;
-var roomLock = new object();
-
-app.MapGet("/health", () => Results.Ok(new
+if (app.Configuration.GetValue("Database:AutoCreate", true))
 {
-    service = "RoomService",
-    status = "Healthy"
-}));
+    using var scope = app.Services.CreateScope();
+    var db = scope.ServiceProvider.GetRequiredService<RoomBuildingDbContext>();
+    await db.Database.EnsureCreatedAsync();
 
-app.MapGet("/api/buildings", () =>
+    if (!useInMemoryDatabase)
+        await EnsureRoomBuildingSchemaAsync(db);
+
+    await SeedRoomBuildingDataAsync(db);
+}
+
+app.MapGet("/health", async (
+    RoomBuildingDbContext db,
+    RoomDatabaseRuntime runtime) =>
 {
-    lock (roomLock)
+    var databaseReady = false;
+
+    try
     {
-        return Results.Ok(BuildingResponses(buildings, rooms));
+        databaseReady = await db.Database.CanConnectAsync();
     }
+    catch
+    {
+        databaseReady = false;
+    }
+
+    return Results.Ok(new
+    {
+        service = "RoomService",
+        status = databaseReady ? "Healthy" : "Degraded",
+        database = databaseReady
+            ? $"RoomBuildingDB ready ({runtime.Provider})"
+            : $"RoomBuildingDB unavailable ({runtime.Provider})"
+    });
 });
 
-app.MapGet("/api/buildings/{buildingName}", (string buildingName) =>
+app.MapGet("/api/buildings", async (RoomBuildingDbContext db) =>
 {
-    lock (roomLock)
-    {
-        var building = FindBuilding(buildings, buildingName);
+    var buildings = await LoadBuildingsAsync(db);
+    var rooms = await LoadRoomsAsync(db);
 
-        return building == null
-            ? Results.NotFound(new { message = "Building not found." })
-            : Results.Ok(BuildingResponse.FromBuilding(building, rooms));
-    }
+    return Results.Ok(BuildingResponses(buildings, rooms));
 });
 
-app.MapPost("/api/buildings", (BuildingRequest request) =>
-{
-    lock (roomLock)
-    {
-        var normalizedName = NormalizeCode(request.BuildingName);
-
-        if (string.IsNullOrWhiteSpace(normalizedName))
-            return Results.BadRequest(new { message = "BuildingName is required." });
-
-        if (buildings.Any(item => IsSameCode(item.BuildingName, normalizedName)))
-            return Results.BadRequest(new { message = "Building already exists." });
-
-        if (request.Floors <= 0)
-            return Results.BadRequest(new { message = "Floors must be greater than zero." });
-
-        var building = new DormBuilding(
-            normalizedName,
-            CleanOrDefault(request.DisplayName, $"Tòa {normalizedName}"),
-            request.Floors,
-            request.Description?.Trim() ?? string.Empty);
-
-        buildings.Add(building);
-        SaveRoomState(roomDataFilePath, buildings, roomTypes, rooms);
-
-        return Results.Created(
-            $"/api/buildings/{building.BuildingName}",
-            BuildingResponse.FromBuilding(building, rooms));
-    }
-});
-
-app.MapPut("/api/buildings/{buildingName}", (
+app.MapGet("/api/buildings/{buildingName}", async (
     string buildingName,
-    BuildingRequest request) =>
+    RoomBuildingDbContext db) =>
 {
-    lock (roomLock)
-    {
-        var building = FindBuilding(buildings, buildingName);
+    var building = await FindBuildingAsync(db, buildingName);
 
-        if (building == null)
-            return Results.NotFound(new { message = "Building not found." });
+    if (building == null)
+        return Results.NotFound(new { message = "Building not found." });
 
-        if (request.Floors <= 0)
-            return Results.BadRequest(new { message = "Floors must be greater than zero." });
+    var rooms = await LoadRoomsAsync(db);
 
-        var maxUsedFloor = rooms
-            .Where(room => IsSameCode(room.BuildingName, building.BuildingName))
-            .Select(room => room.Floor)
-            .DefaultIfEmpty(0)
-            .Max();
-
-        if (request.Floors < maxUsedFloor)
-        {
-            return Results.BadRequest(new
-            {
-                message = "Building floors cannot be lower than existing room floors.",
-                maxUsedFloor
-            });
-        }
-
-        building.DisplayName = CleanOrDefault(request.DisplayName, $"Tòa {building.BuildingName}");
-        building.Floors = request.Floors;
-        building.Description = request.Description?.Trim() ?? string.Empty;
-        SaveRoomState(roomDataFilePath, buildings, roomTypes, rooms);
-
-        return Results.Ok(BuildingResponse.FromBuilding(building, rooms));
-    }
+    return Results.Ok(BuildingResponse.FromBuilding(building, rooms));
 });
 
-app.MapDelete("/api/buildings/{buildingName}", (string buildingName) =>
+app.MapPost("/api/buildings", async (
+    BuildingRequest request,
+    RoomBuildingDbContext db) =>
 {
-    lock (roomLock)
+    var normalizedName = NormalizeCode(request.BuildingName);
+
+    if (string.IsNullOrWhiteSpace(normalizedName))
+        return Results.BadRequest(new { message = "BuildingName is required." });
+
+    if (await db.Buildings.AnyAsync(item => item.BuildingName == normalizedName))
+        return Results.BadRequest(new { message = "Building already exists." });
+
+    if (request.Floors <= 0)
+        return Results.BadRequest(new { message = "Floors must be greater than zero." });
+
+    var building = new DormBuilding
     {
-        var building = FindBuilding(buildings, buildingName);
+        BuildingName = normalizedName,
+        DisplayName = CleanOrDefault(request.DisplayName, $"Tòa {normalizedName}"),
+        Floors = request.Floors,
+        Description = request.Description?.Trim() ?? string.Empty
+    };
 
-        if (building == null)
-            return Results.NotFound(new { message = "Building not found." });
+    db.Buildings.Add(building);
+    await db.SaveChangesAsync();
 
-        if (rooms.Any(room => IsSameCode(room.BuildingName, building.BuildingName)))
-            return Results.BadRequest(new { message = "Cannot delete a building that still has rooms." });
+    var rooms = await LoadRoomsAsync(db);
 
-        buildings.Remove(building);
-        SaveRoomState(roomDataFilePath, buildings, roomTypes, rooms);
-
-        return Results.NoContent();
-    }
+    return Results.Created(
+        $"/api/buildings/{building.BuildingName}",
+        BuildingResponse.FromBuilding(building, rooms));
 });
 
-app.MapGet("/api/roomtypes", () => GetRoomTypes());
-app.MapGet("/api/room-types", () => GetRoomTypes());
-
-IResult GetRoomTypes()
+app.MapPut("/api/buildings/{buildingName}", async (
+    string buildingName,
+    BuildingRequest request,
+    RoomBuildingDbContext db) =>
 {
-    lock (roomLock)
+    var building = await FindBuildingAsync(db, buildingName, tracking: true);
+
+    if (building == null)
+        return Results.NotFound(new { message = "Building not found." });
+
+    if (request.Floors <= 0)
+        return Results.BadRequest(new { message = "Floors must be greater than zero." });
+
+    var rooms = await LoadRoomsAsync(db);
+    var maxUsedFloor = rooms
+        .Where(room => IsSameCode(room.BuildingName, building.BuildingName))
+        .Select(room => room.Floor)
+        .DefaultIfEmpty(0)
+        .Max();
+
+    if (request.Floors < maxUsedFloor)
     {
-        return Results.Ok(RoomTypeResponses(roomTypes, rooms));
-    }
-}
-
-app.MapGet("/api/roomtypes/{roomType}", (string roomType) => GetRoomType(roomType));
-app.MapGet("/api/room-types/{roomType}", (string roomType) => GetRoomType(roomType));
-
-IResult GetRoomType(string roomType)
-{
-    lock (roomLock)
-    {
-        var existing = FindRoomType(roomTypes, roomType);
-
-        return existing == null
-            ? Results.NotFound(new { message = "Room type not found." })
-            : Results.Ok(RoomTypeResponse.FromRoomType(existing, rooms));
-    }
-}
-
-app.MapPost("/api/roomtypes", (RoomTypeRequest request) => CreateRoomType(request));
-app.MapPost("/api/room-types", (RoomTypeRequest request) => CreateRoomType(request));
-
-IResult CreateRoomType(RoomTypeRequest request)
-{
-    lock (roomLock)
-    {
-        var normalizedType = NormalizeRoomType(request.RoomType);
-
-        if (string.IsNullOrWhiteSpace(normalizedType))
-            return Results.BadRequest(new { message = "RoomType is required." });
-
-        if (roomTypes.Any(item => IsSameCode(item.RoomType, normalizedType)))
-            return Results.BadRequest(new { message = "Room type already exists." });
-
-        if (request.Capacity <= 0)
-            return Results.BadRequest(new { message = "Capacity must be greater than zero." });
-
-        if (request.MonthlyFee < 0)
-            return Results.BadRequest(new { message = "MonthlyFee cannot be negative." });
-
-        var roomType = new DormRoomType(
-            normalizedType,
-            request.Capacity,
-            request.MonthlyFee,
-            request.Description?.Trim() ?? string.Empty,
-            request.Amenities?.Trim() ?? DefaultAmenities(normalizedType));
-
-        roomTypes.Add(roomType);
-        SaveRoomState(roomDataFilePath, buildings, roomTypes, rooms);
-
-        return Results.Created(
-            $"/api/room-types/{Uri.EscapeDataString(roomType.RoomType)}",
-            RoomTypeResponse.FromRoomType(roomType, rooms));
-    }
-}
-
-app.MapPut("/api/roomtypes/{roomType}", (
-    string roomType,
-    RoomTypeRequest request) => UpdateRoomType(roomType, request));
-app.MapPut("/api/room-types/{roomType}", (
-    string roomType,
-    RoomTypeRequest request) => UpdateRoomType(roomType, request));
-
-IResult UpdateRoomType(string roomType, RoomTypeRequest request)
-{
-    lock (roomLock)
-    {
-        var existing = FindRoomType(roomTypes, roomType);
-
-        if (existing == null)
-            return Results.NotFound(new { message = "Room type not found." });
-
-        if (request.Capacity <= 0)
-            return Results.BadRequest(new { message = "Capacity must be greater than zero." });
-
-        if (request.MonthlyFee < 0)
-            return Results.BadRequest(new { message = "MonthlyFee cannot be negative." });
-
-        var maxOccupiedBeds = rooms
-            .Where(room => IsSameCode(room.RoomType, existing.RoomType))
-            .Select(room => room.OccupiedBeds)
-            .DefaultIfEmpty(0)
-            .Max();
-
-        if (request.Capacity < maxOccupiedBeds)
+        return Results.BadRequest(new
         {
-            return Results.BadRequest(new
-            {
-                message = "Capacity cannot be lower than occupied beds in existing rooms.",
-                maxOccupiedBeds
-            });
-        }
-
-        existing.Capacity = request.Capacity;
-        existing.MonthlyFee = request.MonthlyFee;
-        existing.Description = request.Description?.Trim() ?? string.Empty;
-        existing.Amenities = request.Amenities?.Trim() ?? DefaultAmenities(existing.RoomType);
-
-        foreach (var room in rooms.Where(room => IsSameCode(room.RoomType, existing.RoomType)))
-        {
-            room.Capacity = existing.Capacity;
-            room.MonthlyFee = existing.MonthlyFee;
-            room.Amenities = existing.Amenities;
-            room.RefreshStatus();
-        }
-        SaveRoomState(roomDataFilePath, buildings, roomTypes, rooms);
-
-        return Results.Ok(RoomTypeResponse.FromRoomType(existing, rooms));
+            message = "Building floors cannot be lower than existing room floors.",
+            maxUsedFloor
+        });
     }
-}
 
-app.MapDelete("/api/roomtypes/{roomType}", (string roomType) => DeleteRoomType(roomType));
-app.MapDelete("/api/room-types/{roomType}", (string roomType) => DeleteRoomType(roomType));
+    building.DisplayName = CleanOrDefault(request.DisplayName, $"Tòa {building.BuildingName}");
+    building.Floors = request.Floors;
+    building.Description = request.Description?.Trim() ?? string.Empty;
 
-IResult DeleteRoomType(string roomType)
+    await db.SaveChangesAsync();
+    rooms = await LoadRoomsAsync(db);
+
+    return Results.Ok(BuildingResponse.FromBuilding(building, rooms));
+});
+
+app.MapDelete("/api/buildings/{buildingName}", async (
+    string buildingName,
+    RoomBuildingDbContext db) =>
 {
-    lock (roomLock)
+    var building = await FindBuildingAsync(db, buildingName, tracking: true);
+
+    if (building == null)
+        return Results.NotFound(new { message = "Building not found." });
+
+    if (await db.Rooms.AnyAsync(room => room.BuildingName == building.BuildingName))
+        return Results.BadRequest(new { message = "Cannot delete a building that still has rooms." });
+
+    db.Buildings.Remove(building);
+    await db.SaveChangesAsync();
+
+    return Results.NoContent();
+});
+
+app.MapGet("/api/buildings/{buildingName}/facility-notices", async (
+    string buildingName,
+    bool? activeOnly,
+    RoomBuildingDbContext db) =>
+{
+    var building = await FindBuildingAsync(db, buildingName);
+
+    if (building == null)
+        return Results.NotFound(new { message = "Building not found." });
+
+    var query = db.BuildingFacilityNotices
+        .AsNoTracking()
+        .Where(notice => notice.BuildingName == building.BuildingName);
+
+    if (activeOnly.GetValueOrDefault(true))
+        query = query.Where(notice => notice.IsActive && notice.Status != "Resolved");
+
+    var notices = await query
+        .OrderByDescending(notice => notice.Severity == "Critical")
+        .ThenByDescending(notice => notice.StartedAt)
+        .ThenBy(notice => notice.AreaName)
+        .Select(notice => BuildingFacilityNoticeResponse.FromNotice(notice))
+        .ToListAsync();
+
+    return Results.Ok(notices);
+});
+
+app.MapPost("/api/buildings/{buildingName}/facility-notices", async (
+    string buildingName,
+    BuildingFacilityNoticeRequest request,
+    RoomBuildingDbContext db) =>
+{
+    var building = await FindBuildingAsync(db, buildingName);
+
+    if (building == null)
+        return Results.NotFound(new { message = "Building not found." });
+
+    var validation = ValidateBuildingNoticeRequest(request, out var normalized);
+
+    if (validation != null)
+        return validation;
+
+    var now = DateTime.UtcNow;
+    var notice = new BuildingFacilityNotice
     {
-        var existing = FindRoomType(roomTypes, roomType);
+        BuildingName = building.BuildingName,
+        AreaName = normalized.AreaName,
+        Category = normalized.Category,
+        Status = normalized.Status,
+        Severity = normalized.Severity,
+        Title = normalized.Title,
+        Description = normalized.Description,
+        StartedAt = normalized.StartedAt ?? now,
+        ExpectedResolvedAt = normalized.ExpectedResolvedAt,
+        ResolvedAt = IsResolvedBuildingNotice(normalized.Status, normalized.IsActive)
+            ? now
+            : null,
+        UpdatedAt = now,
+        IsActive = normalized.IsActive && !IsResolvedBuildingNotice(normalized.Status, normalized.IsActive)
+    };
 
-        if (existing == null)
-            return Results.NotFound(new { message = "Room type not found." });
+    db.BuildingFacilityNotices.Add(notice);
+    await db.SaveChangesAsync();
 
-        if (rooms.Any(room => IsSameCode(room.RoomType, existing.RoomType)))
-            return Results.BadRequest(new { message = "Cannot delete a room type that is used by rooms." });
+    return Results.Created(
+        $"/api/buildings/{Uri.EscapeDataString(building.BuildingName)}/facility-notices/{notice.Id}",
+        BuildingFacilityNoticeResponse.FromNotice(notice));
+});
 
-        roomTypes.Remove(existing);
-        SaveRoomState(roomDataFilePath, buildings, roomTypes, rooms);
+app.MapPut("/api/buildings/{buildingName}/facility-notices/{noticeId:long}", async (
+    string buildingName,
+    long noticeId,
+    BuildingFacilityNoticeRequest request,
+    RoomBuildingDbContext db) =>
+{
+    var building = await FindBuildingAsync(db, buildingName);
 
-        return Results.NoContent();
-    }
+    if (building == null)
+        return Results.NotFound(new { message = "Building not found." });
+
+    var notice = await db.BuildingFacilityNotices.FirstOrDefaultAsync(item =>
+        item.Id == noticeId &&
+        item.BuildingName == building.BuildingName);
+
+    if (notice == null)
+        return Results.NotFound(new { message = "Building facility notice not found." });
+
+    var validation = ValidateBuildingNoticeRequest(request, out var normalized);
+
+    if (validation != null)
+        return validation;
+
+    var now = DateTime.UtcNow;
+    var isResolved = IsResolvedBuildingNotice(normalized.Status, normalized.IsActive);
+
+    notice.AreaName = normalized.AreaName;
+    notice.Category = normalized.Category;
+    notice.Status = normalized.Status;
+    notice.Severity = normalized.Severity;
+    notice.Title = normalized.Title;
+    notice.Description = normalized.Description;
+    notice.StartedAt = normalized.StartedAt ?? notice.StartedAt;
+    notice.ExpectedResolvedAt = normalized.ExpectedResolvedAt;
+    notice.IsActive = normalized.IsActive && !isResolved;
+    notice.ResolvedAt = isResolved ? notice.ResolvedAt ?? now : null;
+    notice.UpdatedAt = now;
+
+    await db.SaveChangesAsync();
+
+    return Results.Ok(BuildingFacilityNoticeResponse.FromNotice(notice));
+});
+
+app.MapPatch("/api/buildings/{buildingName}/facility-notices/{noticeId:long}/resolve", async (
+    string buildingName,
+    long noticeId,
+    RoomBuildingDbContext db) =>
+{
+    var building = await FindBuildingAsync(db, buildingName);
+
+    if (building == null)
+        return Results.NotFound(new { message = "Building not found." });
+
+    var notice = await db.BuildingFacilityNotices.FirstOrDefaultAsync(item =>
+        item.Id == noticeId &&
+        item.BuildingName == building.BuildingName);
+
+    if (notice == null)
+        return Results.NotFound(new { message = "Building facility notice not found." });
+
+    var now = DateTime.UtcNow;
+    notice.Status = "Resolved";
+    notice.IsActive = false;
+    notice.ResolvedAt = now;
+    notice.UpdatedAt = now;
+
+    await db.SaveChangesAsync();
+
+    return Results.Ok(BuildingFacilityNoticeResponse.FromNotice(notice));
+});
+
+app.MapDelete("/api/buildings/{buildingName}/facility-notices/{noticeId:long}", async (
+    string buildingName,
+    long noticeId,
+    RoomBuildingDbContext db) =>
+{
+    var building = await FindBuildingAsync(db, buildingName);
+
+    if (building == null)
+        return Results.NotFound(new { message = "Building not found." });
+
+    var notice = await db.BuildingFacilityNotices.FirstOrDefaultAsync(item =>
+        item.Id == noticeId &&
+        item.BuildingName == building.BuildingName);
+
+    if (notice == null)
+        return Results.NotFound(new { message = "Building facility notice not found." });
+
+    db.BuildingFacilityNotices.Remove(notice);
+    await db.SaveChangesAsync();
+
+    return Results.NoContent();
+});
+
+app.MapGet("/api/roomtypes", GetRoomTypesAsync);
+app.MapGet("/api/room-types", GetRoomTypesAsync);
+
+async Task<IResult> GetRoomTypesAsync(RoomBuildingDbContext db)
+{
+    var roomTypes = await LoadRoomTypesAsync(db);
+    var rooms = await LoadRoomsAsync(db);
+
+    return Results.Ok(RoomTypeResponses(roomTypes, rooms));
 }
 
-app.MapGet("/api/rooms", (
+app.MapGet("/api/roomtypes/{roomType}", GetRoomTypeAsync);
+app.MapGet("/api/room-types/{roomType}", GetRoomTypeAsync);
+
+async Task<IResult> GetRoomTypeAsync(string roomType, RoomBuildingDbContext db)
+{
+    var existing = await FindRoomTypeAsync(db, roomType);
+
+    if (existing == null)
+        return Results.NotFound(new { message = "Room type not found." });
+
+    var rooms = await LoadRoomsAsync(db);
+
+    return Results.Ok(RoomTypeResponse.FromRoomType(existing, rooms));
+}
+
+app.MapPost("/api/roomtypes", CreateRoomTypeAsync);
+app.MapPost("/api/room-types", CreateRoomTypeAsync);
+
+async Task<IResult> CreateRoomTypeAsync(RoomTypeRequest request, RoomBuildingDbContext db)
+{
+    var normalizedType = NormalizeRoomType(request.RoomType);
+
+    if (string.IsNullOrWhiteSpace(normalizedType))
+        return Results.BadRequest(new { message = "RoomType is required." });
+
+    if (await db.RoomTypes.AnyAsync(item => item.RoomType == normalizedType))
+        return Results.BadRequest(new { message = "Room type already exists." });
+
+    if (request.Capacity <= 0)
+        return Results.BadRequest(new { message = "Capacity must be greater than zero." });
+
+    if (request.MonthlyFee < 0)
+        return Results.BadRequest(new { message = "MonthlyFee cannot be negative." });
+
+    var roomType = new DormRoomType
+    {
+        RoomType = normalizedType,
+        Capacity = request.Capacity,
+        MonthlyFee = request.MonthlyFee,
+        Description = request.Description?.Trim() ?? string.Empty,
+        Amenities = request.Amenities?.Trim() ?? DefaultAmenities(normalizedType)
+    };
+
+    db.RoomTypes.Add(roomType);
+    await db.SaveChangesAsync();
+
+    var rooms = await LoadRoomsAsync(db);
+
+    return Results.Created(
+        $"/api/room-types/{Uri.EscapeDataString(roomType.RoomType)}",
+        RoomTypeResponse.FromRoomType(roomType, rooms));
+}
+
+app.MapPut("/api/roomtypes/{roomType}", UpdateRoomTypeAsync);
+app.MapPut("/api/room-types/{roomType}", UpdateRoomTypeAsync);
+
+async Task<IResult> UpdateRoomTypeAsync(
+    string roomType,
+    RoomTypeRequest request,
+    RoomBuildingDbContext db)
+{
+    var existing = await FindRoomTypeAsync(db, roomType, tracking: true);
+
+    if (existing == null)
+        return Results.NotFound(new { message = "Room type not found." });
+
+    if (request.Capacity <= 0)
+        return Results.BadRequest(new { message = "Capacity must be greater than zero." });
+
+    if (request.MonthlyFee < 0)
+        return Results.BadRequest(new { message = "MonthlyFee cannot be negative." });
+
+    var roomsForType = await db.Rooms
+        .Include(room => room.OccupancyReferences)
+        .Where(room => room.RoomType == existing.RoomType)
+        .ToListAsync();
+
+    var maxOccupiedBeds = roomsForType
+        .Select(room => room.OccupiedBeds)
+        .DefaultIfEmpty(0)
+        .Max();
+
+    if (request.Capacity < maxOccupiedBeds)
+    {
+        return Results.BadRequest(new
+        {
+            message = "Capacity cannot be lower than occupied beds in existing rooms.",
+            maxOccupiedBeds
+        });
+    }
+
+    existing.Capacity = request.Capacity;
+    existing.MonthlyFee = request.MonthlyFee;
+    existing.Description = request.Description?.Trim() ?? string.Empty;
+    existing.Amenities = request.Amenities?.Trim() ?? DefaultAmenities(existing.RoomType);
+
+    foreach (var room in roomsForType)
+    {
+        room.Capacity = existing.Capacity;
+        room.MonthlyFee = existing.MonthlyFee;
+        room.Amenities = existing.Amenities;
+        room.RefreshStatus();
+    }
+
+    await db.SaveChangesAsync();
+
+    var rooms = await LoadRoomsAsync(db);
+
+    return Results.Ok(RoomTypeResponse.FromRoomType(existing, rooms));
+}
+
+app.MapDelete("/api/roomtypes/{roomType}", DeleteRoomTypeAsync);
+app.MapDelete("/api/room-types/{roomType}", DeleteRoomTypeAsync);
+
+async Task<IResult> DeleteRoomTypeAsync(string roomType, RoomBuildingDbContext db)
+{
+    var existing = await FindRoomTypeAsync(db, roomType, tracking: true);
+
+    if (existing == null)
+        return Results.NotFound(new { message = "Room type not found." });
+
+    if (await db.Rooms.AnyAsync(room => room.RoomType == existing.RoomType))
+        return Results.BadRequest(new { message = "Cannot delete a room type that is used by rooms." });
+
+    db.RoomTypes.Remove(existing);
+    await db.SaveChangesAsync();
+
+    return Results.NoContent();
+}
+
+app.MapGet("/api/rooms", async (
     string? buildingName,
     int? floor,
     string? roomType,
     bool? gender,
-    string? status) =>
+    string? status,
+    RoomBuildingDbContext db) =>
 {
-    lock (roomLock)
-    {
-        var filteredRooms = rooms
-            .Where(room => string.IsNullOrWhiteSpace(buildingName) ||
-                IsSameCode(room.BuildingName, buildingName))
-            .Where(room => !floor.HasValue || room.Floor == floor.Value)
-            .Where(room => string.IsNullOrWhiteSpace(roomType) ||
-                IsSameCode(room.RoomType, roomType))
-            .Where(room => !gender.HasValue || room.Gender == gender.Value)
-            .Where(room => string.IsNullOrWhiteSpace(status) ||
-                IsSameCode(room.Status, NormalizeStatus(status)))
-            .OrderBy(room => room.BuildingName)
-            .ThenBy(room => room.Floor)
-            .ThenBy(room => room.RoomNumber)
-            .Select(room => RoomResponse.FromRoom(room, buildings))
-            .ToList();
+    string? normalizedStatus = null;
 
-        return Results.Ok(filteredRooms);
+    if (!string.IsNullOrWhiteSpace(status))
+    {
+        try
+        {
+            normalizedStatus = NormalizeStatus(status);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(new { message = exception.Message });
+        }
     }
+
+    var buildings = await LoadBuildingsAsync(db);
+    var rooms = await LoadRoomsAsync(db);
+
+    var filteredRooms = rooms
+        .Where(room => string.IsNullOrWhiteSpace(buildingName) ||
+            IsSameCode(room.BuildingName, buildingName))
+        .Where(room => !floor.HasValue || room.Floor == floor.Value)
+        .Where(room => string.IsNullOrWhiteSpace(roomType) ||
+            IsSameCode(room.RoomType, roomType))
+        .Where(room => !gender.HasValue || room.Gender == gender.Value)
+        .Where(room => normalizedStatus == null ||
+            IsSameCode(room.Status, normalizedStatus))
+        .OrderBy(room => room.BuildingName)
+        .ThenBy(room => room.Floor)
+        .ThenBy(room => room.RoomNumber)
+        .Select(room => RoomResponse.FromRoom(room, buildings))
+        .ToList();
+
+    return Results.Ok(filteredRooms);
 });
 
-app.MapGet("/api/rooms/floor-map", (
+app.MapGet("/api/rooms/floor-map", async (
     string? buildingName,
-    int? floor) =>
+    int? floor,
+    RoomBuildingDbContext db) =>
 {
-    lock (roomLock)
-    {
-        var filteredRooms = rooms
-            .Where(room => string.IsNullOrWhiteSpace(buildingName) ||
-                IsSameCode(room.BuildingName, buildingName))
-            .Where(room => !floor.HasValue || room.Floor == floor.Value)
-            .OrderBy(room => room.BuildingName)
-            .ThenBy(room => room.Floor)
-            .ThenBy(room => room.RoomNumber)
-            .Select(room => RoomResponse.FromRoom(room, buildings))
-            .ToList();
+    var buildings = await LoadBuildingsAsync(db);
+    var rooms = await LoadRoomsAsync(db);
 
-        return Results.Ok(new FloorMapResponse(
-            buildingName,
-            floor,
-            filteredRooms.Count,
-            filteredRooms.Sum(room => room.OccupiedBeds),
-            filteredRooms.Sum(room => room.AvailableBeds),
-            filteredRooms));
-    }
+    var filteredRooms = rooms
+        .Where(room => string.IsNullOrWhiteSpace(buildingName) ||
+            IsSameCode(room.BuildingName, buildingName))
+        .Where(room => !floor.HasValue || room.Floor == floor.Value)
+        .OrderBy(room => room.BuildingName)
+        .ThenBy(room => room.Floor)
+        .ThenBy(room => room.RoomNumber)
+        .Select(room => RoomResponse.FromRoom(room, buildings))
+        .ToList();
+
+    return Results.Ok(new FloorMapResponse(
+        buildingName,
+        floor,
+        filteredRooms.Count,
+        filteredRooms.Sum(room => room.OccupiedBeds),
+        filteredRooms.Sum(room => room.AvailableBeds),
+        filteredRooms));
 });
 
-app.MapGet("/api/rooms/available", (
+app.MapGet("/api/rooms/available", async (
     string? buildingName,
     string? roomType,
     bool? gender,
-    long? roomId) =>
+    long? roomId,
+    RoomBuildingDbContext db) =>
 {
-    List<RoomResponse> candidates;
+    var buildings = await LoadBuildingsAsync(db);
+    var rooms = await LoadRoomsAsync(db);
 
-    lock (roomLock)
-    {
-        candidates = rooms
-            .Where(room => !room.IsMaintenance)
-            .Where(room => room.AvailableBeds > 0)
-            .Where(room => !roomId.HasValue || room.RoomId == roomId.Value)
-            .Where(room => string.IsNullOrWhiteSpace(buildingName) ||
-                IsSameCode(room.BuildingName, buildingName))
-            .Where(room => string.IsNullOrWhiteSpace(roomType) ||
-                IsSameCode(room.RoomType, roomType))
-            .Where(room => !gender.HasValue || room.Gender == gender.Value)
-            .OrderBy(room => room.MonthlyFee)
-            .ThenByDescending(room => room.AvailableBeds)
-            .ThenBy(room => room.RoomId)
-            .Select(room => RoomResponse.FromRoom(room, buildings))
-            .ToList();
-    }
+    var candidates = rooms
+        .Where(room => !room.IsMaintenance)
+        .Where(room => room.AvailableBeds > 0)
+        .Where(room => !roomId.HasValue || room.RoomId == roomId.Value)
+        .Where(room => string.IsNullOrWhiteSpace(buildingName) ||
+            IsSameCode(room.BuildingName, buildingName))
+        .Where(room => string.IsNullOrWhiteSpace(roomType) ||
+            IsSameCode(room.RoomType, roomType))
+        .Where(room => !gender.HasValue || room.Gender == gender.Value)
+        .OrderBy(room => room.MonthlyFee)
+        .ThenByDescending(room => room.AvailableBeds)
+        .ThenBy(room => room.RoomId)
+        .Select(room => RoomResponse.FromRoom(room, buildings))
+        .ToList();
 
     return candidates.Count == 0
         ? Results.NotFound(new { message = "No available room matched the request." })
         : Results.Ok(candidates.First());
 });
 
-app.MapGet("/api/rooms/{roomId:long}", (long roomId) =>
-{
-    lock (roomLock)
-    {
-        var room = rooms.FirstOrDefault(item => item.RoomId == roomId);
-
-        return room == null
-            ? Results.NotFound(new { message = "Room not found." })
-            : Results.Ok(RoomResponse.FromRoom(room, buildings));
-    }
-});
-
-app.MapPost("/api/rooms", (RoomRequest request) =>
-{
-    lock (roomLock)
-    {
-        var validation = ValidateRoomRequest(
-            request,
-            buildings,
-            roomTypes,
-            rooms,
-            null,
-            out var building,
-            out var roomType);
-
-        if (validation != null)
-            return validation;
-
-        var room = new DormRoom(
-            request.RoomId,
-            CleanOrDefault(request.RoomNumber, request.RoomId.ToString()),
-            building!.BuildingName,
-            request.Floor,
-            roomType!.RoomType,
-            request.Gender,
-            request.Capacity ?? roomType.Capacity,
-            0,
-            request.MonthlyFee ?? roomType.MonthlyFee,
-            "Available",
-            CleanOrDefault(request.Amenities, roomType.Amenities));
-
-        room.RefreshStatus();
-        rooms.Add(room);
-        SaveRoomState(roomDataFilePath, buildings, roomTypes, rooms);
-
-        return Results.Created(
-            $"/api/rooms/{room.RoomId}",
-            RoomResponse.FromRoom(room, buildings));
-    }
-});
-
-app.MapPut("/api/rooms/{roomId:long}", (
+app.MapGet("/api/rooms/{roomId:long}", async (
     long roomId,
-    RoomRequest request) =>
+    RoomBuildingDbContext db) =>
 {
-    lock (roomLock)
+    var room = await LoadRoomAsync(db, roomId);
+
+    if (room == null)
+        return Results.NotFound(new { message = "Room not found." });
+
+    var buildings = await LoadBuildingsAsync(db);
+
+    return Results.Ok(RoomResponse.FromRoom(room, buildings));
+});
+
+app.MapPost("/api/rooms", async (
+    RoomRequest request,
+    RoomBuildingDbContext db) =>
+{
+    var buildings = await LoadBuildingsAsync(db);
+    var roomTypes = await LoadRoomTypesAsync(db);
+    var rooms = await LoadRoomsAsync(db);
+
+    var validation = ValidateRoomRequest(
+        request,
+        buildings,
+        roomTypes,
+        rooms,
+        null,
+        out var building,
+        out var roomType);
+
+    if (validation != null)
+        return validation;
+
+    var room = new DormRoom
     {
-        var room = rooms.FirstOrDefault(item => item.RoomId == roomId);
+        RoomId = request.RoomId,
+        RoomNumber = CleanOrDefault(request.RoomNumber, request.RoomId.ToString()),
+        BuildingName = building!.BuildingName,
+        Floor = request.Floor,
+        RoomType = roomType!.RoomType,
+        Gender = request.Gender,
+        Capacity = request.Capacity ?? roomType.Capacity,
+        OccupiedBeds = 0,
+        MonthlyFee = request.MonthlyFee ?? roomType.MonthlyFee,
+        Status = "Available",
+        Amenities = CleanOrDefault(request.Amenities, roomType.Amenities)
+    };
+
+    room.RefreshStatus();
+    db.Rooms.Add(room);
+    await db.SaveChangesAsync();
+
+    return Results.Created(
+        $"/api/rooms/{room.RoomId}",
+        RoomResponse.FromRoom(room, buildings));
+});
+
+app.MapPut("/api/rooms/{roomId:long}", async (
+    long roomId,
+    RoomRequest request,
+    RoomBuildingDbContext db) =>
+{
+    var room = await LoadRoomAsync(db, roomId, tracking: true);
+
+    if (room == null)
+        return Results.NotFound(new { message = "Room not found." });
+
+    var buildings = await LoadBuildingsAsync(db);
+    var roomTypes = await LoadRoomTypesAsync(db);
+    var rooms = await LoadRoomsAsync(db);
+
+    var validation = ValidateRoomRequest(
+        request with { RoomId = roomId },
+        buildings,
+        roomTypes,
+        rooms,
+        roomId,
+        out var building,
+        out var roomType);
+
+    if (validation != null)
+        return validation;
+
+    var selectedBuilding = building!;
+    var selectedRoomType = roomType!;
+    var newCapacity = request.Capacity ?? selectedRoomType.Capacity;
+
+    if (newCapacity < room.OccupiedBeds)
+        return Results.BadRequest(new { message = "Capacity cannot be lower than occupied beds." });
+
+    room.RoomNumber = CleanOrDefault(request.RoomNumber, room.RoomNumber);
+    room.BuildingName = selectedBuilding.BuildingName;
+    room.Floor = request.Floor;
+    room.RoomType = selectedRoomType.RoomType;
+    room.Gender = request.Gender;
+    room.Capacity = newCapacity;
+    room.MonthlyFee = request.MonthlyFee ?? selectedRoomType.MonthlyFee;
+    room.Amenities = CleanOrDefault(request.Amenities, selectedRoomType.Amenities);
+    room.RefreshStatus();
+
+    await db.SaveChangesAsync();
+
+    return Results.Ok(RoomResponse.FromRoom(room, buildings));
+});
+
+app.MapMethods(
+    "/api/rooms/{roomId:long}/status",
+    ["PATCH", "PUT"],
+    async (long roomId, RoomStatusRequest request, RoomBuildingDbContext db) =>
+    {
+        var room = await LoadRoomAsync(db, roomId, tracking: true);
 
         if (room == null)
             return Results.NotFound(new { message = "Room not found." });
 
-        var validation = ValidateRoomRequest(
-            request with { RoomId = roomId },
-            buildings,
-            roomTypes,
-            rooms,
-            roomId,
-            out var building,
-            out var roomType);
+        string normalizedStatus;
 
-        if (validation != null)
-            return validation;
+        try
+        {
+            normalizedStatus = NormalizeRoomStatusUpdate(request.Status);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(new { message = exception.Message });
+        }
 
-        var newCapacity = request.Capacity ?? roomType!.Capacity;
+        if (normalizedStatus.Equals("Maintenance", StringComparison.OrdinalIgnoreCase))
+        {
+            room.Status = "Maintenance";
+        }
+        else
+        {
+            room.Status = "Available";
+            room.RefreshStatus();
+        }
 
-        if (newCapacity < room.OccupiedBeds)
-            return Results.BadRequest(new { message = "Capacity cannot be lower than occupied beds." });
-
-        room.RoomNumber = CleanOrDefault(request.RoomNumber, room.RoomNumber);
-        room.BuildingName = building!.BuildingName;
-        room.Floor = request.Floor;
-        room.RoomType = roomType!.RoomType;
-        room.Gender = request.Gender;
-        room.Capacity = newCapacity;
-        room.MonthlyFee = request.MonthlyFee ?? roomType.MonthlyFee;
-        room.Amenities = CleanOrDefault(request.Amenities, roomType.Amenities);
-        room.RefreshStatus();
-        SaveRoomState(roomDataFilePath, buildings, roomTypes, rooms);
+        await db.SaveChangesAsync();
+        var buildings = await LoadBuildingsAsync(db);
 
         return Results.Ok(RoomResponse.FromRoom(room, buildings));
-    }
-});
+    });
 
-app.MapDelete("/api/rooms/{roomId:long}", (long roomId) =>
-{
-    lock (roomLock)
-    {
-        var room = rooms.FirstOrDefault(item => item.RoomId == roomId);
-
-        if (room == null)
-            return Results.NotFound(new { message = "Room not found." });
-
-        if (room.OccupiedBeds > 0 || room.OccupancyReferences.Count > 0)
-            return Results.BadRequest(new { message = "Cannot delete an occupied room." });
-
-        rooms.Remove(room);
-        SaveRoomState(roomDataFilePath, buildings, roomTypes, rooms);
-
-        return Results.NoContent();
-    }
-});
-
-app.MapPost("/api/rooms/{roomId:long}/occupy", (
+app.MapDelete("/api/rooms/{roomId:long}", async (
     long roomId,
-    OccupyRoomRequest request) =>
+    RoomBuildingDbContext db) =>
 {
-    lock (roomLock)
-    {
-        var room = rooms.FirstOrDefault(item => item.RoomId == roomId);
+    var room = await LoadRoomAsync(db, roomId, tracking: true);
 
-        if (room == null)
-            return Results.NotFound(new { message = "Room not found." });
+    if (room == null)
+        return Results.NotFound(new { message = "Room not found." });
 
-        if (request.StudentId <= 0 || request.RegistrationId <= 0)
-            return Results.BadRequest(new { message = "StudentId and RegistrationId are required." });
+    if (room.OccupiedBeds > 0 || room.OccupancyReferences.Count > 0)
+        return Results.BadRequest(new { message = "Cannot delete an occupied room." });
 
-        if (string.IsNullOrWhiteSpace(request.ContractCode))
-            return Results.BadRequest(new { message = "ContractCode is required." });
+    db.Rooms.Remove(room);
+    await db.SaveChangesAsync();
 
-        if (room.IsMaintenance)
-            return Results.BadRequest(new { message = "Room is under maintenance." });
+    return Results.NoContent();
+});
 
-        var existingRoom = rooms.FirstOrDefault(item =>
+app.MapPost("/api/rooms/{roomId:long}/occupy", async (
+    long roomId,
+    OccupyRoomRequest request,
+    RoomBuildingDbContext db) =>
+{
+    var room = await LoadRoomAsync(db, roomId, tracking: true);
+
+    if (room == null)
+        return Results.NotFound(new { message = "Room not found." });
+
+    if (request.StudentId <= 0 || request.RegistrationId <= 0)
+        return Results.BadRequest(new { message = "StudentId and RegistrationId are required." });
+
+    if (string.IsNullOrWhiteSpace(request.ContractCode))
+        return Results.BadRequest(new { message = "ContractCode is required." });
+
+    if (room.IsMaintenance)
+        return Results.BadRequest(new { message = "Room is under maintenance." });
+
+    var existingRoom = await db.Rooms
+        .AsNoTracking()
+        .Include(item => item.OccupancyReferences)
+        .FirstOrDefaultAsync(item =>
             item.RoomId != roomId &&
             item.OccupancyReferences.Any(reference =>
                 reference.StudentId == request.StudentId));
 
-        if (existingRoom != null)
+    if (existingRoom != null)
+    {
+        return Results.BadRequest(new
         {
-            return Results.BadRequest(new
-            {
-                message = "Student already occupies another room.",
-                roomId = existingRoom.RoomId
-            });
-        }
+            message = "Student already occupies another room.",
+            roomId = existingRoom.RoomId
+        });
+    }
 
-        var existingReference = room.OccupancyReferences.FirstOrDefault(
-            reference => reference.StudentId == request.StudentId ||
-                reference.RegistrationId == request.RegistrationId);
+    var existingReference = room.OccupancyReferences.FirstOrDefault(
+        reference => reference.StudentId == request.StudentId ||
+            reference.RegistrationId == request.RegistrationId);
 
-        if (existingReference != null)
-        {
-            NormalizeBedAssignments(room);
-
-            if (request.BedNumber.HasValue &&
-                request.BedNumber.Value != existingReference.BedNumber)
-            {
-                var targetBed = request.BedNumber.Value;
-
-                if (targetBed < 1 || targetBed > room.Capacity)
-                    return Results.BadRequest(new { message = "Bed number is outside room capacity." });
-
-                if (room.OccupancyReferences.Any(reference =>
-                    reference.StudentId != existingReference.StudentId &&
-                    reference.BedNumber == targetBed))
-                {
-                    return Results.BadRequest(new { message = "Target bed is already occupied." });
-                }
-
-                existingReference.BedNumber = targetBed;
-            }
-
-            room.LastContractCode = request.ContractCode;
-            room.RefreshStatus();
-            SaveRoomState(roomDataFilePath, buildings, roomTypes, rooms);
-
-            return Results.Ok(RoomResponse.FromRoom(room, buildings));
-        }
-
-        if (room.AvailableBeds <= 0)
-            return Results.BadRequest(new { message = "Room is full." });
-
-        int assignedBedNumber;
-
-        try
-        {
-            assignedBedNumber = ResolveBedNumber(room, request.BedNumber);
-        }
-        catch (InvalidOperationException ex)
-        {
-            return Results.BadRequest(new { message = ex.Message });
-        }
-
-        room.OccupancyReferences.Add(new RoomOccupancyReference(
-            request.StudentId,
-            request.RegistrationId,
-            request.ContractCode,
-            DateTime.UtcNow,
-            assignedBedNumber));
-        room.OccupiedBeds++;
-
-        room.LastContractCode = request.ContractCode;
+    if (existingReference != null)
+    {
+        room.LastContractCode = request.ContractCode.Trim();
         room.RefreshStatus();
-        SaveRoomState(roomDataFilePath, buildings, roomTypes, rooms);
+        await db.SaveChangesAsync();
+
+        var buildings = await LoadBuildingsAsync(db);
 
         return Results.Ok(RoomResponse.FromRoom(room, buildings));
     }
+
+    if (room.AvailableBeds <= 0)
+        return Results.BadRequest(new { message = "Room is full." });
+
+    room.OccupancyReferences.Add(new RoomOccupancyReference
+    {
+        StudentId = request.StudentId,
+        RegistrationId = request.RegistrationId,
+        ContractCode = request.ContractCode.Trim(),
+        OccupiedAt = DateTime.UtcNow
+    });
+
+    room.OccupiedBeds++;
+    room.LastContractCode = request.ContractCode.Trim();
+    room.RefreshStatus();
+
+    await db.SaveChangesAsync();
+
+    var currentBuildings = await LoadBuildingsAsync(db);
+
+    return Results.Ok(RoomResponse.FromRoom(room, currentBuildings));
 });
 
-app.MapPost("/api/rooms/{roomId:long}/beds/move", (
+app.MapPost("/api/rooms/{roomId:long}/release", async (
     long roomId,
-    MoveBedRequest request) =>
+    RoomBuildingDbContext db) =>
 {
-    lock (roomLock)
-    {
-        var room = rooms.FirstOrDefault(item => item.RoomId == roomId);
+    var room = await LoadRoomAsync(db, roomId, tracking: true);
 
-        if (room == null)
-            return Results.NotFound(new { message = "Room not found." });
+    if (room == null)
+        return Results.NotFound(new { message = "Room not found." });
 
-        if (request.StudentId <= 0)
-            return Results.BadRequest(new { message = "StudentId is required." });
+    var lastReference = room.OccupancyReferences
+        .OrderByDescending(reference => reference.OccupiedAt)
+        .FirstOrDefault();
 
-        if (request.TargetBedNumber < 1 || request.TargetBedNumber > room.Capacity)
-            return Results.BadRequest(new { message = "Target bed is outside room capacity." });
+    if (lastReference != null)
+        db.RoomOccupancyReferences.Remove(lastReference);
 
-        NormalizeBedAssignments(room);
+    if (room.OccupiedBeds > 0)
+        room.OccupiedBeds--;
 
-        var reference = room.OccupancyReferences.FirstOrDefault(item =>
-            item.StudentId == request.StudentId);
+    room.RefreshStatus();
+    await db.SaveChangesAsync();
 
-        if (reference == null)
-            return Results.NotFound(new { message = "Student is not occupying this room." });
+    var buildings = await LoadBuildingsAsync(db);
 
-        var occupiedByOther = room.OccupancyReferences.Any(item =>
-            item.StudentId != request.StudentId &&
-            item.BedNumber == request.TargetBedNumber);
-
-        if (occupiedByOther)
-            return Results.BadRequest(new { message = "Target bed is already occupied." });
-
-        reference.BedNumber = request.TargetBedNumber;
-        room.RefreshStatus();
-        SaveRoomState(roomDataFilePath, buildings, roomTypes, rooms);
-
-        return Results.Ok(RoomResponse.FromRoom(room, buildings));
-    }
-});
-
-app.MapPost("/api/rooms/{roomId:long}/release", async (long roomId, HttpRequest request) =>
-{
-    ReleaseRoomRequest? releaseRequest = null;
-
-    if (request.ContentLength.GetValueOrDefault() > 0)
-    {
-        try
-        {
-            releaseRequest = await JsonSerializer.DeserializeAsync<ReleaseRoomRequest>(
-                request.Body,
-                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-        }
-        catch (JsonException)
-        {
-            return Results.BadRequest(new { message = "Invalid release request body." });
-        }
-    }
-
-    lock (roomLock)
-    {
-        var room = rooms.FirstOrDefault(item => item.RoomId == roomId);
-
-        if (room == null)
-            return Results.NotFound(new { message = "Room not found." });
-
-        var hasSpecificReleaseTarget =
-            releaseRequest?.StudentId > 0 ||
-            releaseRequest?.RegistrationId > 0 ||
-            !string.IsNullOrWhiteSpace(releaseRequest?.ContractCode);
-
-        var reference = room.OccupancyReferences.FirstOrDefault(item =>
-            (releaseRequest?.StudentId > 0 && item.StudentId == releaseRequest.StudentId) ||
-            (releaseRequest?.RegistrationId > 0 && item.RegistrationId == releaseRequest.RegistrationId) ||
-            (!string.IsNullOrWhiteSpace(releaseRequest?.ContractCode) &&
-                item.ContractCode.Equals(releaseRequest.ContractCode, StringComparison.OrdinalIgnoreCase)));
-
-        if (reference != null)
-        {
-            room.OccupancyReferences.Remove(reference);
-        }
-        else if (hasSpecificReleaseTarget)
-        {
-            if (room.OccupiedBeds == 0 && room.OccupancyReferences.Count == 0)
-            {
-                room.RefreshStatus();
-                SaveRoomState(roomDataFilePath, buildings, roomTypes, rooms);
-                return Results.Ok(RoomResponse.FromRoom(room, buildings));
-            }
-
-            return Results.NotFound(new { message = "Occupancy reference not found in this room." });
-        }
-        else if (room.OccupancyReferences.Count > 0)
-        {
-            room.OccupancyReferences.RemoveAt(room.OccupancyReferences.Count - 1);
-        }
-
-        if (room.OccupiedBeds > 0)
-            room.OccupiedBeds--;
-
-        room.RefreshStatus();
-        SaveRoomState(roomDataFilePath, buildings, roomTypes, rooms);
-
-        return Results.Ok(RoomResponse.FromRoom(room, buildings));
-    }
+    return Results.Ok(RoomResponse.FromRoom(room, buildings));
 });
 
 app.Run();
 
-static RoomStoreState LoadRoomState(string filePath)
+static async Task<List<DormBuilding>> LoadBuildingsAsync(
+    RoomBuildingDbContext db,
+    bool tracking = false)
 {
-    try
-    {
-        if (File.Exists(filePath))
-        {
-            var json = File.ReadAllText(filePath);
-            var state = JsonSerializer.Deserialize<RoomStoreState>(
-                json,
-                RoomJsonOptions());
+    var query = db.Buildings
+        .Include(building => building.FacilityNotices)
+        .AsQueryable();
 
-            if (state is { Buildings.Count: > 0, RoomTypes.Count: > 0, Rooms.Count: > 0 })
-            {
-                NormalizeRoomState(state);
-                return state;
-            }
-        }
-    }
-    catch (JsonException)
-    {
-        // Fall back to seed data if the persisted file is malformed.
-    }
-    catch (IOException)
-    {
-        // Fall back to seed data if the file cannot be read during startup.
-    }
+    if (!tracking)
+        query = query.AsNoTracking();
 
-    var seededState = new RoomStoreState
-    {
-        Buildings = SeedBuildings(),
-        RoomTypes = SeedRoomTypes(),
-        Rooms = SeedRooms()
-    };
-
-    SaveRoomState(
-        filePath,
-        seededState.Buildings,
-        seededState.RoomTypes,
-        seededState.Rooms);
-
-    return seededState;
+    return await query
+        .OrderBy(building => building.BuildingName)
+        .ToListAsync();
 }
 
-static void SaveRoomState(
-    string filePath,
-    List<DormBuilding> buildings,
-    List<DormRoomType> roomTypes,
-    List<DormRoom> rooms)
+static async Task<List<DormRoomType>> LoadRoomTypesAsync(
+    RoomBuildingDbContext db,
+    bool tracking = false)
 {
-    var directory = Path.GetDirectoryName(filePath);
+    var query = db.RoomTypes.AsQueryable();
 
-    if (!string.IsNullOrWhiteSpace(directory))
-        Directory.CreateDirectory(directory);
+    if (!tracking)
+        query = query.AsNoTracking();
 
-    var state = new RoomStoreState
-    {
-        Buildings = buildings,
-        RoomTypes = roomTypes,
-        Rooms = rooms
-    };
-
-    File.WriteAllText(
-        filePath,
-        JsonSerializer.Serialize(state, RoomJsonOptions()));
+    return await query
+        .OrderBy(roomType => roomType.Capacity)
+        .ThenBy(roomType => roomType.RoomType)
+        .ToListAsync();
 }
 
-static JsonSerializerOptions RoomJsonOptions()
+static async Task<List<DormRoom>> LoadRoomsAsync(
+    RoomBuildingDbContext db,
+    bool tracking = false)
 {
-    return new JsonSerializerOptions
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        WriteIndented = true
-    };
+    var query = db.Rooms
+        .Include(room => room.OccupancyReferences)
+        .AsQueryable();
+
+    if (!tracking)
+        query = query.AsNoTracking();
+
+    return await query.ToListAsync();
 }
 
-static void NormalizeRoomState(RoomStoreState state)
+static async Task<DormRoom?> LoadRoomAsync(
+    RoomBuildingDbContext db,
+    long roomId,
+    bool tracking = false)
 {
-    foreach (var room in state.Rooms)
-    {
-        room.OccupancyReferences ??= new List<RoomOccupancyReference>();
-        room.OccupiedBeds = Math.Min(
-            room.Capacity,
-            Math.Max(room.OccupiedBeds, room.OccupancyReferences.Count));
-        NormalizeBedAssignments(room);
-        room.RefreshStatus();
-    }
+    var query = db.Rooms
+        .Include(room => room.OccupancyReferences)
+        .AsQueryable();
+
+    if (!tracking)
+        query = query.AsNoTracking();
+
+    return await query.FirstOrDefaultAsync(room => room.RoomId == roomId);
 }
 
-static void NormalizeBedAssignments(DormRoom room)
+static Task<DormBuilding?> FindBuildingAsync(
+    RoomBuildingDbContext db,
+    string? buildingName,
+    bool tracking = false)
 {
-    if (room.Capacity <= 0)
-        return;
+    var normalizedName = NormalizeCode(buildingName);
 
-    var usedBeds = new HashSet<int>();
+    if (string.IsNullOrWhiteSpace(normalizedName))
+        return Task.FromResult<DormBuilding?>(null);
 
-    foreach (var reference in room.OccupancyReferences.OrderBy(reference => reference.OccupiedAt))
-    {
-        if (reference.BedNumber >= 1 &&
-            reference.BedNumber <= room.Capacity &&
-            usedBeds.Add(reference.BedNumber))
-        {
-            continue;
-        }
+    var query = db.Buildings
+        .Include(building => building.FacilityNotices)
+        .AsQueryable();
 
-        var nextBed = Enumerable.Range(1, room.Capacity)
-            .FirstOrDefault(bedNumber => !usedBeds.Contains(bedNumber));
+    if (!tracking)
+        query = query.AsNoTracking();
 
-        reference.BedNumber = nextBed == 0 ? room.Capacity : nextBed;
-        usedBeds.Add(reference.BedNumber);
-    }
+    return query.FirstOrDefaultAsync(building => building.BuildingName == normalizedName);
 }
 
-static int ResolveBedNumber(DormRoom room, int? requestedBedNumber)
+static Task<DormRoomType?> FindRoomTypeAsync(
+    RoomBuildingDbContext db,
+    string? roomType,
+    bool tracking = false)
 {
-    NormalizeBedAssignments(room);
+    var normalizedType = NormalizeRoomType(roomType);
 
-    if (requestedBedNumber.HasValue)
-    {
-        var targetBed = requestedBedNumber.Value;
+    if (string.IsNullOrWhiteSpace(normalizedType))
+        return Task.FromResult<DormRoomType?>(null);
 
-        if (targetBed < 1 || targetBed > room.Capacity)
-            throw new InvalidOperationException("Bed number is outside room capacity.");
+    var query = db.RoomTypes.AsQueryable();
 
-        if (room.OccupancyReferences.Any(reference => reference.BedNumber == targetBed))
-            throw new InvalidOperationException("Target bed is already occupied.");
+    if (!tracking)
+        query = query.AsNoTracking();
 
-        return targetBed;
-    }
-
-    return Enumerable.Range(1, Math.Max(room.Capacity, 1))
-        .FirstOrDefault(bedNumber =>
-            room.OccupancyReferences.All(reference => reference.BedNumber != bedNumber));
-}
-
-static List<DormBuilding> SeedBuildings()
-{
-    return new List<DormBuilding>
-    {
-        new("A", "Tòa A", 5, "Khu phòng nam/nữ tiêu chuẩn"),
-        new("B", "Tòa B", 5, "Khu phòng có tiện nghi mở rộng"),
-        new("C", "Tòa C", 6, "Khu phòng nhiều giường")
-    };
-}
-
-static List<DormRoomType> SeedRoomTypes()
-{
-    return new List<DormRoomType>
-    {
-        new("4-bed", 4, 800000, "Phòng 4 giường", "Điều hòa, quạt trần, tủ đồ"),
-        new("6-bed", 6, 650000, "Phòng 6 giường", "Quạt trần, tủ đồ"),
-        new("8-bed", 8, 550000, "Phòng 8 giường", "Quạt trần, giường tầng, tủ đồ")
-    };
-}
-
-static List<DormRoom> SeedRooms()
-{
-    return new List<DormRoom>
-    {
-        new(101, "101", "A", 1, "4-bed", true, 4, 0, 800000, "Available", "Điều hòa, quạt trần, tủ đồ"),
-        new(102, "102", "A", 1, "6-bed", true, 6, 0, 650000, "Available", "Quạt trần, tủ đồ"),
-        new(103, "103", "A", 1, "4-bed", false, 4, 0, 800000, "Available", "Điều hòa, quạt trần, tủ đồ"),
-        new(104, "104", "A", 1, "6-bed", false, 6, 0, 650000, "Available", "Quạt trần, tủ đồ"),
-        new(201, "201", "B", 2, "4-bed", false, 4, 0, 850000, "Available", "Điều hòa, bình nóng lạnh, tủ đồ"),
-        new(202, "202", "B", 2, "6-bed", false, 6, 0, 700000, "Available", "Quạt trần, bình nóng lạnh, tủ đồ"),
-        new(203, "203", "B", 2, "4-bed", true, 4, 0, 850000, "Available", "Điều hòa, bình nóng lạnh, tủ đồ"),
-        new(204, "204", "B", 2, "6-bed", true, 6, 0, 700000, "Maintenance", "Quạt trần, bình nóng lạnh, tủ đồ"),
-        new(301, "301", "C", 3, "8-bed", true, 8, 0, 550000, "Available", "Quạt trần, tủ đồ"),
-        new(302, "302", "C", 3, "8-bed", false, 8, 0, 550000, "Available", "Quạt trần, tủ đồ")
-    };
+    return query.FirstOrDefaultAsync(type => type.RoomType == normalizedType);
 }
 
 static List<BuildingResponse> BuildingResponses(
@@ -950,6 +1049,60 @@ static string NormalizeCode(string? value)
     return (value ?? string.Empty).Trim().ToUpperInvariant();
 }
 
+static bool CanOpenSqlServer(string connectionString)
+{
+    try
+    {
+        var builder = new SqlConnectionStringBuilder(connectionString)
+        {
+            ConnectTimeout = 2
+        };
+
+        if (!string.IsNullOrWhiteSpace(builder.InitialCatalog))
+            builder.InitialCatalog = "master";
+
+        using var connection = new SqlConnection(builder.ConnectionString);
+        connection.Open();
+
+        return true;
+    }
+    catch
+    {
+        return false;
+    }
+}
+
+static Task EnsureRoomBuildingSchemaAsync(RoomBuildingDbContext db)
+{
+    return db.Database.ExecuteSqlRawAsync("""
+        IF OBJECT_ID(N'[dbo].[BuildingFacilityNotices]', N'U') IS NULL
+        BEGIN
+            CREATE TABLE [dbo].[BuildingFacilityNotices] (
+                [Id] bigint IDENTITY(1,1) NOT NULL,
+                [BuildingName] nvarchar(32) NOT NULL,
+                [AreaName] nvarchar(120) NOT NULL,
+                [Category] nvarchar(40) NOT NULL,
+                [Status] nvarchar(40) NOT NULL,
+                [Severity] nvarchar(40) NOT NULL,
+                [Title] nvarchar(180) NOT NULL,
+                [Description] nvarchar(1000) NOT NULL,
+                [StartedAt] datetime2 NOT NULL,
+                [ExpectedResolvedAt] datetime2 NULL,
+                [ResolvedAt] datetime2 NULL,
+                [UpdatedAt] datetime2 NOT NULL,
+                [IsActive] bit NOT NULL,
+                CONSTRAINT [PK_BuildingFacilityNotices] PRIMARY KEY ([Id]),
+                CONSTRAINT [FK_BuildingFacilityNotices_Buildings_BuildingName]
+                    FOREIGN KEY ([BuildingName]) REFERENCES [dbo].[Buildings]([BuildingName])
+                    ON DELETE CASCADE
+            );
+
+            CREATE INDEX [IX_BuildingFacilityNotices_BuildingName_IsActive]
+                ON [dbo].[BuildingFacilityNotices] ([BuildingName], [IsActive]);
+        END
+        """);
+}
+
 static string NormalizeRoomType(string? value)
 {
     return (value ?? string.Empty).Trim().ToLowerInvariant();
@@ -989,122 +1142,395 @@ static string NormalizeStatus(string? status)
     {
         "" or "available" or "trong" or "trống" or "con cho" or "còn chỗ" => "Available",
         "full" or "day" or "đầy" or "day phong" or "đầy phòng" => "Full",
-        "maintenance" or "repair" or "sua chua" or "sửa chữa" or "dang sua chua" or "đang sửa chữa" => "Maintenance",
+        "maintenance" or "repair" or "repairing" or "under-maintenance" or "under maintenance" or
+            "bao tri" or "bảo trì" or "dang bao tri" or "đang bảo trì" or
+            "sua chua" or "sửa chữa" or "dang sua chua" or "đang sửa chữa" => "Maintenance",
         _ => throw new ArgumentException("Status must be Available, Full, or Maintenance.")
     };
 }
 
-public sealed class RoomStoreState
+static string NormalizeRoomStatusUpdate(string? status)
 {
-    public List<DormBuilding> Buildings { get; set; } = new();
+    var normalized = (status ?? string.Empty).Trim().ToLowerInvariant();
 
-    public List<DormRoomType> RoomTypes { get; set; } = new();
+    return normalized switch
+    {
+        "maintenance" or "repair" or "repairing" or "under-maintenance" or "under maintenance" or
+            "bao tri" or "bao-tri" or "bảo trì" or "dang bao tri" or "đang bảo trì" or
+            "sua chua" or "sửa chữa" or "dang sua chua" or "đang sửa chữa" => "Maintenance",
+        "" or "auto" or "available" or "normal" or "open" or "release" or "done" or "completed" or "hoan thanh" or "hoàn thành" => "Auto",
+        _ => throw new ArgumentException("Status must be Maintenance or Auto.")
+    };
+}
 
-    public List<DormRoom> Rooms { get; set; } = new();
+static IResult? ValidateBuildingNoticeRequest(
+    BuildingFacilityNoticeRequest request,
+    out NormalizedBuildingFacilityNotice normalized)
+{
+    normalized = new NormalizedBuildingFacilityNotice(
+        CleanOrDefault(request.AreaName, string.Empty),
+        NormalizeBuildingNoticeCategory(request.Category),
+        NormalizeBuildingNoticeStatus(request.Status),
+        NormalizeBuildingNoticeSeverity(request.Severity),
+        CleanOrDefault(request.Title, string.Empty),
+        request.Description?.Trim() ?? string.Empty,
+        request.StartedAt,
+        request.ExpectedResolvedAt,
+        request.IsActive ?? true);
+
+    if (string.IsNullOrWhiteSpace(normalized.AreaName))
+        return Results.BadRequest(new { message = "AreaName is required." });
+
+    if (string.IsNullOrWhiteSpace(normalized.Title))
+        return Results.BadRequest(new { message = "Title is required." });
+
+    if (normalized.ExpectedResolvedAt.HasValue &&
+        normalized.StartedAt.HasValue &&
+        normalized.ExpectedResolvedAt.Value < normalized.StartedAt.Value)
+    {
+        return Results.BadRequest(new { message = "ExpectedResolvedAt cannot be earlier than StartedAt." });
+    }
+
+    return null;
+}
+
+static string NormalizeBuildingNoticeCategory(string? category)
+{
+    var normalized = (category ?? string.Empty).Trim().ToLowerInvariant();
+
+    return normalized switch
+    {
+        "" or "other" or "khac" or "khác" => "Other",
+        "elevator" or "thangmay" or "thang may" or "thang máy" => "Elevator",
+        "stair" or "stairs" or "thangbo" or "thang bo" or "thang bộ" => "Stair",
+        "learningroom" or "classroom" or "studyroom" or "phonghoc" or "phong hoc" or "phòng học" or "tu hoc" or "tự học" => "LearningRoom",
+        "electricity" or "dien" or "điện" => "Electricity",
+        "water" or "nuoc" or "nước" => "Water",
+        "safety" or "antoan" or "an toan" or "an toàn" => "Safety",
+        _ => "Other"
+    };
+}
+
+static string NormalizeBuildingNoticeStatus(string? status)
+{
+    var normalized = (status ?? string.Empty).Trim().ToLowerInvariant();
+
+    return normalized switch
+    {
+        "" or "notice" or "info" or "thong bao" or "thông báo" => "Notice",
+        "outofservice" or "out-of-service" or "closed" or "broken" or "hong" or "hỏng" or "tam dung" or "tạm dừng" => "OutOfService",
+        "maintenance" or "bao tri" or "bảo trì" or "bao duong" or "bảo dưỡng" => "Maintenance",
+        "replacing" or "replace" or "thay the" or "thay thế" or "thay thiet bi" or "thay thiết bị" => "Replacing",
+        "inspection" or "checking" or "kiem tra" or "kiểm tra" => "Inspection",
+        "resolved" or "done" or "completed" or "hoan thanh" or "hoàn thành" => "Resolved",
+        _ => "Notice"
+    };
+}
+
+static string NormalizeBuildingNoticeSeverity(string? severity)
+{
+    var normalized = (severity ?? string.Empty).Trim().ToLowerInvariant();
+
+    return normalized switch
+    {
+        "critical" or "danger" or "urgent" or "khan cap" or "khẩn cấp" => "Critical",
+        "warning" or "can chu y" or "cần chú ý" => "Warning",
+        _ => "Info"
+    };
+}
+
+static bool IsResolvedBuildingNotice(string status, bool isActive)
+{
+    return !isActive || status.Equals("Resolved", StringComparison.OrdinalIgnoreCase);
+}
+
+static async Task SeedRoomBuildingDataAsync(RoomBuildingDbContext db)
+{
+    if (await db.Buildings.AnyAsync() ||
+        await db.RoomTypes.AnyAsync() ||
+        await db.Rooms.AnyAsync())
+    {
+        return;
+    }
+
+    db.Buildings.AddRange(
+        new DormBuilding
+        {
+            BuildingName = "A",
+            DisplayName = "Tòa A",
+            Floors = 5,
+            Description = "Khu phòng nam/nữ tiêu chuẩn"
+        },
+        new DormBuilding
+        {
+            BuildingName = "B",
+            DisplayName = "Tòa B",
+            Floors = 5,
+            Description = "Khu phòng có tiện nghi mở rộng"
+        },
+        new DormBuilding
+        {
+            BuildingName = "C",
+            DisplayName = "Tòa C",
+            Floors = 6,
+            Description = "Khu phòng nhiều giường"
+        });
+
+    db.RoomTypes.AddRange(
+        new DormRoomType
+        {
+            RoomType = "4-bed",
+            Capacity = 4,
+            MonthlyFee = 800000,
+            Description = "Phòng 4 giường",
+            Amenities = "Điều hòa, quạt trần, tủ đồ"
+        },
+        new DormRoomType
+        {
+            RoomType = "6-bed",
+            Capacity = 6,
+            MonthlyFee = 650000,
+            Description = "Phòng 6 giường",
+            Amenities = "Quạt trần, tủ đồ"
+        },
+        new DormRoomType
+        {
+            RoomType = "8-bed",
+            Capacity = 8,
+            MonthlyFee = 550000,
+            Description = "Phòng 8 giường",
+            Amenities = "Quạt trần, giường tầng, tủ đồ"
+        });
+
+    db.Rooms.AddRange(
+        NewSeedRoom(101, "101", "A", 1, "4-bed", true, 4, 800000, "Available", "Điều hòa, quạt trần, tủ đồ"),
+        NewSeedRoom(102, "102", "A", 1, "6-bed", true, 6, 650000, "Available", "Quạt trần, tủ đồ"),
+        NewSeedRoom(103, "103", "A", 1, "4-bed", false, 4, 800000, "Available", "Điều hòa, quạt trần, tủ đồ"),
+        NewSeedRoom(104, "104", "A", 1, "6-bed", false, 6, 650000, "Available", "Quạt trần, tủ đồ"),
+        NewSeedRoom(201, "201", "B", 2, "4-bed", false, 4, 850000, "Available", "Điều hòa, bình nóng lạnh, tủ đồ"),
+        NewSeedRoom(202, "202", "B", 2, "6-bed", false, 6, 700000, "Available", "Quạt trần, bình nóng lạnh, tủ đồ"),
+        NewSeedRoom(203, "203", "B", 2, "4-bed", true, 4, 850000, "Available", "Điều hòa, bình nóng lạnh, tủ đồ"),
+        NewSeedRoom(204, "204", "B", 2, "6-bed", true, 6, 700000, "Maintenance", "Quạt trần, bình nóng lạnh, tủ đồ"),
+        NewSeedRoom(301, "301", "C", 3, "8-bed", true, 8, 550000, "Available", "Quạt trần, tủ đồ"),
+        NewSeedRoom(302, "302", "C", 3, "8-bed", false, 8, 550000, "Available", "Quạt trần, tủ đồ"));
+
+    var now = DateTime.UtcNow;
+    db.BuildingFacilityNotices.AddRange(
+        NewSeedBuildingNotice("A", "Thang máy A01", "Elevator", "OutOfService", "Critical", "Thang máy A01 tạm dừng", "Đang kiểm tra hộp điều khiển, sinh viên vui lòng dùng thang bộ khu A.", now.AddHours(-3), now.AddHours(8)),
+        NewSeedBuildingNotice("B", "Thang bộ phía đông", "Stair", "Maintenance", "Warning", "Thang bộ phía đông đang bảo trì", "Đội vận hành đang sửa lan can, tạm thời di chuyển bằng thang bộ trung tâm.", now.AddDays(-1), now.AddDays(1)),
+        NewSeedBuildingNotice("C", "Phòng tự học tầng 3", "LearningRoom", "Replacing", "Info", "Thay thế thiết bị phòng tự học", "Đang thay bộ đèn và ổ cắm, khu tự học mở lại sau khi nghiệm thu.", now.AddHours(-5), now.AddDays(2)));
+
+    await db.SaveChangesAsync();
+}
+
+static DormRoom NewSeedRoom(
+    long roomId,
+    string roomNumber,
+    string buildingName,
+    int floor,
+    string roomType,
+    bool gender,
+    int capacity,
+    decimal monthlyFee,
+    string status,
+    string amenities)
+{
+    return new DormRoom
+    {
+        RoomId = roomId,
+        RoomNumber = roomNumber,
+        BuildingName = buildingName,
+        Floor = floor,
+        RoomType = roomType,
+        Gender = gender,
+        Capacity = capacity,
+        OccupiedBeds = 0,
+        MonthlyFee = monthlyFee,
+        Status = status,
+        Amenities = amenities
+    };
+}
+
+static BuildingFacilityNotice NewSeedBuildingNotice(
+    string buildingName,
+    string areaName,
+    string category,
+    string status,
+    string severity,
+    string title,
+    string description,
+    DateTime startedAt,
+    DateTime? expectedResolvedAt)
+{
+    return new BuildingFacilityNotice
+    {
+        BuildingName = buildingName,
+        AreaName = areaName,
+        Category = category,
+        Status = status,
+        Severity = severity,
+        Title = title,
+        Description = description,
+        StartedAt = startedAt,
+        ExpectedResolvedAt = expectedResolvedAt,
+        UpdatedAt = DateTime.UtcNow,
+        IsActive = true
+    };
+}
+
+public sealed record RoomDatabaseRuntime(string Provider);
+
+public sealed class RoomBuildingDbContext(DbContextOptions<RoomBuildingDbContext> options)
+    : DbContext(options)
+{
+    public DbSet<DormBuilding> Buildings => Set<DormBuilding>();
+
+    public DbSet<DormRoomType> RoomTypes => Set<DormRoomType>();
+
+    public DbSet<DormRoom> Rooms => Set<DormRoom>();
+
+    public DbSet<RoomOccupancyReference> RoomOccupancyReferences => Set<RoomOccupancyReference>();
+
+    public DbSet<BuildingFacilityNotice> BuildingFacilityNotices => Set<BuildingFacilityNotice>();
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<DormBuilding>(entity =>
+        {
+            entity.ToTable("Buildings");
+            entity.HasKey(building => building.BuildingName);
+            entity.Property(building => building.BuildingName).HasMaxLength(32);
+            entity.Property(building => building.DisplayName).HasMaxLength(120);
+            entity.Property(building => building.Description).HasMaxLength(500);
+            entity.HasMany(building => building.FacilityNotices)
+                .WithOne()
+                .HasForeignKey(notice => notice.BuildingName)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<DormRoomType>(entity =>
+        {
+            entity.ToTable("RoomTypes");
+            entity.HasKey(roomType => roomType.RoomType);
+            entity.Property(roomType => roomType.RoomType).HasMaxLength(64);
+            entity.Property(roomType => roomType.MonthlyFee).HasPrecision(18, 2);
+            entity.Property(roomType => roomType.Description).HasMaxLength(500);
+            entity.Property(roomType => roomType.Amenities).HasMaxLength(500);
+        });
+
+        modelBuilder.Entity<DormRoom>(entity =>
+        {
+            entity.ToTable("Rooms");
+            entity.HasKey(room => room.RoomId);
+            entity.Property(room => room.RoomNumber).HasMaxLength(32);
+            entity.Property(room => room.BuildingName).HasMaxLength(32);
+            entity.Property(room => room.RoomType).HasMaxLength(64);
+            entity.Property(room => room.MonthlyFee).HasPrecision(18, 2);
+            entity.Property(room => room.Status).HasMaxLength(32);
+            entity.Property(room => room.Amenities).HasMaxLength(500);
+            entity.Property(room => room.LastContractCode).HasMaxLength(64);
+            entity.Ignore(room => room.AvailableBeds);
+            entity.Ignore(room => room.IsMaintenance);
+            entity.HasIndex(room => new { room.BuildingName, room.Floor, room.RoomNumber })
+                .IsUnique();
+            entity.HasIndex(room => room.RoomType);
+        });
+
+        modelBuilder.Entity<RoomOccupancyReference>(entity =>
+        {
+            entity.ToTable("RoomOccupancyReferences");
+            entity.HasKey(reference => reference.Id);
+            entity.Property(reference => reference.ContractCode).HasMaxLength(64);
+            entity.HasIndex(reference => reference.StudentId).IsUnique();
+            entity.HasIndex(reference => reference.RegistrationId).IsUnique();
+            entity.HasOne<DormRoom>()
+                .WithMany(room => room.OccupancyReferences)
+                .HasForeignKey(reference => reference.RoomId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<BuildingFacilityNotice>(entity =>
+        {
+            entity.ToTable("BuildingFacilityNotices");
+            entity.HasKey(notice => notice.Id);
+            entity.Property(notice => notice.BuildingName).HasMaxLength(32);
+            entity.Property(notice => notice.AreaName).HasMaxLength(120);
+            entity.Property(notice => notice.Category).HasMaxLength(40);
+            entity.Property(notice => notice.Status).HasMaxLength(40);
+            entity.Property(notice => notice.Severity).HasMaxLength(40);
+            entity.Property(notice => notice.Title).HasMaxLength(180);
+            entity.Property(notice => notice.Description).HasMaxLength(1000);
+            entity.HasIndex(notice => new { notice.BuildingName, notice.IsActive });
+        });
+    }
 }
 
 public sealed class DormBuilding
 {
-    public DormBuilding()
-        : this(string.Empty, string.Empty, 0, string.Empty)
-    {
-    }
+    public string BuildingName { get; set; } = string.Empty;
 
-    public DormBuilding(
-        string buildingName,
-        string displayName,
-        int floors,
-        string description)
-    {
-        BuildingName = buildingName;
-        DisplayName = displayName;
-        Floors = floors;
-        Description = description;
-    }
-
-    public string BuildingName { get; set; }
-
-    public string DisplayName { get; set; }
+    public string DisplayName { get; set; } = string.Empty;
 
     public int Floors { get; set; }
 
-    public string Description { get; set; }
+    public string Description { get; set; } = string.Empty;
+
+    public List<BuildingFacilityNotice> FacilityNotices { get; set; } = new();
+}
+
+public sealed class BuildingFacilityNotice
+{
+    public long Id { get; set; }
+
+    public string BuildingName { get; set; } = string.Empty;
+
+    public string AreaName { get; set; } = string.Empty;
+
+    public string Category { get; set; } = "Other";
+
+    public string Status { get; set; } = "Notice";
+
+    public string Severity { get; set; } = "Info";
+
+    public string Title { get; set; } = string.Empty;
+
+    public string Description { get; set; } = string.Empty;
+
+    public DateTime StartedAt { get; set; }
+
+    public DateTime? ExpectedResolvedAt { get; set; }
+
+    public DateTime? ResolvedAt { get; set; }
+
+    public DateTime UpdatedAt { get; set; }
+
+    public bool IsActive { get; set; } = true;
 }
 
 public sealed class DormRoomType
 {
-    public DormRoomType()
-        : this(string.Empty, 0, 0, string.Empty, string.Empty)
-    {
-    }
-
-    public DormRoomType(
-        string roomType,
-        int capacity,
-        decimal monthlyFee,
-        string description,
-        string amenities)
-    {
-        RoomType = roomType;
-        Capacity = capacity;
-        MonthlyFee = monthlyFee;
-        Description = description;
-        Amenities = amenities;
-    }
-
-    public string RoomType { get; set; }
+    public string RoomType { get; set; } = string.Empty;
 
     public int Capacity { get; set; }
 
     public decimal MonthlyFee { get; set; }
 
-    public string Description { get; set; }
+    public string Description { get; set; } = string.Empty;
 
-    public string Amenities { get; set; }
+    public string Amenities { get; set; } = string.Empty;
 }
 
 public sealed class DormRoom
 {
-    public DormRoom()
-        : this(0, string.Empty, string.Empty, 0, string.Empty, true, 0, 0, 0, "Available", string.Empty)
-    {
-    }
-
-    public DormRoom(
-        long roomId,
-        string roomNumber,
-        string buildingName,
-        int floor,
-        string roomType,
-        bool gender,
-        int capacity,
-        int occupiedBeds,
-        decimal monthlyFee,
-        string status,
-        string amenities)
-    {
-        RoomId = roomId;
-        RoomNumber = roomNumber;
-        BuildingName = buildingName;
-        Floor = floor;
-        RoomType = roomType;
-        Gender = gender;
-        Capacity = capacity;
-        OccupiedBeds = occupiedBeds;
-        MonthlyFee = monthlyFee;
-        Status = status;
-        Amenities = amenities;
-    }
-
     public long RoomId { get; set; }
 
-    public string RoomNumber { get; set; }
+    public string RoomNumber { get; set; } = string.Empty;
 
-    public string BuildingName { get; set; }
+    public string BuildingName { get; set; } = string.Empty;
 
     public int Floor { get; set; }
 
-    public string RoomType { get; set; }
+    public string RoomType { get; set; } = string.Empty;
 
     public bool Gender { get; set; }
 
@@ -1114,9 +1540,9 @@ public sealed class DormRoom
 
     public decimal MonthlyFee { get; set; }
 
-    public string Status { get; set; }
+    public string Status { get; set; } = "Available";
 
-    public string Amenities { get; set; }
+    public string Amenities { get; set; } = string.Empty;
 
     public string LastContractCode { get; set; } = string.Empty;
 
@@ -1134,6 +1560,21 @@ public sealed class DormRoom
 
         Status = AvailableBeds == 0 ? "Full" : "Available";
     }
+}
+
+public sealed class RoomOccupancyReference
+{
+    public long Id { get; set; }
+
+    public long RoomId { get; set; }
+
+    public long StudentId { get; set; }
+
+    public long RegistrationId { get; set; }
+
+    public string ContractCode { get; set; } = string.Empty;
+
+    public DateTime OccupiedAt { get; set; }
 }
 
 public sealed record BuildingRequest(
@@ -1160,20 +1601,34 @@ public sealed record RoomRequest(
     decimal? MonthlyFee,
     string? Amenities);
 
+public sealed record RoomStatusRequest(string Status);
+
 public sealed record OccupyRoomRequest(
     long StudentId,
     long RegistrationId,
-    string ContractCode,
-    int? BedNumber);
+    string ContractCode);
 
-public sealed record ReleaseRoomRequest(
-    long? StudentId,
-    long? RegistrationId,
-    string? ContractCode);
+public sealed record BuildingFacilityNoticeRequest(
+    string? AreaName,
+    string? Category,
+    string? Status,
+    string? Severity,
+    string? Title,
+    string? Description,
+    DateTime? StartedAt,
+    DateTime? ExpectedResolvedAt,
+    bool? IsActive);
 
-public sealed record MoveBedRequest(
-    long StudentId,
-    int TargetBedNumber);
+public sealed record NormalizedBuildingFacilityNotice(
+    string AreaName,
+    string Category,
+    string Status,
+    string Severity,
+    string Title,
+    string Description,
+    DateTime? StartedAt,
+    DateTime? ExpectedResolvedAt,
+    bool IsActive);
 
 public sealed record BuildingResponse(
     string BuildingName,
@@ -1183,7 +1638,12 @@ public sealed record BuildingResponse(
     int TotalRooms,
     int Capacity,
     int OccupiedBeds,
-    int AvailableBeds)
+    int AvailableBeds,
+    string OperationalStatus,
+    string OperationalStatusText,
+    int ActiveNoticeCount,
+    int CriticalNoticeCount,
+    IReadOnlyList<BuildingFacilityNoticeResponse> FacilityNotices)
 {
     public static BuildingResponse FromBuilding(
         DormBuilding building,
@@ -1192,6 +1652,12 @@ public sealed record BuildingResponse(
         var buildingRooms = rooms
             .Where(room => RoomServiceShared.IsSameCode(room.BuildingName, building.BuildingName))
             .ToList();
+        var activeNotices = building.FacilityNotices
+            .Where(notice => notice.IsActive && !notice.Status.Equals("Resolved", StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(notice => notice.Severity.Equals("Critical", StringComparison.OrdinalIgnoreCase))
+            .ThenByDescending(notice => notice.StartedAt)
+            .ToList();
+        var operationalStatus = GetOperationalStatus(activeNotices);
 
         return new BuildingResponse(
             building.BuildingName,
@@ -1201,7 +1667,42 @@ public sealed record BuildingResponse(
             buildingRooms.Count,
             buildingRooms.Sum(room => room.Capacity),
             buildingRooms.Sum(room => room.OccupiedBeds),
-            buildingRooms.Sum(room => room.AvailableBeds));
+            buildingRooms.Sum(room => room.AvailableBeds),
+            operationalStatus,
+            GetOperationalStatusText(operationalStatus),
+            activeNotices.Count,
+            activeNotices.Count(notice => notice.Severity.Equals("Critical", StringComparison.OrdinalIgnoreCase)),
+            activeNotices.Select(BuildingFacilityNoticeResponse.FromNotice).ToList());
+    }
+
+    private static string GetOperationalStatus(List<BuildingFacilityNotice> activeNotices)
+    {
+        if (activeNotices.Any(notice =>
+            notice.Severity.Equals("Critical", StringComparison.OrdinalIgnoreCase) ||
+            notice.Status.Equals("OutOfService", StringComparison.OrdinalIgnoreCase)))
+        {
+            return "Interrupted";
+        }
+
+        if (activeNotices.Any(notice =>
+            notice.Status.Equals("Maintenance", StringComparison.OrdinalIgnoreCase) ||
+            notice.Status.Equals("Replacing", StringComparison.OrdinalIgnoreCase)))
+        {
+            return "Maintenance";
+        }
+
+        return activeNotices.Count > 0 ? "Notice" : "Normal";
+    }
+
+    private static string GetOperationalStatusText(string status)
+    {
+        return status switch
+        {
+            "Interrupted" => "Có hạng mục cần chú ý",
+            "Maintenance" => "Đang bảo trì/bảo dưỡng",
+            "Notice" => "Có thông báo vận hành",
+            _ => "Vận hành ổn định"
+        };
     }
 }
 
@@ -1232,6 +1733,83 @@ public sealed record RoomTypeResponse(
             roomType.Description,
             roomType.Amenities,
             matchingRooms.Count);
+    }
+}
+
+public sealed record BuildingFacilityNoticeResponse(
+    long Id,
+    string BuildingName,
+    string AreaName,
+    string Category,
+    string CategoryText,
+    string Status,
+    string StatusText,
+    string Severity,
+    string SeverityText,
+    string Title,
+    string Description,
+    DateTime StartedAt,
+    DateTime? ExpectedResolvedAt,
+    DateTime? ResolvedAt,
+    DateTime UpdatedAt,
+    bool IsActive)
+{
+    public static BuildingFacilityNoticeResponse FromNotice(BuildingFacilityNotice notice)
+    {
+        return new BuildingFacilityNoticeResponse(
+            notice.Id,
+            notice.BuildingName,
+            notice.AreaName,
+            notice.Category,
+            GetCategoryText(notice.Category),
+            notice.Status,
+            GetStatusText(notice.Status),
+            notice.Severity,
+            GetSeverityText(notice.Severity),
+            notice.Title,
+            notice.Description,
+            notice.StartedAt,
+            notice.ExpectedResolvedAt,
+            notice.ResolvedAt,
+            notice.UpdatedAt,
+            notice.IsActive);
+    }
+
+    private static string GetCategoryText(string category)
+    {
+        return category switch
+        {
+            "Elevator" => "Thang máy",
+            "Stair" => "Thang bộ",
+            "LearningRoom" => "Phòng học/tự học",
+            "Electricity" => "Điện",
+            "Water" => "Nước",
+            "Safety" => "An toàn",
+            _ => "Hạng mục khác"
+        };
+    }
+
+    private static string GetStatusText(string status)
+    {
+        return status switch
+        {
+            "OutOfService" => "Tạm dừng sử dụng",
+            "Maintenance" => "Đang bảo trì",
+            "Replacing" => "Đang thay thế thiết bị",
+            "Inspection" => "Đang kiểm tra",
+            "Resolved" => "Đã hoàn thành",
+            _ => "Thông báo"
+        };
+    }
+
+    private static string GetSeverityText(string severity)
+    {
+        return severity switch
+        {
+            "Critical" => "Khẩn cấp",
+            "Warning" => "Cần chú ý",
+            _ => "Thông tin"
+        };
     }
 }
 
@@ -1283,6 +1861,7 @@ public sealed record RoomResponse(
                 .Select(reference => reference.StudentId)
                 .ToList(),
             room.OccupancyReferences
+                .OrderBy(reference => reference.OccupiedAt)
                 .Select(RoomOccupancyResponse.FromReference)
                 .ToList());
     }
@@ -1290,7 +1869,7 @@ public sealed record RoomResponse(
     private static string GetStatusText(DormRoom room)
     {
         if (room.IsMaintenance)
-            return "Đang sửa chữa";
+            return "Đang bảo trì";
 
         if (room.AvailableBeds == 0)
             return "Đầy phòng";
@@ -1309,43 +1888,11 @@ public sealed record FloorMapResponse(
     int AvailableBeds,
     IReadOnlyList<RoomResponse> Rooms);
 
-public sealed class RoomOccupancyReference
-{
-    public RoomOccupancyReference()
-    {
-    }
-
-    public RoomOccupancyReference(
-        long studentId,
-        long registrationId,
-        string contractCode,
-        DateTime occupiedAt,
-        int bedNumber = 0)
-    {
-        StudentId = studentId;
-        RegistrationId = registrationId;
-        ContractCode = contractCode;
-        OccupiedAt = occupiedAt;
-        BedNumber = bedNumber;
-    }
-
-    public long StudentId { get; set; }
-
-    public long RegistrationId { get; set; }
-
-    public string ContractCode { get; set; } = string.Empty;
-
-    public DateTime OccupiedAt { get; set; }
-
-    public int BedNumber { get; set; }
-}
-
 public sealed record RoomOccupancyResponse(
     long StudentId,
     long RegistrationId,
     string ContractCode,
-    DateTime OccupiedAt,
-    int BedNumber)
+    DateTime OccupiedAt)
 {
     public static RoomOccupancyResponse FromReference(
         RoomOccupancyReference reference)
@@ -1354,8 +1901,7 @@ public sealed record RoomOccupancyResponse(
             reference.StudentId,
             reference.RegistrationId,
             reference.ContractCode,
-            reference.OccupiedAt,
-            reference.BedNumber);
+            reference.OccupiedAt);
     }
 }
 

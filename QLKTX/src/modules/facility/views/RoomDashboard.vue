@@ -176,6 +176,7 @@
                 <th>Số tầng</th>
                 <th>Số phòng</th>
                 <th>Giường trống</th>
+                <th>Vận hành</th>
                 <th>Thao tác</th>
               </tr>
             </thead>
@@ -187,7 +188,20 @@
                 <td>{{ building.totalRooms }}</td>
                 <td>{{ building.availableBeds }}</td>
                 <td>
+                  <div class="building-status-cell">
+                    <v-chip size="small" variant="tonal" :color="getBuildingStatusColor(building.operationalStatus)">
+                      {{ building.operationalStatusText }}
+                    </v-chip>
+                    <small v-if="building.activeNoticeCount > 0">
+                      {{ building.activeNoticeCount }} thông báo đang hiệu lực
+                    </small>
+                    <small v-else>Không có cảnh báo</small>
+                  </div>
+                </td>
+                <td>
                   <div class="row-actions">
+                    <v-btn icon="mdi-eye" size="small" variant="text" @click="openBuildingDetail(building)" />
+                    <v-btn icon="mdi-bell-plus-outline" size="small" variant="text" color="warning" @click="openCreateBuildingNotice(building)" />
                     <v-btn icon="mdi-pencil" size="small" variant="text" @click="openEditBuilding(building)" />
                     <v-btn icon="mdi-delete" size="small" variant="text" color="error" @click="deleteBuilding(building)" />
                   </div>
@@ -335,6 +349,139 @@
           <v-spacer />
           <v-btn variant="text" @click="buildingDialog = false">Hủy</v-btn>
           <v-btn color="primary" :loading="saving" @click="saveBuilding">Lưu</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <v-dialog v-model="buildingDetailDialog" max-width="760px">
+      <v-card v-if="selectedBuildingDetail">
+        <v-card-title class="building-detail-title">
+          <div>
+            <span>{{ selectedBuildingDetail.displayName }}</span>
+            <small>{{ selectedBuildingDetail.totalRooms }} phòng · còn {{ selectedBuildingDetail.availableBeds }} giường</small>
+          </div>
+          <v-chip :color="getBuildingStatusColor(selectedBuildingDetail.operationalStatus)" variant="tonal">
+            {{ selectedBuildingDetail.operationalStatusText }}
+          </v-chip>
+        </v-card-title>
+        <v-card-text>
+          <div class="building-summary">
+            <p><strong>Mã tòa:</strong> {{ selectedBuildingDetail.buildingName }}</p>
+            <p><strong>Số tầng:</strong> {{ selectedBuildingDetail.floors }}</p>
+            <p><strong>Mô tả:</strong> {{ selectedBuildingDetail.description || 'Chưa có mô tả.' }}</p>
+          </div>
+
+          <v-divider class="my-4" />
+
+          <div class="panel-head compact-head">
+            <h3>Thông báo vận hành</h3>
+            <v-btn size="small" color="primary" prepend-icon="mdi-bell-plus-outline" @click="openCreateBuildingNotice(selectedBuildingDetail)">
+              Thêm thông báo
+            </v-btn>
+          </div>
+
+          <div v-if="selectedBuildingDetail.facilityNotices.length > 0" class="notice-list">
+            <v-sheet
+              v-for="notice in selectedBuildingDetail.facilityNotices"
+              :key="notice.id"
+              class="notice-item"
+              :class="`notice-${notice.severity.toLowerCase()}`"
+            >
+              <div class="notice-main">
+                <div>
+                  <div class="notice-title-row">
+                    <strong>{{ notice.title }}</strong>
+                    <v-chip size="x-small" :color="getNoticeSeverityColor(notice.severity)" variant="tonal">
+                      {{ notice.severityText }}
+                    </v-chip>
+                  </div>
+                  <small>{{ notice.areaName }} · {{ notice.categoryText }} · {{ notice.statusText }}</small>
+                </div>
+                <div class="row-actions">
+                  <v-btn icon="mdi-pencil" size="small" variant="text" @click="openEditBuildingNotice(selectedBuildingDetail, notice)" />
+                  <v-btn icon="mdi-check-circle-outline" size="small" variant="text" color="success" @click="resolveBuildingNotice(selectedBuildingDetail, notice)" />
+                  <v-btn icon="mdi-delete" size="small" variant="text" color="error" @click="deleteBuildingNotice(selectedBuildingDetail, notice)" />
+                </div>
+              </div>
+              <p>{{ notice.description || 'Không có mô tả chi tiết.' }}</p>
+              <small class="notice-time">
+                Bắt đầu {{ formatDateTime(notice.startedAt) }}
+                <template v-if="notice.expectedResolvedAt"> · Dự kiến xong {{ formatDateTime(notice.expectedResolvedAt) }}</template>
+              </small>
+            </v-sheet>
+          </div>
+          <v-alert v-else type="success" variant="tonal" density="comfortable">
+            Tòa đang vận hành ổn định, chưa có thông báo bảo trì/bảo dưỡng.
+          </v-alert>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn color="primary" variant="text" @click="buildingDetailDialog = false">Đóng</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <v-dialog v-model="buildingNoticeDialog" max-width="720px">
+      <v-card>
+        <v-card-title>
+          {{ editingBuildingNoticeId ? 'Sửa thông báo vận hành' : 'Thêm thông báo vận hành' }}
+        </v-card-title>
+        <v-card-text>
+          <v-row>
+            <v-col cols="12" md="4">
+              <v-text-field v-model="buildingNoticeForm.buildingName" label="Tòa" density="compact" readonly />
+            </v-col>
+            <v-col cols="12" md="8">
+              <v-text-field v-model="buildingNoticeForm.areaName" label="Khu vực/hạng mục" density="compact" placeholder="VD: Thang máy A01" />
+            </v-col>
+            <v-col cols="12" md="4">
+              <v-select
+                v-model="buildingNoticeForm.category"
+                :items="noticeCategoryOptions"
+                item-title="title"
+                item-value="value"
+                label="Loại hạng mục"
+                density="compact"
+              />
+            </v-col>
+            <v-col cols="12" md="4">
+              <v-select
+                v-model="buildingNoticeForm.status"
+                :items="noticeStatusOptions"
+                item-title="title"
+                item-value="value"
+                label="Trạng thái"
+                density="compact"
+              />
+            </v-col>
+            <v-col cols="12" md="4">
+              <v-select
+                v-model="buildingNoticeForm.severity"
+                :items="noticeSeverityOptions"
+                item-title="title"
+                item-value="value"
+                label="Mức độ"
+                density="compact"
+              />
+            </v-col>
+            <v-col cols="12">
+              <v-text-field v-model="buildingNoticeForm.title" label="Tiêu đề sinh viên sẽ thấy" density="compact" />
+            </v-col>
+            <v-col cols="12">
+              <v-textarea v-model="buildingNoticeForm.description" label="Mô tả chi tiết" rows="3" density="compact" />
+            </v-col>
+            <v-col cols="12" md="6">
+              <v-text-field v-model="buildingNoticeForm.startedAt" label="Bắt đầu" type="datetime-local" density="compact" />
+            </v-col>
+            <v-col cols="12" md="6">
+              <v-text-field v-model="buildingNoticeForm.expectedResolvedAt" label="Dự kiến hoàn thành" type="datetime-local" density="compact" />
+            </v-col>
+          </v-row>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" @click="buildingNoticeDialog = false">Hủy</v-btn>
+          <v-btn color="primary" :loading="saving" @click="saveBuildingNotice">Lưu</v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>
@@ -521,21 +668,52 @@ const selectedBuilding = ref(ALL_VALUE)
 const selectedFloor = ref(ALL_VALUE)
 const selectedStatus = ref(ALL_VALUE)
 const selectedRoom = ref(null)
+const selectedBuildingDetail = ref(null)
 
 const buildingDialog = ref(false)
+const buildingDetailDialog = ref(false)
+const buildingNoticeDialog = ref(false)
 const roomTypeDialog = ref(false)
 const roomDialog = ref(false)
 const detailDialog = ref(false)
 
 const editingBuildingName = ref('')
+const editingBuildingNoticeId = ref(null)
 const editingRoomType = ref('')
 const editingRoomId = ref(null)
+
+function toDateTimeInput(value) {
+  if (!value) return ''
+  const date = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000)
+  return localDate.toISOString().slice(0, 16)
+}
+
+function fromDateTimeInput(value) {
+  if (!value) return null
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? null : date.toISOString()
+}
 
 const emptyBuildingForm = () => ({
   buildingName: '',
   displayName: '',
   floors: 1,
   description: '',
+})
+
+const emptyBuildingNoticeForm = (building = null) => ({
+  buildingName: building?.buildingName || '',
+  areaName: '',
+  category: 'Other',
+  status: 'Notice',
+  severity: 'Info',
+  title: '',
+  description: '',
+  startedAt: toDateTimeInput(new Date()),
+  expectedResolvedAt: '',
+  isActive: true,
 })
 
 const emptyRoomTypeForm = () => ({
@@ -568,6 +746,7 @@ const emptyRoomForm = () => {
 }
 
 const buildingForm = ref(emptyBuildingForm())
+const buildingNoticeForm = ref(emptyBuildingNoticeForm())
 const roomTypeForm = ref(emptyRoomTypeForm())
 const roomForm = ref(emptyRoomForm())
 
@@ -585,6 +764,31 @@ const statusFilterOptions = computed(() => [
 const genderOptions = [
   { title: 'Nam', value: true },
   { title: 'Nữ', value: false },
+]
+
+const noticeCategoryOptions = [
+  { title: 'Thang máy', value: 'Elevator' },
+  { title: 'Thang bộ', value: 'Stair' },
+  { title: 'Phòng học/tự học', value: 'LearningRoom' },
+  { title: 'Điện', value: 'Electricity' },
+  { title: 'Nước', value: 'Water' },
+  { title: 'An toàn', value: 'Safety' },
+  { title: 'Khác', value: 'Other' },
+]
+
+const noticeStatusOptions = [
+  { title: 'Thông báo', value: 'Notice' },
+  { title: 'Tạm dừng sử dụng', value: 'OutOfService' },
+  { title: 'Đang bảo trì', value: 'Maintenance' },
+  { title: 'Đang thay thế thiết bị', value: 'Replacing' },
+  { title: 'Đang kiểm tra', value: 'Inspection' },
+  { title: 'Đã hoàn thành', value: 'Resolved' },
+]
+
+const noticeSeverityOptions = [
+  { title: 'Thông tin', value: 'Info' },
+  { title: 'Cần chú ý', value: 'Warning' },
+  { title: 'Khẩn cấp', value: 'Critical' },
 ]
 
 const buildingOptions = computed(() =>
@@ -716,9 +920,15 @@ const loadAll = async ({ silent = false } = {}) => {
       api.get('/rooms'),
     ])
 
-    buildings.value = normalizeList(buildingResponse.data)
+    buildings.value = normalizeList(buildingResponse.data).map(normalizeBuilding)
     roomTypes.value = normalizeList(roomTypeResponse.data)
     rooms.value = normalizeList(roomResponse.data).map(normalizeRoom)
+
+    if (selectedBuildingDetail.value) {
+      selectedBuildingDetail.value =
+        buildings.value.find((building) => building.buildingName === selectedBuildingDetail.value.buildingName) ||
+        selectedBuildingDetail.value
+    }
   } catch (error) {
     if (!silent) {
       showMessage('Không tải được dữ liệu RoomService.', 'error')
@@ -730,6 +940,51 @@ const loadAll = async ({ silent = false } = {}) => {
     }
   }
 }
+
+const normalizeBuilding = (building) => {
+  const notices = normalizeList(building.facilityNotices).map(normalizeBuildingNotice)
+  const activeNoticeCount = Number(
+    building.activeNoticeCount ??
+    notices.filter((notice) => notice.isActive && notice.status !== 'Resolved').length,
+  )
+  const criticalNoticeCount = Number(
+    building.criticalNoticeCount ??
+    notices.filter((notice) => notice.severity === 'Critical').length,
+  )
+  const operationalStatus = building.operationalStatus || deriveBuildingOperationalStatus(notices)
+
+  return {
+    ...building,
+    floors: Number(building.floors ?? 0),
+    totalRooms: Number(building.totalRooms ?? 0),
+    availableBeds: Number(building.availableBeds ?? 0),
+    activeNoticeCount,
+    criticalNoticeCount,
+    operationalStatus,
+    operationalStatusText: building.operationalStatusText || getBuildingStatusText(operationalStatus),
+    facilityNotices: notices,
+  }
+}
+
+const normalizeBuildingNotice = (notice) => ({
+  ...notice,
+  id: Number(notice.id ?? 0),
+  buildingName: notice.buildingName || '',
+  areaName: notice.areaName || '',
+  category: notice.category || 'Other',
+  categoryText: notice.categoryText || getNoticeCategoryText(notice.category),
+  status: notice.status || 'Notice',
+  statusText: notice.statusText || getNoticeStatusText(notice.status),
+  severity: notice.severity || 'Info',
+  severityText: notice.severityText || getNoticeSeverityText(notice.severity),
+  title: notice.title || '',
+  description: notice.description || '',
+  startedAt: notice.startedAt || '',
+  expectedResolvedAt: notice.expectedResolvedAt || '',
+  resolvedAt: notice.resolvedAt || '',
+  updatedAt: notice.updatedAt || '',
+  isActive: notice.isActive !== false && notice.status !== 'Resolved',
+})
 
 const normalizeRoom = (room) => {
   const capacity = Number(room.capacity ?? 0)
@@ -823,6 +1078,94 @@ const deleteBuilding = async (building) => {
     await loadAll()
   } catch (error) {
     showMessage(error.response?.data?.message || 'Không xóa được tòa nhà.', 'error')
+    console.error(error)
+  }
+}
+
+const openBuildingDetail = (building) => {
+  selectedBuildingDetail.value = building
+  buildingDetailDialog.value = true
+}
+
+const openCreateBuildingNotice = (building) => {
+  selectedBuildingDetail.value = building
+  editingBuildingNoticeId.value = null
+  buildingNoticeForm.value = emptyBuildingNoticeForm(building)
+  buildingNoticeDialog.value = true
+}
+
+const openEditBuildingNotice = (building, notice) => {
+  selectedBuildingDetail.value = building
+  editingBuildingNoticeId.value = notice.id
+  buildingNoticeForm.value = {
+    buildingName: building.buildingName,
+    areaName: notice.areaName || '',
+    category: notice.category || 'Other',
+    status: notice.status || 'Notice',
+    severity: notice.severity || 'Info',
+    title: notice.title || '',
+    description: notice.description || '',
+    startedAt: toDateTimeInput(notice.startedAt),
+    expectedResolvedAt: toDateTimeInput(notice.expectedResolvedAt),
+    isActive: notice.isActive !== false,
+  }
+  buildingNoticeDialog.value = true
+}
+
+const saveBuildingNotice = async () => {
+  try {
+    saving.value = true
+    const buildingName = buildingNoticeForm.value.buildingName
+    const payload = {
+      ...buildingNoticeForm.value,
+      startedAt: fromDateTimeInput(buildingNoticeForm.value.startedAt),
+      expectedResolvedAt: fromDateTimeInput(buildingNoticeForm.value.expectedResolvedAt),
+      isActive: buildingNoticeForm.value.status !== 'Resolved',
+    }
+
+    if (editingBuildingNoticeId.value) {
+      await api.put(
+        `/buildings/${encodeURIComponent(buildingName)}/facility-notices/${editingBuildingNoticeId.value}`,
+        payload,
+      )
+      showMessage('Đã cập nhật thông báo vận hành.')
+    } else {
+      await api.post(`/buildings/${encodeURIComponent(buildingName)}/facility-notices`, payload)
+      showMessage('Đã thêm thông báo vận hành.')
+    }
+
+    buildingNoticeDialog.value = false
+    await loadAll()
+  } catch (error) {
+    showMessage(error.response?.data?.message || 'Không lưu được thông báo vận hành.', 'error')
+    console.error(error)
+  } finally {
+    saving.value = false
+  }
+}
+
+const resolveBuildingNotice = async (building, notice) => {
+  if (!window.confirm(`Đánh dấu hoàn thành: ${notice.title}?`)) return
+
+  try {
+    await api.patch(`/buildings/${encodeURIComponent(building.buildingName)}/facility-notices/${notice.id}/resolve`)
+    showMessage('Đã đánh dấu thông báo là hoàn thành.')
+    await loadAll()
+  } catch (error) {
+    showMessage(error.response?.data?.message || 'Không hoàn tất được thông báo.', 'error')
+    console.error(error)
+  }
+}
+
+const deleteBuildingNotice = async (building, notice) => {
+  if (!window.confirm(`Xóa thông báo: ${notice.title}?`)) return
+
+  try {
+    await api.delete(`/buildings/${encodeURIComponent(building.buildingName)}/facility-notices/${notice.id}`)
+    showMessage('Đã xóa thông báo vận hành.')
+    await loadAll()
+  } catch (error) {
+    showMessage(error.response?.data?.message || 'Không xóa được thông báo.', 'error')
     console.error(error)
   }
 }
@@ -950,6 +1293,59 @@ const deleteRoom = async (room) => {
     showMessage(error.response?.data?.message || 'Không xóa được phòng.', 'error')
     console.error(error)
   }
+}
+
+const deriveBuildingOperationalStatus = (notices) => {
+  const activeNotices = notices.filter((notice) => notice.isActive && notice.status !== 'Resolved')
+  if (activeNotices.some((notice) => notice.severity === 'Critical' || notice.status === 'OutOfService')) return 'Interrupted'
+  if (activeNotices.some((notice) => ['Maintenance', 'Replacing'].includes(notice.status))) return 'Maintenance'
+  return activeNotices.length > 0 ? 'Notice' : 'Normal'
+}
+
+const getBuildingStatusText = (status) => {
+  if (status === 'Interrupted') return 'Có hạng mục cần chú ý'
+  if (status === 'Maintenance') return 'Đang bảo trì/bảo dưỡng'
+  if (status === 'Notice') return 'Có thông báo vận hành'
+  return 'Vận hành ổn định'
+}
+
+const getBuildingStatusColor = (status) => {
+  if (status === 'Interrupted') return 'error'
+  if (status === 'Maintenance') return 'warning'
+  if (status === 'Notice') return 'info'
+  return 'success'
+}
+
+const getNoticeSeverityColor = (severity) => {
+  if (severity === 'Critical') return 'error'
+  if (severity === 'Warning') return 'warning'
+  return 'info'
+}
+
+const getNoticeCategoryText = (category) => {
+  const option = noticeCategoryOptions.find((item) => item.value === category)
+  return option?.title || 'Khác'
+}
+
+const getNoticeStatusText = (status) => {
+  const option = noticeStatusOptions.find((item) => item.value === status)
+  return option?.title || 'Thông báo'
+}
+
+const getNoticeSeverityText = (severity) => {
+  const option = noticeSeverityOptions.find((item) => item.value === severity)
+  return option?.title || 'Thông tin'
+}
+
+const formatDateTime = (value) => {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '-'
+
+  return new Intl.DateTimeFormat('vi-VN', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+  }).format(date)
 }
 
 const getStatusColor = (status) => {
@@ -1167,7 +1563,8 @@ onBeforeUnmount(() => {
 }
 
 .occupancy-cell,
-.auto-status {
+.auto-status,
+.building-status-cell {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -1179,9 +1576,82 @@ onBeforeUnmount(() => {
 }
 
 .occupancy-cell small,
-.auto-status small {
+.auto-status small,
+.building-status-cell small {
   color: #607085;
   font-size: 0.76rem;
+}
+
+.building-detail-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.building-detail-title small {
+  display: block;
+  margin-top: 4px;
+  color: #607085;
+  font-size: 0.82rem;
+  font-weight: 500;
+}
+
+.building-summary {
+  display: grid;
+  gap: 8px;
+}
+
+.building-summary p {
+  margin: 0;
+}
+
+.compact-head {
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.notice-list {
+  display: grid;
+  gap: 12px;
+}
+
+.notice-item {
+  border: 1px solid #e4e8ef;
+  border-left: 4px solid #1a73e8;
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.notice-critical {
+  border-left-color: #d32f2f;
+}
+
+.notice-warning {
+  border-left-color: #f9a825;
+}
+
+.notice-main,
+.notice-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.notice-title-row {
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.notice-main small,
+.notice-time {
+  color: #607085;
+}
+
+.notice-item p {
+  margin: 10px 0 6px;
+  color: #34445a;
 }
 
 .room-dialog {
