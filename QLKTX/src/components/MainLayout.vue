@@ -550,7 +550,7 @@ onMounted(loadNotifications)
   height: 44px;
   border: 0;
   border-radius: 8px;
-  background: linear-gradient(135deg, #f97316, #c2410c);
+  background: linear-gradient(135deg, #ff8a1a, #f06400);
   color: #ffffff;
   font-size: 28px;
   box-shadow: 0 14px 26px rgba(194, 65, 12, 0.32);
@@ -1125,22 +1125,22 @@ onMounted(loadNotifications)
 .app-shell {
   grid-template-columns: 288px minmax(0, 1fr);
   background:
-    radial-gradient(circle at 18% 0%, rgba(243, 111, 33, 0.12), transparent 32%),
-    linear-gradient(135deg, #fff8f1 0%, #fffaf6 42%, #ffffff 100%);
+    radial-gradient(circle at 18% 0%, rgba(255, 122, 26, 0.16), transparent 32%),
+    linear-gradient(135deg, #fff7ed 0%, #fffaf6 42%, #ffffff 100%);
 }
 
 .operations-shell {
   background:
-    radial-gradient(circle at 0 0, rgba(243, 111, 33, 0.18), transparent 34%),
-    linear-gradient(135deg, #140f0c 0%, #241510 36%, #fff8f1 36%, #fffaf6 100%);
+    radial-gradient(circle at 0 0, rgba(255, 122, 26, 0.22), transparent 34%),
+    linear-gradient(135deg, #1f1209 0%, #321707 36%, #fff7ed 36%, #fffaf6 100%);
 }
 
 .sidebar {
   padding: 0 14px 16px;
   background:
-    linear-gradient(180deg, rgba(124, 45, 18, 0.28), transparent 34%),
-    linear-gradient(180deg, #1a120d 0%, #24150e 58%, #140f0c 100%);
-  box-shadow: 10px 0 32px rgba(124, 45, 18, 0.18);
+    linear-gradient(180deg, rgba(255, 122, 26, 0.24), transparent 34%),
+    linear-gradient(180deg, #241309 0%, #351a0a 58%, #170d07 100%);
+  box-shadow: 10px 0 32px rgba(255, 122, 26, 0.18);
 }
 
 .sidebar-top {
@@ -1148,15 +1148,15 @@ onMounted(loadNotifications)
   padding: 18px 14px 14px;
   border-bottom: 1px solid rgba(255, 184, 116, 0.14);
   background:
-    linear-gradient(135deg, rgba(243, 111, 33, 0.24), transparent 52%),
+    linear-gradient(135deg, rgba(255, 122, 26, 0.28), transparent 52%),
     rgba(255, 255, 255, 0.02);
 }
 
 .brand-mark {
   border-radius: 10px;
-  background: linear-gradient(135deg, #f36f21, #ffb347);
+  background: linear-gradient(135deg, #ff7a1a, #ffc04d);
   color: #fff;
-  box-shadow: 0 14px 28px rgba(243, 111, 33, 0.26);
+  box-shadow: 0 14px 28px rgba(255, 122, 26, 0.28);
 }
 
 .brand-name {
@@ -1176,8 +1176,8 @@ onMounted(loadNotifications)
 }
 
 .live-dot {
-  background: #ffb347;
-  box-shadow: 0 0 0 4px rgba(255, 179, 71, 0.18);
+  background: #ffc04d;
+  box-shadow: 0 0 0 4px rgba(255, 192, 77, 0.20);
 }
 
 .nav {
@@ -1225,9 +1225,9 @@ onMounted(loadNotifications)
 
 .nav-item.active {
   border-color: rgba(255, 184, 116, 0.32);
-  background: linear-gradient(135deg, #f36f21, #d95712);
+  background: linear-gradient(135deg, #ff7a1a, #f06400);
   color: #fff;
-  box-shadow: 0 12px 24px rgba(124, 45, 18, 0.26);
+  box-shadow: 0 12px 24px rgba(255, 122, 26, 0.28);
 }
 
 .account-box {
@@ -1246,7 +1246,7 @@ onMounted(loadNotifications)
 
 .main-panel {
   background:
-    linear-gradient(180deg, rgba(255, 243, 232, 0.92), rgba(255, 248, 241, 0.76) 260px, #fffaf6 100%);
+    linear-gradient(180deg, rgba(255, 242, 223, 0.94), rgba(255, 247, 237, 0.78) 260px, #fffaf6 100%);
 }
 
 .topbar {
@@ -1302,11 +1302,11 @@ onMounted(loadNotifications)
 .notification-attachments button {
   border-color: #fed7aa;
   background: #fff7ed;
-  color: #c2410c;
+  color: #c94f00;
 }
 
 .notification-dot.severity-important {
-  background: #f36f21;
+  background: #ff7a1a;
 }
 
 .page-body {
@@ -1315,23 +1315,23 @@ onMounted(loadNotifications)
 }
 
 .dark-shell {
-  --app-bg: #160f0b;
-  --surface: #201610;
-  --surface-soft: #291b13;
-  --line: rgba(255, 190, 135, 0.18);
-  --line-strong: rgba(255, 190, 135, 0.32);
-  --ink: #fff7ed;
-  --muted: #d6b9a2;
-  --muted-strong: #f2d7c2;
+  --app-bg: #111827;
+  --surface: #1f2937;
+  --surface-soft: #263244;
+  --line: rgba(255, 255, 255, 0.14);
+  --line-strong: rgba(255, 192, 77, 0.38);
+  --ink: #f8fafc;
+  --muted: #d9e2ee;
+  --muted-strong: #eef4ff;
   background:
-    radial-gradient(circle at 88% 0, rgba(243, 111, 33, 0.16), transparent 32%),
-    linear-gradient(135deg, #140f0c 0%, #1f130d 58%, #25160e 100%);
+    radial-gradient(circle at 88% 0, rgba(255, 122, 26, 0.22), transparent 32%),
+    linear-gradient(135deg, #0f172a 0%, #111827 58%, #182132 100%);
 }
 
 .dark-shell .main-panel {
   background:
-    radial-gradient(circle at 100% 0, rgba(243, 111, 33, 0.16), transparent 38%),
-    linear-gradient(180deg, #1a120d 0%, #21150f 100%);
+    radial-gradient(circle at 100% 0, rgba(255, 122, 26, 0.22), transparent 38%),
+    linear-gradient(180deg, #111827 0%, #172033 100%);
 }
 
 .dark-shell .topbar {
@@ -1426,7 +1426,7 @@ onMounted(loadNotifications)
   .app-shell,
   .operations-shell {
     display: block;
-    background: #fff8f1;
+    background: #fff7ed;
   }
 
   .sidebar {
@@ -1545,7 +1545,7 @@ onMounted(loadNotifications)
 
   .mobile-floating-logout {
     display: none !important;
-    background: linear-gradient(135deg, #f36f21, #c2410c);
+    background: linear-gradient(135deg, #ff7a1a, #f06400);
     box-shadow: 0 16px 30px rgba(194, 65, 12, 0.30);
   }
 }
@@ -1685,5 +1685,180 @@ onMounted(loadNotifications)
     white-space: nowrap;
     word-break: normal;
   }
+}
+</style>
+
+<style>
+.app-shell.dark-shell {
+  --app-bg: #111827;
+  --surface: #1f2937;
+  --surface-soft: #263244;
+  --line: rgba(255, 255, 255, 0.14);
+  --line-strong: rgba(255, 192, 77, 0.38);
+  --ink: #f8fafc;
+  --muted: #d9e2ee;
+  --muted-strong: #eef4ff;
+  --brand: #ff8a1a;
+  --brand-dark: #ffc04d;
+  --brand-soft: rgba(255, 122, 26, 0.16);
+  color: #f8fafc;
+}
+
+.app-shell.dark-shell :where(.main-panel, .page-body) {
+  color: #f8fafc;
+}
+
+.app-shell.dark-shell :where(
+  h1,
+  h2,
+  h3,
+  h4,
+  strong,
+  .cell-title,
+  .page-heading h2,
+  .page-head h2,
+  .section-title h3,
+  .detail-header h3,
+  .metric-card strong,
+  .hero-summary strong,
+  .room-summary strong,
+  .chart-title h4
+) {
+  color: #ffffff !important;
+}
+
+.app-shell.dark-shell :where(
+  p,
+  small,
+  label,
+  .muted,
+  .cell-subtitle,
+  .page-heading p,
+  .page-head p,
+  .section-title p,
+  .metric-card small,
+  .hero-summary span,
+  .hero-summary small,
+  .room-summary span,
+  .room-summary small
+) {
+  color: #dbe7f5 !important;
+}
+
+.app-shell.dark-shell :where(
+  .v-card,
+  .panel,
+  .table-card,
+  .filter-card,
+  .dashboard-hero,
+  .hero-summary div,
+  .metric-card,
+  .registration-metric,
+  .stat-tile,
+  .invoice-list,
+  .invoice-detail,
+  .history-panel,
+  .wallet-panel,
+  .topup-box,
+  .wallet-history,
+  .analytics-card,
+  .chart-panel,
+  .summary-band,
+  .report-panel,
+  .connection-strip,
+  .room-summary,
+  .detail-summary > div,
+  .description-box,
+  .action-panel,
+  .timeline-panel,
+  .checklist-panel,
+  .issue-panel,
+  .list-panel,
+  .occupant-panel,
+  .preview-panel,
+  .allocation-row,
+  .transfer-note,
+  .wallet-main
+) {
+  border-color: rgba(255, 255, 255, 0.16) !important;
+  background: rgba(31, 41, 55, 0.96) !important;
+  color: #f8fafc !important;
+}
+
+.app-shell.dark-shell :where(
+  .v-field,
+  .v-input__control,
+  .v-table,
+  .v-data-table,
+  .data-table,
+  .account-table,
+  .operations-table,
+  .notifications-table,
+  .allocation-table
+) {
+  background: rgba(31, 41, 55, 0.98) !important;
+  color: #f8fafc !important;
+}
+
+.app-shell.dark-shell :where(.v-field__overlay) {
+  background: rgba(31, 41, 55, 0.98) !important;
+  opacity: 1 !important;
+}
+
+.app-shell.dark-shell :where(.v-label, .v-field__input, .v-select__selection-text, input, textarea, select) {
+  color: #f8fafc !important;
+  caret-color: #ffc04d !important;
+}
+
+.app-shell.dark-shell :where(input::placeholder, textarea::placeholder) {
+  color: #b8c5d8 !important;
+  opacity: 1 !important;
+}
+
+.app-shell.dark-shell :where(.v-field__outline, .v-field__outline__start, .v-field__outline__end) {
+  border-color: rgba(255, 255, 255, 0.24) !important;
+}
+
+.app-shell.dark-shell :where(.data-table th, .v-table thead th, .allocation-table th, .ant-table thead th) {
+  background: #263244 !important;
+  color: #f8fafc !important;
+}
+
+.app-shell.dark-shell :where(.data-table td, .v-table tbody td, .allocation-table td, .ant-table tbody td) {
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  color: #f8fafc !important;
+}
+
+.app-shell.dark-shell :where(
+  .data-table tbody tr:hover,
+  .v-table tbody tr:hover,
+  .invoice-row:hover,
+  .invoice-row.active,
+  .notification-row.unread,
+  .work-row:hover
+) {
+  background: rgba(255, 122, 26, 0.14) !important;
+}
+
+.app-shell.dark-shell :where(.text-primary, .page-kicker, .eyebrow, .page-head strong, .section-title > span, .mini-label) {
+  color: #ffc04d !important;
+}
+
+.app-shell.dark-shell :where(.bg-primary, .v-btn.bg-primary) {
+  background-color: #ff7a1a !important;
+  color: #ffffff !important;
+}
+
+.app-shell.dark-shell :where(.v-btn.v-btn--variant-tonal.text-primary, .v-btn.v-btn--variant-outlined.text-primary, .v-btn.v-btn--variant-text.text-primary) {
+  color: #ffc04d !important;
+}
+
+.app-shell.dark-shell :where(.panel-icon, .section-title .mdi, .heading-copy > .mdi, .metric-card > .mdi, .registration-metric > .mdi, .stat-tile > .mdi) {
+  background: rgba(255, 122, 26, 0.18) !important;
+  color: #ffc04d !important;
+}
+
+.app-shell.dark-shell :where(.status-pill, .status-tag, .role-pill, .priority-tag, .method-tag) {
+  border-color: rgba(255, 255, 255, 0.14) !important;
 }
 </style>

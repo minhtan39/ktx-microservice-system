@@ -19,15 +19,15 @@ const vuetify = createVuetify({
       light: {
         dark: false,
         colors: {
-          primary: '#f36f21',
+          primary: '#ff7a1a',
           secondary: '#243447',
-          accent: '#ffb347',
+          accent: '#ffc04d',
           success: '#16a34a',
           warning: '#f59e0b',
           error: '#dc2626',
           info: '#2563eb',
           surface: '#ffffff',
-          background: '#fff8f1',
+          background: '#fff7ed',
         },
       },
     },
