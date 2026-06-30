@@ -1,7 +1,6 @@
 const placeholderValues = new Set([
   'string',
   'test',
-  'demo',
   'null',
   'undefined',
 ])

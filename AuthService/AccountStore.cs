@@ -22,7 +22,7 @@ public sealed class AccountStore
                 ? configuredPath
                 : Path.Combine(environment.ContentRootPath, configuredPath);
 
-        var loadedAccounts = new Dictionary<string, DemoUser>(StringComparer.OrdinalIgnoreCase);
+        var loadedAccounts = new Dictionary<string, AccountUser>(StringComparer.OrdinalIgnoreCase);
         var loadResult = LoadAccounts(_dataFilePath);
         var migrationRequired = loadResult.MigrationRequired;
 
@@ -61,7 +61,7 @@ public sealed class AccountStore
             loadedAccounts[normalized.Username] = normalized;
         }
 
-        Users = new ConcurrentDictionary<string, DemoUser>(
+        Users = new ConcurrentDictionary<string, AccountUser>(
             loadedAccounts,
             StringComparer.OrdinalIgnoreCase);
 
@@ -69,7 +69,7 @@ public sealed class AccountStore
             Persist();
     }
 
-    public ConcurrentDictionary<string, DemoUser> Users { get; }
+    public ConcurrentDictionary<string, AccountUser> Users { get; }
 
     public void Persist()
     {
@@ -79,7 +79,7 @@ public sealed class AccountStore
         }
     }
 
-    public void Upsert(DemoUser user)
+    public void Upsert(AccountUser user)
     {
         lock (_writeLock)
         {
@@ -88,7 +88,7 @@ public sealed class AccountStore
         }
     }
 
-    public void Replace(string currentUsername, DemoUser updated)
+    public void Replace(string currentUsername, AccountUser updated)
     {
         lock (_writeLock)
         {
@@ -102,7 +102,7 @@ public sealed class AccountStore
         }
     }
 
-    public void AddMissingStudents(IEnumerable<DemoUser> students)
+    public void AddMissingStudents(IEnumerable<AccountUser> students)
     {
         lock (_writeLock)
         {
@@ -152,15 +152,15 @@ public sealed class AccountStore
     private static LoadedAccounts LoadAccounts(string dataFilePath)
     {
         if (!File.Exists(dataFilePath))
-            return new LoadedAccounts(Array.Empty<DemoUser>(), false);
+            return new LoadedAccounts(Array.Empty<AccountUser>(), false);
 
         try
         {
             var json = File.ReadAllText(dataFilePath);
-            var storedAccounts = JsonSerializer.Deserialize<StoredDemoUser[]>(json, JsonOptions)
-                ?? Array.Empty<StoredDemoUser>();
+            var storedAccounts = JsonSerializer.Deserialize<StoredAccountUser[]>(json, JsonOptions)
+                ?? Array.Empty<StoredAccountUser>();
             var migrationRequired = false;
-            var accounts = new List<DemoUser>();
+            var accounts = new List<AccountUser>();
 
             foreach (var stored in storedAccounts)
             {
@@ -214,7 +214,7 @@ public sealed class AccountStore
                     passwordChangedAt ??= DateTimeOffset.UtcNow;
                 }
 
-                accounts.Add(new DemoUser(
+                accounts.Add(new AccountUser(
                     username,
                     passwordHash,
                     role,
@@ -242,15 +242,15 @@ public sealed class AccountStore
         {
             var backupPath = $"{dataFilePath}.invalid-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}";
             File.Move(dataFilePath, backupPath, true);
-            return new LoadedAccounts(Array.Empty<DemoUser>(), false);
+            return new LoadedAccounts(Array.Empty<AccountUser>(), false);
         }
     }
 
     private sealed record LoadedAccounts(
-        IReadOnlyCollection<DemoUser> Accounts,
+        IReadOnlyCollection<AccountUser> Accounts,
         bool MigrationRequired);
 
-    private sealed record StoredDemoUser
+    private sealed record StoredAccountUser
     {
         public string Username { get; init; } = string.Empty;
         public string? Password { get; init; }

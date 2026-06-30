@@ -64,14 +64,6 @@
         <span>Đăng xuất</span>
       </button>
 
-      <div v-if="!isStudent" class="sidebar-note">
-        <span class="mdi mdi-clipboard-check-outline"></span>
-        <div>
-          <strong>Ưu tiên hôm nay</strong>
-          <p>{{ isStaff ? 'Xử lý công việc được giao và lịch bảo trì sắp đến hạn.' : 'Duyệt đơn chờ, phân công sửa chữa và theo dõi vận hành.' }}</p>
-        </div>
-      </div>
-
       <div class="account-box">
         <div class="account-avatar">{{ userInitial }}</div>
         <div class="account-meta">
@@ -208,7 +200,7 @@ import { getPermissions, normalizeRole } from '@/utils/auth'
 const route = useRoute()
 const router = useRouter()
 const userRole = ref(localStorage.getItem('user_role') || 'N2 Admin')
-const fullName = ref(localStorage.getItem('fullName') || 'demo_admin')
+const fullName = ref(localStorage.getItem('fullName') || 'Người dùng')
 
 const roleKey = computed(() => normalizeRole(userRole.value))
 const isStudent = computed(() => roleKey.value === 'Student')
@@ -695,35 +687,6 @@ onMounted(loadNotifications)
   color: #ffffff;
 }
 
-.sidebar-note {
-  display: grid;
-  grid-template-columns: 32px minmax(0, 1fr);
-  gap: 10px;
-  margin: 12px 0 0;
-  padding: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.10);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.06);
-}
-
-.sidebar-note .mdi {
-  color: #69b1ff;
-  font-size: 24px;
-}
-
-.sidebar-note strong {
-  display: block;
-  color: #ffffff;
-  font-size: 13px;
-}
-
-.sidebar-note p {
-  margin: 4px 0 0;
-  color: #c7d5cf;
-  font-size: 12px;
-  line-height: 1.45;
-}
-
 .account-box {
   display: grid;
   grid-template-columns: 42px minmax(0, 1fr) 38px;
@@ -1070,7 +1033,6 @@ onMounted(loadNotifications)
   }
 
   .nav-section,
-  .sidebar-note,
   .account-box,
   .system-pill {
     display: none;
@@ -1268,19 +1230,6 @@ onMounted(loadNotifications)
   box-shadow: 0 12px 24px rgba(124, 45, 18, 0.26);
 }
 
-.sidebar-note {
-  border-color: rgba(255, 184, 116, 0.18);
-  background: rgba(255, 255, 255, 0.07);
-}
-
-.sidebar-note .mdi {
-  color: #ffb347;
-}
-
-.sidebar-note p {
-  color: #f7d8bf;
-}
-
 .account-box {
   border-top-color: rgba(255, 184, 116, 0.16);
 }
@@ -1450,7 +1399,7 @@ onMounted(loadNotifications)
   border-color: rgba(255, 190, 135, 0.22) !important;
 }
 
-.dark-shell :where(.wallet-main, .wallet-transfer, .transfer-note, .allocation-row, .sidebar-note, .detail-summary > div, .description-box, .action-panel, .timeline-panel, .checklist-panel) {
+.dark-shell :where(.wallet-main, .wallet-transfer, .transfer-note, .allocation-row, .detail-summary > div, .description-box, .action-panel, .timeline-panel, .checklist-panel) {
   border-color: rgba(255, 190, 135, 0.20) !important;
   background: rgba(44, 28, 18, 0.92) !important;
 }
@@ -1536,7 +1485,6 @@ onMounted(loadNotifications)
   }
 
   .nav-section,
-  .sidebar-note,
   .account-box {
     display: none;
   }
@@ -1710,11 +1658,6 @@ onMounted(loadNotifications)
 
   .nav-item b {
     display: none;
-  }
-
-  .sidebar-note {
-    flex: 0 0 auto;
-    margin: 10px 0 0;
   }
 
   .account-box {

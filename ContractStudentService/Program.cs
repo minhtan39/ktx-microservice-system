@@ -78,14 +78,14 @@ builder.Services.AddHttpClient("Gateway", client =>
         client.DefaultRequestHeaders.Add("X-Internal-Service-Key", internalServiceKey);
 });
 
-var disableAuthForLocalDemo =
-    builder.Configuration.GetValue<bool>("Auth:DisableForLocalDemo");
+var disableAuthForLocalAuthBypass =
+    builder.Configuration.GetValue<bool>("Auth:DisableForLocalAuthBypass");
 
-if (disableAuthForLocalDemo)
+if (disableAuthForLocalAuthBypass)
 {
-    builder.Services.AddAuthentication("LocalDemo")
-        .AddScheme<AuthenticationSchemeOptions, LocalDemoAuthenticationHandler>(
-            "LocalDemo",
+    builder.Services.AddAuthentication("LocalAuthBypass")
+        .AddScheme<AuthenticationSchemeOptions, LocalAuthBypassAuthenticationHandler>(
+            "LocalAuthBypass",
             _ => { });
 }
 else
@@ -169,10 +169,10 @@ app.MapControllers();
 
 app.Run();
 
-public class LocalDemoAuthenticationHandler
+public class LocalAuthBypassAuthenticationHandler
     : AuthenticationHandler<AuthenticationSchemeOptions>
 {
-    public LocalDemoAuthenticationHandler(
+    public LocalAuthBypassAuthenticationHandler(
         IOptionsMonitor<AuthenticationSchemeOptions> options,
         ILoggerFactory logger,
         UrlEncoder encoder)
@@ -184,8 +184,8 @@ public class LocalDemoAuthenticationHandler
     {
         var claims = new[]
         {
-            new Claim(ClaimTypes.NameIdentifier, "local-demo-admin"),
-            new Claim(ClaimTypes.Name, "local_demo_admin"),
+            new Claim(ClaimTypes.NameIdentifier, "local-auth-admin"),
+            new Claim(ClaimTypes.Name, "local_auth_admin"),
             new Claim(ClaimTypes.Role, "Admin")
         };
 

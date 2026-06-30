@@ -48,7 +48,8 @@ var users = accountStore.Users;
 if (users.IsEmpty)
 {
     var adminUsername = app.Configuration["AdminBootstrap:Username"] ?? "admin";
-    var adminPassword = app.Configuration["AdminBootstrap:Password"] ?? "admin123";
+    var adminPassword = app.Configuration["AdminBootstrap:Password"]
+        ?? throw new InvalidOperationException("AdminBootstrap:Password must be configured before bootstrapping the first admin account.");
     var adminFullName = app.Configuration["AdminBootstrap:FullName"] ?? "Quản trị hệ thống";
 
     users[adminUsername] = new(
@@ -349,7 +350,7 @@ app.MapPost("/api/auth/student-accounts", (
         });
     }
 
-    var user = new DemoUser(
+    var user = new AccountUser(
         studentCode,
         PasswordHasher.HashTemporaryPassword(),
         "Student",
@@ -526,7 +527,7 @@ app.MapPost("/api/auth/accounts", (
         return Results.Conflict(new { message = "Mã nhân viên đã tồn tại." });
     }
 
-    var staff = new DemoUser(
+    var staff = new AccountUser(
         username,
         PasswordHasher.HashTemporaryPassword(),
         "Staff",
@@ -670,7 +671,7 @@ app.MapDelete("/api/auth/accounts/{username}", (
 
 app.Run();
 
-static string CreateJwtToken(DemoUser user, IConfiguration configuration)
+static string CreateJwtToken(AccountUser user, IConfiguration configuration)
 {
     var claims = new List<Claim>
     {
@@ -735,9 +736,9 @@ static bool IsInternalServiceRequest(HttpRequest request, IConfiguration configu
         string.Equals(providedKey.ToString(), expectedKey, StringComparison.Ordinal);
 }
 
-static DemoUser? TryGetAuthenticatedUser(
+static AccountUser? TryGetAuthenticatedUser(
     HttpRequest request,
-    IReadOnlyDictionary<string, DemoUser> users,
+    IReadOnlyDictionary<string, AccountUser> users,
     IConfiguration configuration)
 {
     var principal = TryValidateBearerToken(request, configuration);
@@ -790,7 +791,7 @@ static string GetSafeEmailFailureDetail(Exception exception)
     return "Không gửi được email. Hãy kiểm tra Gmail, App Password và email trong hồ sơ sinh viên.";
 }
 
-static object ToAuthResponse(DemoUser user, IConfiguration configuration)
+static object ToAuthResponse(AccountUser user, IConfiguration configuration)
 {
     return new
     {
@@ -864,7 +865,7 @@ static string GetRequiredJwtValue(IConfiguration configuration, string key) =>
     configuration[key] ??
         throw new InvalidOperationException($"{key} is required for JWT authentication.");
 
-static object ToAccountResponse(DemoUser user)
+static object ToAccountResponse(AccountUser user)
 {
     return new
     {
@@ -913,7 +914,7 @@ static string NormalizeInitialAccountStatus(string? status)
         : normalized;
 }
 
-static string SecurityState(DemoUser user)
+static string SecurityState(AccountUser user)
 {
     if (user.LockoutUntil.HasValue && user.LockoutUntil.Value > DateTimeOffset.UtcNow)
         return "TemporarilyLocked";
@@ -927,7 +928,7 @@ static string SecurityState(DemoUser user)
     return "PasswordSet";
 }
 
-static void RegisterFailedLogin(AccountStore accountStore, DemoUser user)
+static void RegisterFailedLogin(AccountStore accountStore, AccountUser user)
 {
     var failedCount = user.FailedLoginCount + 1;
     var lockoutUntil = failedCount >= 5
@@ -951,7 +952,7 @@ static string[] NormalizePermissions(IEnumerable<string>? permissions)
         .ToArray();
 }
 
-static string[] EffectivePermissions(DemoUser user)
+static string[] EffectivePermissions(AccountUser user)
 {
     if (user.Role.Equals("Admin", StringComparison.OrdinalIgnoreCase))
         return DefaultStaffPermissions();
@@ -995,7 +996,7 @@ static async Task SynchronizeStudentAccountsAsync(
         if (students.ValueKind != JsonValueKind.Array)
             return;
 
-        var missingAccounts = new List<DemoUser>();
+        var missingAccounts = new List<AccountUser>();
 
         foreach (var student in students.EnumerateArray())
         {
@@ -1006,7 +1007,7 @@ static async Task SynchronizeStudentAccountsAsync(
 
             var fullName = GetString(student, "fullName");
 
-            missingAccounts.Add(new DemoUser(
+            missingAccounts.Add(new AccountUser(
                 studentCode,
                 PasswordHasher.HashTemporaryPassword(),
                 "Student",
@@ -1157,7 +1158,7 @@ public sealed record CreateStaffAccountRequest(
     string? AccountStatus,
     string[]? Permissions);
 
-public sealed record DemoUser(
+public sealed record AccountUser(
     string Username,
     string PasswordHash,
     string Role,

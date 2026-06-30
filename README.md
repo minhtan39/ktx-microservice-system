@@ -1,6 +1,6 @@
 # KTX Microservice System
 
-Repo tong de deploy demo he thong quan ly ky tuc xa theo kien truc microservices.
+Repo tong de trien khai he thong quan ly ky tuc xa theo kien truc microservices.
 
 ## Thanh phan
 
