@@ -118,6 +118,16 @@ const routes = [
           import('../modules/contract-student/views/ContractManageView.vue'),
       },
       {
+        path: 'student-service/reports',
+        name: 'StudentServiceReports',
+        meta: {
+          roles: ADMIN_ROLES,
+          permissionsAny: ['view_students', 'approve_registrations', 'manage_contracts'],
+        },
+        component: () =>
+          import('../modules/contract-student/views/StudentReportsView.vue'),
+      },
+      {
         path: 'facility/rooms',
         name: 'RoomDashboard',
         meta: { roles: ADMIN_ROLES, permission: 'view_rooms' },

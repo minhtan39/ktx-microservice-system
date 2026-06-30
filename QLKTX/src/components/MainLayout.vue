@@ -248,6 +248,7 @@ const titleByRoute = {
   RoomRegistrationApproval: 'Chọn tòa, chọn phòng và duyệt đơn nội trú',
   ContractList: 'Tra cứu hợp đồng đã tạo từ đơn được duyệt',
   ContractManage: 'Theo dõi hiệu lực và xử lý trạng thái hợp đồng',
+  StudentServiceReports: 'Theo dõi phễu đăng ký, hợp đồng, giường trống và cảnh báo vận hành',
   RoomDashboard: 'Sơ đồ phòng, số giường và trạng thái vận hành',
   IncidentManage: 'Tiếp nhận sự cố phòng ở và theo dõi xử lý',
   BillingManagement: 'Nhập chỉ số điện nước, phát hành phiếu và đối soát thanh toán',
@@ -330,6 +331,13 @@ const adminRubricItems = [
     icon: 'mdi-file-cog-outline',
     label: 'Vận hành hợp đồng',
     permission: 'manage_contracts',
+  },
+  {
+    to: '/student-service/reports',
+    names: ['StudentServiceReports'],
+    icon: 'mdi-chart-box-outline',
+    label: 'Báo cáo nội trú',
+    permissionsAny: ['view_students', 'approve_registrations', 'manage_contracts'],
   },
 ]
 
