@@ -556,10 +556,19 @@ const loadRooms = async () => {
   rooms.value = normalizeList(res.data)
 }
 
+const syncRoomOccupancy = async () => {
+  try {
+    await api.post('/contracts/sync-room-occupancy')
+  } catch (err) {
+    console.warn('Không đồng bộ được tình trạng giường từ hợp đồng.', err)
+  }
+}
+
 const loadAll = async () => {
   try {
     loading.value = true
     message.value = ''
+    await syncRoomOccupancy()
     await Promise.all([loadStudents(), loadContracts(), loadRooms()])
   } catch (err) {
     showMessage(getApiErrorMessage(err, 'Không tải được dữ liệu hợp đồng.'), 'error')

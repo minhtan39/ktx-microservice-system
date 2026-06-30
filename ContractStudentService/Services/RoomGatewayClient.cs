@@ -61,7 +61,8 @@ public class RoomGatewayClient : IRoomGatewayClient
         long roomId,
         long studentId,
         long registrationId,
-        string contractCode)
+        string contractCode,
+        bool allowMaintenance = false)
     {
         var response = await _httpClient.PostAsJsonAsync(
             $"/api/rooms/{roomId}/occupy",
@@ -69,7 +70,8 @@ public class RoomGatewayClient : IRoomGatewayClient
             {
                 StudentId = studentId,
                 RegistrationId = registrationId,
-                ContractCode = contractCode
+                ContractCode = contractCode,
+                AllowMaintenance = allowMaintenance
             });
 
         if (response.IsSuccessStatusCode)

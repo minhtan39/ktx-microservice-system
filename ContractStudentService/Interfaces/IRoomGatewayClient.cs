@@ -14,7 +14,8 @@ public interface IRoomGatewayClient
         long roomId,
         long studentId,
         long registrationId,
-        string contractCode);
+        string contractCode,
+        bool allowMaintenance = false);
 
     Task ReleaseRoomAsync(
         long roomId,

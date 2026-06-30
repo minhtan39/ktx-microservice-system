@@ -14,6 +14,8 @@ public interface IContractService
 
     Task<Contract> CreateAsync(CreateContractDto dto);
 
+    Task<ContractRoomSyncResultDto> SyncRoomOccupancyAsync();
+
     Task<Contract?> UpdateAsync(long id, UpdateContractDto dto);
 
     Task<bool> DeleteAsync(long id);

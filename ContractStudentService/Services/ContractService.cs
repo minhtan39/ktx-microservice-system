@@ -75,7 +75,78 @@ public class ContractService : IContractService
             Status = "PendingSignature"
         };
 
-        return await _contractRepository.CreateAsync(contract);
+        var createdContract = await _contractRepository.CreateAsync(contract);
+
+        try
+        {
+            var occupiedRoom = await _roomGatewayClient.OccupyRoomAsync(
+                createdContract.RoomId,
+                createdContract.StudentId,
+                createdContract.Id,
+                createdContract.ContractCode);
+
+            if (occupiedRoom.RoomId > 0 &&
+                occupiedRoom.RoomId != createdContract.RoomId)
+            {
+                createdContract.RoomId = occupiedRoom.RoomId;
+                createdContract = await _contractRepository.UpdateAsync(createdContract)
+                    ?? createdContract;
+            }
+        }
+        catch
+        {
+            await _contractRepository.DeleteAsync(createdContract.Id);
+            throw;
+        }
+
+        student.Status = "PendingSignature";
+        student.ResidenceHistory = string.IsNullOrWhiteSpace(student.ResidenceHistory)
+            ? $"Phòng {createdContract.RoomId}, {createdContract.StartDate:dd/MM/yyyy} - {createdContract.EndDate:dd/MM/yyyy}"
+            : $"{student.ResidenceHistory}; Phòng {createdContract.RoomId}, {createdContract.StartDate:dd/MM/yyyy} - {createdContract.EndDate:dd/MM/yyyy}";
+
+        await _studentRepository.UpdateAsync(student);
+
+        return createdContract;
+    }
+
+    public async Task<ContractRoomSyncResultDto> SyncRoomOccupancyAsync()
+    {
+        var contracts = (await _contractRepository.GetAllAsync())
+            .Where(contract => IsActiveOrPendingSignature(contract.Status))
+            .ToList();
+        var result = new ContractRoomSyncResultDto
+        {
+            Total = contracts.Count
+        };
+
+        foreach (var contract in contracts)
+        {
+            try
+            {
+                var occupiedRoom = await _roomGatewayClient.OccupyRoomAsync(
+                    contract.RoomId,
+                    contract.StudentId,
+                    contract.Id,
+                    contract.ContractCode,
+                    allowMaintenance: true);
+
+                if (occupiedRoom.RoomId > 0 &&
+                    occupiedRoom.RoomId != contract.RoomId)
+                {
+                    contract.RoomId = occupiedRoom.RoomId;
+                    await _contractRepository.UpdateAsync(contract);
+                }
+
+                result.Synced++;
+            }
+            catch (Exception exception)
+            {
+                result.Failed++;
+                result.Errors.Add($"{contract.ContractCode}: {exception.Message}");
+            }
+        }
+
+        return result;
     }
 
     public async Task<Contract?> UpdateAsync(long id, UpdateContractDto dto)

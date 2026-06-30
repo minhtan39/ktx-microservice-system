@@ -7,4 +7,6 @@ public class OccupyRoomRequestDto
     public long RegistrationId { get; set; }
 
     public string ContractCode { get; set; } = string.Empty;
+
+    public bool AllowMaintenance { get; set; }
 }

@@ -778,7 +778,7 @@ app.MapPost("/api/rooms/{roomId:long}/occupy", async (
     if (string.IsNullOrWhiteSpace(request.ContractCode))
         return Results.BadRequest(new { message = "ContractCode is required." });
 
-    if (room.IsMaintenance)
+    if (room.IsMaintenance && !request.AllowMaintenance)
         return Results.BadRequest(new { message = "Room is under maintenance." });
 
     var existingRoom = await db.Rooms
@@ -837,6 +837,7 @@ app.MapPost("/api/rooms/{roomId:long}/occupy", async (
 
 app.MapPost("/api/rooms/{roomId:long}/release", async (
     long roomId,
+    ReleaseRoomRequest request,
     RoomBuildingDbContext db) =>
 {
     var room = await LoadRoomAsync(db, roomId, tracking: true);
@@ -844,14 +845,22 @@ app.MapPost("/api/rooms/{roomId:long}/release", async (
     if (room == null)
         return Results.NotFound(new { message = "Room not found." });
 
-    var lastReference = room.OccupancyReferences
+    var matchingReference = room.OccupancyReferences
         .OrderByDescending(reference => reference.OccupiedAt)
-        .FirstOrDefault();
+        .FirstOrDefault(reference =>
+            (!string.IsNullOrWhiteSpace(request.ContractCode) &&
+             reference.ContractCode.Equals(
+                 request.ContractCode.Trim(),
+                 StringComparison.OrdinalIgnoreCase)) ||
+            (request.StudentId > 0 && reference.StudentId == request.StudentId) ||
+            (request.RegistrationId.HasValue &&
+             request.RegistrationId.Value > 0 &&
+             reference.RegistrationId == request.RegistrationId.Value));
 
-    if (lastReference != null)
-        db.RoomOccupancyReferences.Remove(lastReference);
+    if (matchingReference != null)
+        db.RoomOccupancyReferences.Remove(matchingReference);
 
-    if (room.OccupiedBeds > 0)
+    if (matchingReference != null && room.OccupiedBeds > 0)
         room.OccupiedBeds--;
 
     room.RefreshStatus();
@@ -921,7 +930,11 @@ static async Task<DormRoom?> LoadRoomAsync(
     if (!tracking)
         query = query.AsNoTracking();
 
-    return await query.FirstOrDefaultAsync(room => room.RoomId == roomId);
+    var roomNumber = roomId.ToString();
+
+    return await query.FirstOrDefaultAsync(room =>
+        room.RoomId == roomId ||
+        room.RoomNumber == roomNumber);
 }
 
 static Task<DormBuilding?> FindBuildingAsync(
@@ -1618,6 +1631,12 @@ public sealed record RoomStatusRequest(string Status);
 public sealed record OccupyRoomRequest(
     long StudentId,
     long RegistrationId,
+    string ContractCode,
+    bool AllowMaintenance = false);
+
+public sealed record ReleaseRoomRequest(
+    long StudentId,
+    long? RegistrationId,
     string ContractCode);
 
 public sealed record BuildingFacilityNoticeRequest(

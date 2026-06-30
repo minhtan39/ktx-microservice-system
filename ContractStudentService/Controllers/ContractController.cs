@@ -67,6 +67,15 @@ public class ContractController : ControllerBase
     }
 
     [Authorize(Roles = "Admin,Staff")]
+    [HttpPost("sync-room-occupancy")]
+    public async Task<IActionResult> SyncRoomOccupancy()
+    {
+        var result = await _contractService.SyncRoomOccupancyAsync();
+
+        return Ok(result);
+    }
+
+    [Authorize(Roles = "Admin,Staff")]
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(long id, UpdateContractDto dto)
     {
