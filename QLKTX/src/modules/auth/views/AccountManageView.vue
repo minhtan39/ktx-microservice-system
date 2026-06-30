@@ -320,3 +320,112 @@ onMounted(loadAccounts)
 .security-state { display: inline-flex; align-items: center; gap: 6px; font-weight: 800; color: #c2410c; } .security-state .mdi { font-size: 18px; } .action-row { display: flex; justify-content: flex-end; gap: 4px; } .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 14px; } .permission-panel { margin-top: 12px; padding-top: 18px; border-top: 1px solid var(--line); } .permission-panel p { margin: 4px 0 14px; color: var(--muted); } .permission-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; } .permission-item { display: grid; grid-template-columns: 42px 1fr; align-items: start; padding: 8px; border: 1px solid #f1dfd0; border-radius: 6px; } .permission-item strong, .permission-item small { display: block; } .permission-item small { margin-top: 3px; color: var(--muted); }
 @media (max-width: 900px) { .account-metrics { grid-template-columns: repeat(2, 1fr); } .toolbar-row { grid-template-columns: 1fr; } } @media (max-width: 640px) { .page-head, .head-actions { flex-direction: column; } .account-metrics, .form-grid, .permission-grid { grid-template-columns: 1fr; } }
 </style>
+
+<style>
+.account-page,
+.account-page .account-metrics,
+.account-page .toolbar-row,
+.account-page .panel {
+  min-width: 0;
+}
+
+.account-page .account-table {
+  overflow-x: auto;
+}
+
+@media (max-width: 640px) {
+  .account-page .head-actions,
+  .account-page .head-actions .v-btn {
+    width: 100%;
+  }
+}
+
+.app-shell.dark-shell .account-page {
+  color: #f8fafc;
+}
+
+.app-shell.dark-shell .account-page .page-head p,
+.app-shell.dark-shell .account-page .cell-stack small,
+.app-shell.dark-shell .account-page .permission-summary small,
+.app-shell.dark-shell .account-page .muted,
+.app-shell.dark-shell .account-page .permission-item small {
+  color: #cbd8ea !important;
+}
+
+.app-shell.dark-shell .account-page .account-metric,
+.app-shell.dark-shell .account-page .panel {
+  border-color: rgba(255, 255, 255, 0.16) !important;
+  background: #1f2937 !important;
+  color: #f8fafc !important;
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.22);
+}
+
+.app-shell.dark-shell .account-page .account-metric > .mdi {
+  background: rgba(255, 122, 26, 0.18) !important;
+  color: #ffc04d !important;
+}
+
+.app-shell.dark-shell .account-page .account-metric strong,
+.app-shell.dark-shell .account-page .cell-stack strong {
+  color: #ffffff !important;
+}
+
+.app-shell.dark-shell .account-page .account-metric small {
+  color: #dbe7f5 !important;
+}
+
+.app-shell.dark-shell .account-page .account-table,
+.app-shell.dark-shell .account-page .v-table,
+.app-shell.dark-shell .account-page .v-data-table {
+  border-color: rgba(255, 255, 255, 0.18) !important;
+  background: #1f2937 !important;
+  color: #f8fafc !important;
+}
+
+.app-shell.dark-shell .account-page .v-table thead th,
+.app-shell.dark-shell .account-page .account-table thead th {
+  background: #263244 !important;
+  color: #ffffff !important;
+}
+
+.app-shell.dark-shell .account-page .v-table tbody td,
+.app-shell.dark-shell .account-page .account-table tbody td {
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  color: #f8fafc !important;
+}
+
+.app-shell.dark-shell .account-page .v-table tbody tr:hover {
+  background: rgba(255, 122, 26, 0.12) !important;
+}
+
+.app-shell.dark-shell .account-page .security-state {
+  color: #ffb45c !important;
+}
+
+.app-shell.dark-shell .account-page .role-pill.staff,
+.app-shell.dark-shell .account-page .role-pill.student {
+  background: rgba(255, 122, 26, 0.16) !important;
+  color: #ffc04d !important;
+}
+
+.app-shell.dark-shell .account-page .status-pill.active {
+  background: rgba(74, 222, 128, 0.18) !important;
+  color: #bbf7d0 !important;
+}
+
+.app-shell.dark-shell .account-page .status-pill.pending {
+  background: rgba(250, 204, 21, 0.18) !important;
+  color: #fde68a !important;
+}
+
+.app-shell.dark-shell .account-page .status-pill.locked,
+.app-shell.dark-shell .account-page .status-pill.inactive {
+  background: rgba(248, 113, 113, 0.18) !important;
+  color: #fecaca !important;
+}
+
+.app-shell.dark-shell .account-page .permission-item {
+  border-color: rgba(255, 255, 255, 0.14) !important;
+  background: rgba(15, 23, 42, 0.32);
+}
+</style>

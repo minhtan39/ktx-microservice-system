@@ -1752,6 +1752,7 @@ onMounted(loadNotifications)
   .filter-card,
   .dashboard-hero,
   .hero-summary div,
+  .account-metric,
   .metric-card,
   .registration-metric,
   .stat-tile,
@@ -1853,7 +1854,7 @@ onMounted(loadNotifications)
   color: #ffc04d !important;
 }
 
-.app-shell.dark-shell :where(.panel-icon, .section-title .mdi, .heading-copy > .mdi, .metric-card > .mdi, .registration-metric > .mdi, .stat-tile > .mdi) {
+.app-shell.dark-shell :where(.panel-icon, .section-title .mdi, .heading-copy > .mdi, .account-metric > .mdi, .metric-card > .mdi, .registration-metric > .mdi, .stat-tile > .mdi) {
   background: rgba(255, 122, 26, 0.18) !important;
   color: #ffc04d !important;
 }
