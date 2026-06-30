@@ -103,7 +103,7 @@ app.MapMethods(
 
         var serviceKey = ResolveServiceKey(path);
 
-        var isPublicPath = IsPublicPath(path);
+        var isPublicPath = IsPublicPath(path, context.Request.Method);
         var isInternalServiceRequest = IsInternalServiceRequest(context, app.Configuration);
 
         if (!isPublicPath &&
@@ -170,15 +170,31 @@ app.MapMethods(
 
 app.Run();
 
-static bool IsPublicPath(string path)
+static bool IsPublicPath(string path, string method)
 {
     var normalized = path.Trim('/').ToLowerInvariant();
+    var isGet = HttpMethods.IsGet(method);
+
+    if (isGet && IsRoomBuildingReadPath(normalized))
+        return true;
 
     return normalized is "auth/login"
         or "auth/forgot-password"
         or "auth/reset-password"
         or "auth/reset-password/validate"
         or "billing/webhooks/payment";
+}
+
+static bool IsRoomBuildingReadPath(string normalizedPath)
+{
+    return normalizedPath == "rooms" ||
+        normalizedPath.StartsWith("rooms/") ||
+        normalizedPath == "buildings" ||
+        normalizedPath.StartsWith("buildings/") ||
+        normalizedPath == "roomtypes" ||
+        normalizedPath.StartsWith("roomtypes/") ||
+        normalizedPath == "room-types" ||
+        normalizedPath.StartsWith("room-types/");
 }
 
 static bool IsAuthorizedForPath(
