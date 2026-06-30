@@ -669,7 +669,8 @@ onMounted(loadNotifications)
   overflow: visible;
   text-overflow: clip;
   white-space: normal;
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
+  word-break: normal;
   line-height: 1.25;
 }
 
@@ -1238,14 +1239,7 @@ onMounted(loadNotifications)
 }
 
 .nav-item.rubric-item {
-  grid-template-columns: 28px 28px minmax(0, 1fr);
-}
-
-.nav-item b {
-  width: 26px;
-  height: 26px;
-  background: rgba(255, 184, 116, 0.12);
-  color: #ffd8b8;
+  grid-template-columns: 30px minmax(0, 1fr);
 }
 
 .nav-item .mdi {
@@ -1264,10 +1258,6 @@ onMounted(loadNotifications)
   background: linear-gradient(135deg, #f36f21, #d95712);
   color: #fff;
   box-shadow: 0 12px 24px rgba(124, 45, 18, 0.26);
-}
-
-.nav-item.active b {
-  background: rgba(255, 255, 255, 0.20);
 }
 
 .sidebar-note {
@@ -1552,10 +1542,6 @@ onMounted(loadNotifications)
     margin: 0;
     padding: 9px 10px;
     font-size: 12px;
-  }
-
-  .nav-item.rubric-item b {
-    display: none;
   }
 
   .nav-item .mdi {
