@@ -56,9 +56,9 @@ services:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_URLS: "http://+:8080"
       ConnectionStrings__DefaultConnection: "Server=sqlserver,1433;Database=SmartDormitory_RoomBuildingDB;User Id=sa;Password=${SQL_SA_PASSWORD:?Set SQL_SA_PASSWORD in .env};TrustServerCertificate=True;Encrypt=False"
-      Database__Provider: "SqlServer"
+      Database__Provider: "${ROOM_DATABASE_PROVIDER:-SqlServer}"
       Database__AutoCreate: "true"
-      Database__FallbackToInMemory: "false"
+      Database__FallbackToInMemory: "${ROOM_DATABASE_FALLBACK_TO_IN_MEMORY:-true}"
 
   billing-service:
     build:

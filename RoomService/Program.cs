@@ -31,7 +31,12 @@ builder.Services.AddDbContext<RoomBuildingDbContext>(options =>
     if (useInMemoryDatabase)
         options.UseInMemoryDatabase("SmartDormitory_RoomBuildingDB");
     else
-        options.UseSqlServer(connectionString);
+        options.UseSqlServer(
+            connectionString,
+            sqlOptions => sqlOptions.EnableRetryOnFailure(
+                maxRetryCount: 5,
+                maxRetryDelay: TimeSpan.FromSeconds(3),
+                errorNumbersToAdd: null));
 });
 
 var app = builder.Build();
@@ -1051,25 +1056,33 @@ static string NormalizeCode(string? value)
 
 static bool CanOpenSqlServer(string connectionString)
 {
-    try
+    for (var attempt = 1; attempt <= 5; attempt++)
     {
-        var builder = new SqlConnectionStringBuilder(connectionString)
+        try
         {
-            ConnectTimeout = 2
-        };
+            var builder = new SqlConnectionStringBuilder(connectionString)
+            {
+                ConnectTimeout = 3
+            };
 
-        if (!string.IsNullOrWhiteSpace(builder.InitialCatalog))
-            builder.InitialCatalog = "master";
+            if (!string.IsNullOrWhiteSpace(builder.InitialCatalog))
+                builder.InitialCatalog = "master";
 
-        using var connection = new SqlConnection(builder.ConnectionString);
-        connection.Open();
+            using var connection = new SqlConnection(builder.ConnectionString);
+            connection.Open();
 
-        return true;
+            return true;
+        }
+        catch
+        {
+            if (attempt == 5)
+                return false;
+
+            Thread.Sleep(TimeSpan.FromSeconds(2));
+        }
     }
-    catch
-    {
-        return false;
-    }
+
+    return false;
 }
 
 static Task EnsureRoomBuildingSchemaAsync(RoomBuildingDbContext db)
