@@ -1862,4 +1862,376 @@ onMounted(loadNotifications)
 .app-shell.dark-shell :where(.status-pill, .status-tag, .role-pill, .priority-tag, .method-tag) {
   border-color: rgba(255, 255, 255, 0.14) !important;
 }
+
+.app-shell.dark-shell .page-body :is(
+  .v-card,
+  .panel,
+  .view-tabs,
+  .metric-card,
+  .account-metric,
+  .registration-metric,
+  .stat-tile,
+  .stat-card,
+  .kpi-card,
+  .analytics-kpis article,
+  .chart-panel,
+  .composition-panel,
+  .trend-panel,
+  .report-panel,
+  .funnel-panel,
+  .room-panel,
+  .task-panel,
+  .connection-card,
+  .summary-band,
+  .summary-row,
+  .wallet-panel,
+  .wallet-main,
+  .topup-box,
+  .wallet-history,
+  .wallet-transfer,
+  .invoice-list,
+  .invoice-detail,
+  .history-panel,
+  .issue-panel,
+  .list-panel,
+  .preview-panel,
+  .occupant-panel,
+  .qr-panel,
+  .allocation-row,
+  .description-box,
+  .action-panel,
+  .timeline-panel,
+  .checklist-panel,
+  .ai-panel,
+  .ai-suggestion-panel,
+  .profile-panel,
+  .registration-panel,
+  .contract-paper,
+  .contract-card,
+  .contract-hero,
+  .filter-card,
+  .filter-panel,
+  .table-card,
+  .table-toolbar,
+  .table-action-bar,
+  .pagination-row,
+  .toolbar-row,
+  .toolbar-grid,
+  .tab-shell,
+  .filter-row,
+  .filter-grid,
+  .roster-toolbar,
+  .panel-toolbar,
+  .history-tools,
+  .audit-table-card,
+  .roster-panel,
+  .student-hero,
+  .student-row-card,
+  .student-main,
+  .student-workspace,
+  .room-card,
+  .metric-sheet,
+  .bed-mapper-card,
+  .room-map-panel,
+  .room-3d-panel,
+  .bed-tile,
+  .mode-card,
+  .room-choice,
+  .form-panel,
+  .password-panel,
+  .recovery-panel,
+  .secondary-action,
+  .v-data-table-footer,
+  .alert-row,
+  .contract-alerts article,
+  .ops-explainer article,
+  article.warning,
+  article.danger
+) {
+  border-color: rgba(255, 255, 255, 0.16) !important;
+  background: #1f2937 !important;
+  color: #f8fafc !important;
+}
+
+.app-shell.dark-shell .page-body :is(
+  .metric-grid,
+  .kpi-grid,
+  .stats-grid,
+  .hero-stats,
+  .hero-summary,
+  .metric-strip,
+  .detail-strip,
+  .preview-cards,
+  .connection-list,
+  .task-list,
+  .room-list,
+  .billing-list,
+  .report-list,
+  .alert-list,
+  .building-list,
+  .profile-list,
+  .contract-cards,
+  .room-choice-grid,
+  .analytics-kpis
+) > :is(article, div, li) {
+  border-color: rgba(255, 255, 255, 0.16) !important;
+  background: #1f2937 !important;
+  color: #f8fafc !important;
+}
+
+.app-shell.dark-shell .page-body :is(
+  .dashboard-hero,
+  .student-hero,
+  .contract-hero,
+  .reports-hero,
+  .wallet-main,
+  .assignment-summary,
+  .issue-summary,
+  .renew-summary,
+  .detail-summary > div
+) {
+  background: linear-gradient(135deg, rgba(31, 41, 55, 0.98), rgba(15, 23, 42, 0.96)) !important;
+}
+
+.app-shell.dark-shell .page-body :is(
+  h1,
+  h2,
+  h3,
+  h4,
+  strong,
+  .cell-title,
+  .detail-title,
+  .room-title,
+  .contract-code,
+  .table-heading,
+  .panel-title,
+  .panel-heading,
+  .chart-title,
+  .student-meta strong
+) {
+  color: #ffffff !important;
+}
+
+.app-shell.dark-shell .page-body :is(
+  p,
+  small,
+  label,
+  .muted,
+  .cell-subtitle,
+  .table-count,
+  .table-note,
+  .detail-strip,
+  .room-meta,
+  .profile-list,
+  .line-items,
+  .history-student,
+  .permission-summary small,
+  .empty-state,
+  .empty-row,
+  .empty-history,
+  .empty-chart,
+  .loading-state
+) {
+  color: #dbe7f5 !important;
+}
+
+.app-shell.dark-shell .page-body :is(
+  .v-table,
+  .v-data-table,
+  .data-table,
+  .compact-table,
+  .operations-table,
+  .notifications-table,
+  .account-table,
+  .allocation-table,
+  .room-assignment-table,
+  .preview-table,
+  .ant-table
+) {
+  border-color: rgba(255, 255, 255, 0.18) !important;
+  background: #1f2937 !important;
+  color: #f8fafc !important;
+}
+
+.app-shell.dark-shell .page-body :is(
+  .v-table thead th,
+  .data-table th,
+  .compact-table th,
+  .operations-table th,
+  .notifications-table th,
+  .account-table th,
+  .allocation-table th,
+  .room-assignment-table th,
+  .preview-table th,
+  .ant-table thead th
+) {
+  background: #263244 !important;
+  color: #ffffff !important;
+}
+
+.app-shell.dark-shell .page-body :is(
+  .v-table tbody td,
+  .data-table td,
+  .compact-table td,
+  .operations-table td,
+  .notifications-table td,
+  .account-table td,
+  .allocation-table td,
+  .room-assignment-table td,
+  .preview-table td,
+  .ant-table tbody td
+) {
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  color: #f8fafc !important;
+}
+
+.app-shell.dark-shell .page-body :is(
+  .v-table tbody tr:hover,
+  .data-table tbody tr:hover,
+  .compact-table tbody tr:hover,
+  .operations-table tbody tr:hover,
+  .notifications-table tbody tr:hover,
+  .account-table tbody tr:hover,
+  .invoice-row:hover,
+  .invoice-row.active,
+  .work-row:hover,
+  .room-row:hover,
+  .student-row-card:hover,
+  .notification-row.unread
+) {
+  background: rgba(255, 122, 26, 0.14) !important;
+}
+
+.app-shell.dark-shell .page-body :is(
+  .toolbar-grid,
+  .toolbar-row,
+  .filter-row,
+  .filter-grid,
+  .roster-toolbar,
+  .table-toolbar,
+  .table-action-bar,
+  .panel-toolbar,
+  .history-tools,
+  .history-search,
+  .sort-filter,
+  .status-filter,
+  .assignment-filters,
+  .form-grid,
+  .form-actions
+) {
+  color: #f8fafc !important;
+}
+
+.app-shell.dark-shell .page-body :is(
+  .v-field,
+  .v-input__control,
+  input,
+  textarea,
+  select
+) {
+  border-color: rgba(255, 255, 255, 0.20) !important;
+  background: #111827 !important;
+  color: #f8fafc !important;
+  caret-color: #ffc04d !important;
+}
+
+.app-shell.dark-shell .page-body :is(
+  .v-label,
+  .v-field__input,
+  .v-select__selection-text,
+  .v-field__append-inner,
+  .v-field__prepend-inner
+) {
+  color: #f8fafc !important;
+}
+
+.app-shell.dark-shell .page-body :is(input::placeholder, textarea::placeholder) {
+  color: #aebed1 !important;
+  opacity: 1 !important;
+}
+
+.app-shell.dark-shell .page-body :is(
+  .panel-icon,
+  .section-title .mdi,
+  .heading-copy > .mdi,
+  .metric-card > .mdi,
+  .account-metric > .mdi,
+  .registration-metric > .mdi,
+  .stat-tile > .mdi,
+  .kpi-card > .mdi,
+  .form-icon,
+  .stat-icon
+) {
+  background: rgba(255, 122, 26, 0.18) !important;
+  color: #ffc04d !important;
+}
+
+.app-shell.dark-shell .page-body :is(
+  .status-pill,
+  .status-tag,
+  .status-published,
+  .status-expired,
+  .severity-important,
+  .severity-urgent,
+  .role-pill,
+  .priority-tag,
+  .state-pill,
+  .system-state,
+  .method-tag,
+  .metric-chip,
+  .auto-status
+) {
+  border-color: rgba(255, 255, 255, 0.14) !important;
+  background: rgba(255, 255, 255, 0.10) !important;
+  color: #f8fafc !important;
+}
+
+.app-shell.dark-shell .page-body :is(
+  .status-pill.active,
+  .status-tag.completed,
+  .status-tag.confirmed,
+  .system-state.ok,
+  .state-pill.ok
+) {
+  background: rgba(74, 222, 128, 0.18) !important;
+  color: #bbf7d0 !important;
+}
+
+.app-shell.dark-shell .page-body :is(
+  .status-pill.pending,
+  .status-tag.processing,
+  .status-tag.in-progress,
+  .status-published,
+  .severity-important,
+  .priority-tag.normal,
+  .role-pill.staff,
+  .role-pill.student
+) {
+  background: rgba(255, 122, 26, 0.16) !important;
+  color: #ffc04d !important;
+}
+
+.app-shell.dark-shell .page-body :is(
+  .status-pill.locked,
+  .status-pill.inactive,
+  .status-tag.rejected,
+  .status-tag.cancelled,
+  .status-expired,
+  .severity-urgent,
+  .priority-tag.urgent
+) {
+  background: rgba(248, 113, 113, 0.18) !important;
+  color: #fecaca !important;
+}
+
+.app-shell.dark-shell .page-body :is(
+  .status-tag.waiting-materials,
+  .status-tag.reopened,
+  .priority-tag.high,
+  .status-pill.unpaid,
+  .status-pill.warning
+) {
+  background: rgba(250, 204, 21, 0.18) !important;
+  color: #fde68a !important;
+}
 </style>
