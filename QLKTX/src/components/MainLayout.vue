@@ -1633,4 +1633,106 @@ onMounted(loadNotifications)
     padding-inline: 10px;
   }
 }
+
+@media (min-width: 921px) {
+  .app-shell {
+    grid-template-columns: 300px minmax(0, 1fr);
+  }
+
+  .sidebar {
+    padding: 0 16px 16px;
+    overflow: hidden;
+  }
+
+  .sidebar-top {
+    margin: 0 -16px 12px;
+    padding: 18px 16px 14px;
+  }
+
+  .nav {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding: 10px 0;
+    scrollbar-color: rgba(255, 184, 116, 0.32) transparent;
+    scrollbar-width: thin;
+  }
+
+  .nav::-webkit-scrollbar {
+    width: 4px;
+  }
+
+  .nav::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: rgba(255, 184, 116, 0.24);
+  }
+
+  .nav:hover::-webkit-scrollbar-thumb {
+    background: rgba(255, 184, 116, 0.42);
+  }
+
+  .nav-section {
+    margin: 18px 12px 8px;
+    line-height: 1.25;
+  }
+
+  .nav-item,
+  .nav-item.rubric-item {
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr);
+    gap: 12px;
+    min-height: 46px;
+    padding: 11px 12px;
+  }
+
+  .nav-item .mdi {
+    justify-self: center;
+  }
+
+  .nav-item span:last-child {
+    display: block;
+    min-width: 0;
+    overflow: visible;
+    overflow-wrap: normal;
+    text-overflow: clip;
+    white-space: normal;
+    word-break: normal;
+  }
+
+  .nav-item b {
+    display: none;
+  }
+
+  .sidebar-note {
+    flex: 0 0 auto;
+    margin: 10px 0 0;
+  }
+
+  .account-box {
+    flex: 0 0 auto;
+    margin-top: 14px;
+  }
+}
+
+@media (min-width: 921px) and (max-width: 1180px) {
+  .app-shell {
+    grid-template-columns: 292px minmax(0, 1fr);
+  }
+
+  .nav-item,
+  .nav-item.rubric-item {
+    grid-template-columns: 32px minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 920px) {
+  .nav-item span:last-child {
+    overflow: hidden;
+    overflow-wrap: normal;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    word-break: normal;
+  }
+}
 </style>
