@@ -163,6 +163,29 @@ app.UseHttpsRedirection();
 app.UseCors("AllowFrontend");
 
 app.UseAuthentication();
+app.Use(async (context, next) =>
+{
+    var expectedKey = context.RequestServices
+        .GetRequiredService<IConfiguration>()["InternalService:ApiKey"];
+
+    if (!string.IsNullOrWhiteSpace(expectedKey) &&
+        context.Request.Headers.TryGetValue("X-Internal-Service-Key", out var providedKey) &&
+        string.Equals(providedKey.ToString(), expectedKey, StringComparison.Ordinal))
+    {
+        var claims = new[]
+        {
+            new Claim(ClaimTypes.NameIdentifier, "internal-service"),
+            new Claim(ClaimTypes.Name, "Internal Service"),
+            new Claim(ClaimTypes.Role, "Admin"),
+            new Claim(ClaimTypes.Role, "Staff")
+        };
+
+        context.User = new ClaimsPrincipal(
+            new ClaimsIdentity(claims, "InternalService"));
+    }
+
+    await next();
+});
 app.UseAuthorization();
 
 app.MapControllers();

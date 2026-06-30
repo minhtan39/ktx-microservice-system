@@ -130,7 +130,11 @@ app.MapMethods(
         }
 
         var targetUrl = BuildTargetUrl(serviceBaseUrl, context.Request);
-        using var requestMessage = await CreateProxyRequestAsync(context, targetUrl);
+        using var requestMessage = await CreateProxyRequestAsync(
+            context,
+            targetUrl,
+            isInternalServiceRequest,
+            app.Configuration);
 
         var client = httpClientFactory.CreateClient("Proxy");
         HttpResponseMessage responseMessage;
@@ -322,7 +326,9 @@ static string BuildTargetUrl(string serviceBaseUrl, HttpRequest request)
 
 static async Task<HttpRequestMessage> CreateProxyRequestAsync(
     HttpContext context,
-    string targetUrl)
+    string targetUrl,
+    bool isInternalServiceRequest,
+    IConfiguration configuration)
 {
     var requestMessage = new HttpRequestMessage(
         new HttpMethod(context.Request.Method),
@@ -340,6 +346,18 @@ static async Task<HttpRequestMessage> CreateProxyRequestAsync(
         {
             requestMessage.Content ??= new StreamContent(context.Request.Body);
             requestMessage.Content.Headers.TryAddWithoutValidation(header.Key, header.Value.ToArray());
+        }
+    }
+
+    if (isInternalServiceRequest)
+    {
+        var internalServiceKey = configuration["InternalService:ApiKey"];
+
+        if (!string.IsNullOrWhiteSpace(internalServiceKey))
+        {
+            requestMessage.Headers.TryAddWithoutValidation(
+                "X-Internal-Service-Key",
+                internalServiceKey);
         }
     }
 
