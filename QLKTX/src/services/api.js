@@ -44,6 +44,44 @@ api.interceptors.response.use(
     }
 );
 
+export const getApiErrorMessage = (error, fallback = "Không xử lý được yêu cầu.") => {
+    const status = error?.response?.status;
+    const data = error?.response?.data;
+    const isBlob = typeof Blob !== "undefined" && data instanceof Blob;
+    const serverMessage = !isBlob && (
+        typeof data === "string"
+            ? data
+            : data?.message || data?.detail || data?.title
+    );
+
+    if (serverMessage)
+        return serverMessage;
+
+    if (!error?.response) {
+        return "Không kết nối được API Gateway. Kiểm tra backend/Gateway đang chạy và frontend đang trỏ đúng /api.";
+    }
+
+    if (status === 401)
+        return "Phiên đăng nhập đã hết hạn hoặc token không hợp lệ. Vui lòng đăng nhập lại.";
+
+    if (status === 403)
+        return "Tài khoản hiện tại chưa có quyền thực hiện thao tác này.";
+
+    if (status === 404)
+        return "Không tìm thấy dữ liệu hoặc Gateway chưa map đúng endpoint này.";
+
+    if (status === 502)
+        return "Gateway không gọi được service phía sau. Kiểm tra ContractStudentService/RoomService/BillingService đang chạy.";
+
+    if (status === 504)
+        return "Service phía sau phản hồi quá lâu. Kiểm tra log container và kết nối giữa các service.";
+
+    if (status >= 500)
+        return "Service đang lỗi máy chủ. Kiểm tra log backend để biết nguyên nhân chi tiết.";
+
+    return fallback;
+};
+
 export const recordAuditLog = (payload) => {
     const token = localStorage.getItem("user_token");
     if (!token) return Promise.resolve();

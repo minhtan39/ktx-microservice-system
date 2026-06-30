@@ -260,7 +260,7 @@
 
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
-import api from '@/services/api'
+import api, { getApiErrorMessage } from '@/services/api'
 import { exportRowsToExcel } from '@/utils/exportExcel'
 import {
   buildStudentNameMap,
@@ -375,7 +375,7 @@ const loadAll = async () => {
     message.value = ''
     await Promise.all([loadStudents(), loadContracts(), loadRooms()])
   } catch (err) {
-    showMessage('Không tải được danh sách hợp đồng.', 'error')
+    showMessage(getApiErrorMessage(err, 'Không tải được danh sách hợp đồng.'), 'error')
     console.error(err)
   } finally {
     loading.value = false

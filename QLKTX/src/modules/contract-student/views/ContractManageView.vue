@@ -427,7 +427,7 @@
 
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
-import api from '@/services/api'
+import api, { getApiErrorMessage } from '@/services/api'
 import { exportRowsToExcel } from '@/utils/exportExcel'
 import {
   buildStudentNameMap,
@@ -562,7 +562,7 @@ const loadAll = async () => {
     message.value = ''
     await Promise.all([loadStudents(), loadContracts(), loadRooms()])
   } catch (err) {
-    showMessage('Không tải được dữ liệu hợp đồng.', 'error')
+    showMessage(getApiErrorMessage(err, 'Không tải được dữ liệu hợp đồng.'), 'error')
     console.error(err)
   } finally {
     loading.value = false
@@ -575,7 +575,7 @@ const cancelContract = async (id) => {
     showMessage('Đã hủy hợp đồng và trả giường về RoomService.')
     await loadAll()
   } catch (err) {
-    showMessage(err.response?.data?.message || 'Không hủy được hợp đồng.', 'error')
+    showMessage(getApiErrorMessage(err, 'Không hủy được hợp đồng.'), 'error')
     console.error(err)
   }
 }
@@ -586,7 +586,7 @@ const expireContract = async (id) => {
     showMessage('Đã kết thúc hợp đồng và trả giường về RoomService.')
     await loadAll()
   } catch (err) {
-    showMessage(err.response?.data?.message || 'Không kết thúc được hợp đồng.', 'error')
+    showMessage(getApiErrorMessage(err, 'Không kết thúc được hợp đồng.'), 'error')
     console.error(err)
   }
 }
@@ -619,7 +619,7 @@ const submitRenewContract = async () => {
     showMessage('Đã gia hạn hợp đồng thành công.')
     await loadAll()
   } catch (err) {
-    renewError.value = err.response?.data?.message || 'Không gia hạn được hợp đồng.'
+    renewError.value = getApiErrorMessage(err, 'Không gia hạn được hợp đồng.')
     console.error(err)
   } finally {
     renewing.value = false
@@ -682,7 +682,7 @@ const submitGenerateTemplate = async () => {
     showMessage(`Đã tạo PDF chuẩn và phát hành hợp đồng ${contract.contractCode} cho sinh viên.`)
     await loadContracts()
   } catch (err) {
-    templateDialogError.value = err.response?.data?.message || 'Không tạo được PDF hợp đồng chuẩn.'
+    templateDialogError.value = getApiErrorMessage(err, 'Không tạo được PDF hợp đồng chuẩn.')
     console.error(err)
   } finally {
     generatingTemplateId.value = null
@@ -716,7 +716,7 @@ const uploadTemplateFile = async (event) => {
     showMessage(`Đã tải mẫu PDF cho hợp đồng ${contract.contractCode}.`)
     await loadContracts()
   } catch (err) {
-    showMessage(err.response?.data?.message || 'Không tải được mẫu PDF hợp đồng.', 'error')
+    showMessage(getApiErrorMessage(err, 'Không tải được mẫu PDF hợp đồng.'), 'error')
     console.error(err)
   } finally {
     uploadingTemplateId.value = null
@@ -737,8 +737,9 @@ const openContractPdf = async (contract, kind) => {
     window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
   } catch (err) {
     showMessage(
-      err.response?.data?.message ||
-        (kind === 'signed' ? 'Chưa có bản PDF đã ký.' : 'Chưa có file PDF mẫu.'),
+      getApiErrorMessage(
+        err,
+        kind === 'signed' ? 'Chưa có bản PDF đã ký.' : 'Chưa có file PDF mẫu.'),
       'error')
     console.error(err)
   }

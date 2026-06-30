@@ -652,7 +652,7 @@
 
 <script setup>
 import { computed, nextTick, onMounted, reactive, ref } from 'vue'
-import api from '@/services/api'
+import api, { getApiErrorMessage } from '@/services/api'
 import { cleanStudents, normalizeList } from '../utils/studentDisplay'
 
 const loading = ref(true)
@@ -857,7 +857,10 @@ const loadContracts = async () => {
   try {
     const response = await api.get(`/contracts/student/${studentId.value}`)
     ownContracts.value = normalizeList(response.data)
-  } catch {
+  } catch (err) {
+    if (err.response?.status && err.response.status !== 404)
+      throw err
+
     const response = await api.get('/contracts')
     ownContracts.value = normalizeList(response.data)
       .filter((contract) => Number(contract.studentId) === studentId.value)
@@ -897,7 +900,9 @@ const loadAll = async () => {
       loadIncidents(),
     ])
   } catch (err) {
-    error.value = 'Không tải được dữ liệu sinh viên. Kiểm tra Gateway và ContractStudentService.'
+    error.value = getApiErrorMessage(
+      err,
+      'Không tải được dữ liệu sinh viên. Kiểm tra Gateway và ContractStudentService.')
     console.error(err)
   } finally {
     loading.value = false
@@ -1158,7 +1163,7 @@ const submitSignContract = async () => {
     success.value = 'Đã ký hợp đồng online thành công. Hệ thống đã tạo bản PDF có chữ ký của bạn.'
     await loadContracts()
   } catch (err) {
-    contractError.value = err.response?.data?.message || 'Không ký được hợp đồng online.'
+    contractError.value = getApiErrorMessage(err, 'Không ký được hợp đồng online.')
     console.error(err)
   } finally {
     signing.value = false
@@ -1244,8 +1249,9 @@ const openContractPdf = async (contract, kind) => {
     window.open(url, '_blank', 'noopener')
     window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
   } catch (err) {
-    const message = err.response?.data?.message ||
-      (kind === 'signed' ? 'Chưa có bản PDF đã ký.' : 'Chưa có file PDF mẫu.')
+    const message = getApiErrorMessage(
+      err,
+      kind === 'signed' ? 'Chưa có bản PDF đã ký.' : 'Chưa có file PDF mẫu.')
     if (signDialog.value) contractError.value = message
     else error.value = message
     console.error(err)
