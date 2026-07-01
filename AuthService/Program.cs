@@ -1068,11 +1068,21 @@ static async Task<StudentContact?> TryResolveStudentContactAsync(
 
         foreach (var student in students.EnumerateArray())
         {
-            var id = GetInt64(student, "id");
             var code = GetString(student, "studentCode");
 
-            if ((account.StudentId.HasValue && account.StudentId.Value > 0 && id == account.StudentId.Value) ||
-                candidateCodes.Any(candidate => candidate.Equals(code, StringComparison.OrdinalIgnoreCase)))
+            if (candidateCodes.Any(candidate => candidate.Equals(code, StringComparison.OrdinalIgnoreCase)))
+            {
+                return new StudentContact(
+                    GetString(student, "email"),
+                    GetString(student, "fullName"));
+            }
+        }
+
+        foreach (var student in students.EnumerateArray())
+        {
+            var id = GetInt64(student, "id");
+
+            if (account.StudentId.HasValue && account.StudentId.Value > 0 && id == account.StudentId.Value)
             {
                 return new StudentContact(
                     GetString(student, "email"),

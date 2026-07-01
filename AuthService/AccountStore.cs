@@ -112,19 +112,26 @@ public sealed class AccountStore
             {
                 var existing = Users.Values.FirstOrDefault(user =>
                     user.Role.Equals("Student", StringComparison.OrdinalIgnoreCase) &&
-                    ((student.StudentId.HasValue && user.StudentId == student.StudentId) ||
-                      (!string.IsNullOrWhiteSpace(student.StudentCode) &&
-                       user.StudentCode?.Equals(
-                           student.StudentCode,
-                           StringComparison.OrdinalIgnoreCase) == true) ||
-                      user.Username.Equals(student.Username, StringComparison.OrdinalIgnoreCase)));
+                    ((!string.IsNullOrWhiteSpace(student.StudentCode) &&
+                      user.StudentCode?.Equals(
+                          student.StudentCode,
+                          StringComparison.OrdinalIgnoreCase) == true) ||
+                     user.Username.Equals(student.Username, StringComparison.OrdinalIgnoreCase)));
+
+                existing ??= Users.Values.FirstOrDefault(user =>
+                    user.Role.Equals("Student", StringComparison.OrdinalIgnoreCase) &&
+                    student.StudentId is > 0 &&
+                    user.StudentId == student.StudentId &&
+                    string.IsNullOrWhiteSpace(user.StudentCode));
 
                 if (existing != null)
                 {
                     var enriched = existing with
                     {
-                        StudentId = existing.StudentId ?? student.StudentId,
-                        StudentCode = string.IsNullOrWhiteSpace(existing.StudentCode)
+                        StudentId = student.StudentId is > 0
+                            ? student.StudentId
+                            : existing.StudentId,
+                        StudentCode = !string.IsNullOrWhiteSpace(student.StudentCode)
                             ? student.StudentCode
                             : existing.StudentCode,
                         FullName = string.IsNullOrWhiteSpace(student.FullName) ||
