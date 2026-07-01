@@ -86,7 +86,36 @@ public class RoomGatewayClient : IRoomGatewayClient
             return await OccupyRoomWithGenericUpdateAsync(roomId);
         }
 
-        throw new Exception("RoomService cap nhat trang thai phong that bai.");
+        var downstreamError = await ReadRoomServiceErrorAsync(response);
+
+        if (downstreamError.IsStudentAlreadyInAnotherRoom &&
+            downstreamError.RoomId.HasValue)
+        {
+            await ReleaseStudentOccupancyAsync(
+                downstreamError.RoomId.Value,
+                studentId);
+
+            var retryResponse = await _httpClient.PostAsJsonAsync(
+                $"/api/rooms/{roomId}/occupy",
+                new OccupyRoomRequestDto
+                {
+                    StudentId = studentId,
+                    RegistrationId = registrationId,
+                    ContractCode = contractCode,
+                    AllowMaintenance = allowMaintenance
+                });
+
+            if (retryResponse.IsSuccessStatusCode)
+            {
+                return await ReadRoomResponseAsync(retryResponse)
+                    ?? throw new Exception("RoomService khong tra ve du lieu phong.");
+            }
+
+            var retryError = await ReadRoomServiceErrorAsync(retryResponse);
+            throw new Exception(BuildOccupyErrorMessage(retryError, retryResponse.StatusCode));
+        }
+
+        throw new Exception(BuildOccupyErrorMessage(downstreamError, response.StatusCode));
     }
 
     public async Task ReleaseRoomAsync(
@@ -105,7 +134,8 @@ public class RoomGatewayClient : IRoomGatewayClient
         if (response.IsSuccessStatusCode)
             return;
 
-        throw new Exception("RoomService tra giuong khi ket thuc hop dong that bai.");
+        var downstreamError = await ReadRoomServiceErrorAsync(response);
+        throw new Exception(BuildReleaseErrorMessage(downstreamError, response.StatusCode));
     }
 
     public async Task<AvailableRoomDto?> GetRoomByIdAsync(long roomId)
@@ -211,6 +241,27 @@ public class RoomGatewayClient : IRoomGatewayClient
             "RoomService chua co API cap nhat phong phu hop. Can API POST /api/rooms/{id}/occupy hoac PUT /api/rooms/{id}.");
     }
 
+    private async Task ReleaseStudentOccupancyAsync(
+        long roomId,
+        long studentId)
+    {
+        var response = await _httpClient.PostAsJsonAsync(
+            $"/api/rooms/{roomId}/release",
+            new ReleaseRoomRequestDto
+            {
+                StudentId = studentId,
+                ContractCode = string.Empty
+            });
+
+        if (response.IsSuccessStatusCode)
+            return;
+
+        var downstreamError = await ReadRoomServiceErrorAsync(response);
+        throw new Exception(
+            "RoomService dang ghi nhan sinh vien o phong cu, nhung khong tu tra duoc phong cu. "
+            + BuildReleaseErrorMessage(downstreamError, response.StatusCode));
+    }
+
     private static async Task<AvailableRoomDto?> ReadRoomResponseAsync(
         HttpResponseMessage response)
     {
@@ -262,6 +313,70 @@ public class RoomGatewayClient : IRoomGatewayClient
             .Select(MapRoom)
             .Where(room => room.RoomId > 0)
             .ToList();
+    }
+
+    private static async Task<RoomServiceError> ReadRoomServiceErrorAsync(
+        HttpResponseMessage response)
+    {
+        var json = await response.Content.ReadAsStringAsync();
+
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return new RoomServiceError(
+                string.Empty,
+                null);
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            var root = document.RootElement;
+            var message = GetString(root, "message", "detail", "title");
+            var roomId = GetNullableLong(root, "roomId", "assignedRoomId");
+
+            return new RoomServiceError(message, roomId);
+        }
+        catch (JsonException)
+        {
+            return new RoomServiceError(json, null);
+        }
+    }
+
+    private static string BuildOccupyErrorMessage(
+        RoomServiceError error,
+        HttpStatusCode statusCode)
+    {
+        if (error.IsStudentAlreadyInAnotherRoom)
+        {
+            var roomText = error.RoomId.HasValue
+                ? $" phong {error.RoomId.Value}"
+                : " phong cu";
+
+            return "RoomService dang ghi nhan sinh vien o" + roomText
+                + ". He thong da thu dong bo lai nhung chua xep duoc phong moi. "
+                + "Vui long kiem tra hop dong/lich su luu tru cu cua sinh vien.";
+        }
+
+        if (error.Message.Contains("Room is full", StringComparison.OrdinalIgnoreCase))
+            return "Phong da het giuong. Vui long lam moi danh sach phong va chon phong khac.";
+
+        if (error.Message.Contains("maintenance", StringComparison.OrdinalIgnoreCase))
+            return "Phong dang sua chua hoac bao tri, khong the xep sinh vien vao phong nay.";
+
+        if (!string.IsNullOrWhiteSpace(error.Message))
+            return $"RoomService tu choi cap nhat phong: {error.Message}";
+
+        return $"RoomService cap nhat trang thai phong that bai (HTTP {(int)statusCode}).";
+    }
+
+    private static string BuildReleaseErrorMessage(
+        RoomServiceError error,
+        HttpStatusCode statusCode)
+    {
+        if (!string.IsNullOrWhiteSpace(error.Message))
+            return $"RoomService tra giuong that bai: {error.Message}";
+
+        return $"RoomService tra giuong that bai (HTTP {(int)statusCode}).";
     }
 
     private static AvailableRoomDto MapRoom(JsonNode roomNode)
@@ -484,6 +599,24 @@ public class RoomGatewayClient : IRoomGatewayClient
         return 0;
     }
 
+    private static long? GetNullableLong(JsonElement element, params string[] names)
+    {
+        foreach (var name in names)
+        {
+            if (TryGetProperty(element, name, out var value))
+            {
+                if (value.ValueKind == JsonValueKind.Number &&
+                    value.TryGetInt64(out var number))
+                    return number;
+
+                if (long.TryParse(value.ToString(), out number))
+                    return number;
+            }
+        }
+
+        return null;
+    }
+
     private static int GetInt(JsonElement element, params string[] names)
     {
         foreach (var name in names)
@@ -589,5 +722,15 @@ public class RoomGatewayClient : IRoomGatewayClient
 
         if (!string.IsNullOrWhiteSpace(key))
             node[key] = value;
+    }
+
+    private sealed record RoomServiceError(
+        string Message,
+        long? RoomId)
+    {
+        public bool IsStudentAlreadyInAnotherRoom =>
+            Message.Contains(
+                "Student already occupies another room",
+                StringComparison.OrdinalIgnoreCase);
     }
 }
