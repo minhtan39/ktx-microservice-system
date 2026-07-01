@@ -110,10 +110,11 @@ public class RoomRegistrationController : ControllerBase
     [HttpPut("{id}/approve")]
     public async Task<IActionResult> Approve(
         long id,
-        [FromQuery] long? roomId)
+        [FromQuery] long? roomId,
+        [FromQuery] string? assignmentNote)
     {
         var registration =
-            await _service.ApproveAsync(id, roomId);
+            await _service.ApproveAsync(id, roomId, assignmentNote);
 
         if (registration == null)
             return NotFound();

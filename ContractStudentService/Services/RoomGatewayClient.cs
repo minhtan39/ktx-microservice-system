@@ -150,12 +150,11 @@ public class RoomGatewayClient : IRoomGatewayClient
         return rooms
             .Where(room => !requestedRoomId.HasValue || room.RoomId == requestedRoomId.Value)
             .Where(room => room.Gender == student.Gender)
-            .Where(room => requestedRoomId.HasValue ||
-                IsBuildingMatch(registration.BuildingName, room.BuildingName))
-            .Where(room => requestedRoomId.HasValue ||
-                IsRoomTypeMatch(registration.RoomType, room.RoomType))
             .Where(room => IsAvailable(room))
-            .OrderBy(room => room.MonthlyFee <= 0 ? decimal.MaxValue : room.MonthlyFee)
+            .Where(room => requestedRoomId.HasValue ||
+                RoomAssignmentScore(registration, room) > 0)
+            .OrderByDescending(room => RoomAssignmentScore(registration, room))
+            .ThenBy(room => room.MonthlyFee <= 0 ? decimal.MaxValue : room.MonthlyFee)
             .ThenByDescending(room => room.AvailableBeds)
             .ThenBy(room => room.RoomId)
             .FirstOrDefault();
@@ -318,6 +317,28 @@ public class RoomGatewayClient : IRoomGatewayClient
         }
 
         return null;
+    }
+
+    private static int RoomAssignmentScore(
+        RoomRegistration registration,
+        AvailableRoomDto room)
+    {
+        var matchesBuilding = IsBuildingMatch(
+            registration.BuildingName,
+            room.BuildingName);
+        var matchesRoomType = IsRoomTypeMatch(
+            registration.RoomType,
+            room.RoomType);
+
+        var score = (matchesBuilding, matchesRoomType) switch
+        {
+            (true, true) => 400,
+            (false, true) => 300,
+            (true, false) => 220,
+            _ => 100
+        };
+
+        return score + Math.Min(room.AvailableBeds, 20);
     }
 
     private static bool IsAvailable(AvailableRoomDto room)

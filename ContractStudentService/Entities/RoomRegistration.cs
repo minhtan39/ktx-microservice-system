@@ -24,6 +24,12 @@ public class RoomRegistration
 
     public long? AssignedRoomId { get; set; }
 
+    public string AssignmentMode { get; set; } = string.Empty;
+
+    public string AssignmentNote { get; set; } = string.Empty;
+
+    public DateTime? AssignedAt { get; set; }
+
     public string RejectionReason { get; set; } = string.Empty;
 
     public DateTime? RejectedAt { get; set; }

@@ -29,5 +29,13 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<Contract>()
             .Property(c => c.MonthlyFee)
             .HasPrecision(18, 2);
+
+        modelBuilder.Entity<RoomRegistration>()
+            .Property(registration => registration.AssignmentMode)
+            .HasMaxLength(32);
+
+        modelBuilder.Entity<RoomRegistration>()
+            .Property(registration => registration.AssignmentNote)
+            .HasMaxLength(500);
     }
 }

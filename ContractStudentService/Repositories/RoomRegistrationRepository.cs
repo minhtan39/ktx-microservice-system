@@ -51,6 +51,9 @@ public class RoomRegistrationRepository : IRoomRegistrationRepository
 		existingRegistration.EndDate = registration.EndDate;
 		existingRegistration.Status = registration.Status;
 		existingRegistration.AssignedRoomId = registration.AssignedRoomId;
+		existingRegistration.AssignmentMode = registration.AssignmentMode;
+		existingRegistration.AssignmentNote = registration.AssignmentNote;
+		existingRegistration.AssignedAt = registration.AssignedAt;
 		existingRegistration.RejectionReason = registration.RejectionReason;
 		existingRegistration.RejectedAt = registration.RejectedAt;
 

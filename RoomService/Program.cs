@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Data.SqlClient;
+using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -804,6 +805,7 @@ app.MapPost("/api/rooms/{roomId:long}/occupy", async (
 
     if (existingReference != null)
     {
+        NormalizeBedNumbers(room);
         room.LastContractCode = request.ContractCode.Trim();
         room.RefreshStatus();
         await db.SaveChangesAsync();
@@ -816,11 +818,15 @@ app.MapPost("/api/rooms/{roomId:long}/occupy", async (
     if (room.AvailableBeds <= 0)
         return Results.BadRequest(new { message = "Room is full." });
 
+    NormalizeBedNumbers(room);
+    var nextBedNumber = NextAvailableBedNumber(room);
+
     room.OccupancyReferences.Add(new RoomOccupancyReference
     {
         StudentId = request.StudentId,
         RegistrationId = request.RegistrationId,
         ContractCode = request.ContractCode.Trim(),
+        BedNumber = nextBedNumber,
         OccupiedAt = DateTime.UtcNow
     });
 
@@ -837,7 +843,7 @@ app.MapPost("/api/rooms/{roomId:long}/occupy", async (
 
 app.MapPost("/api/rooms/{roomId:long}/release", async (
     long roomId,
-    ReleaseRoomRequest request,
+    HttpRequest httpRequest,
     RoomBuildingDbContext db) =>
 {
     var room = await LoadRoomAsync(db, roomId, tracking: true);
@@ -845,25 +851,65 @@ app.MapPost("/api/rooms/{roomId:long}/release", async (
     if (room == null)
         return Results.NotFound(new { message = "Room not found." });
 
-    var matchingReference = room.OccupancyReferences
-        .OrderByDescending(reference => reference.OccupiedAt)
-        .FirstOrDefault(reference =>
-            (!string.IsNullOrWhiteSpace(request.ContractCode) &&
-             reference.ContractCode.Equals(
-                 request.ContractCode.Trim(),
-                 StringComparison.OrdinalIgnoreCase)) ||
-            (request.StudentId > 0 && reference.StudentId == request.StudentId) ||
-            (request.RegistrationId.HasValue &&
-             request.RegistrationId.Value > 0 &&
-             reference.RegistrationId == request.RegistrationId.Value));
+    var request = await ReadOptionalReleaseRoomRequestAsync(httpRequest);
+    var releaseReference = FindReleaseReference(room, request);
 
-    if (matchingReference != null)
-        db.RoomOccupancyReferences.Remove(matchingReference);
+    if (releaseReference == null)
+    {
+        return Results.NotFound(new
+        {
+            message = "No matching occupancy reference was found for release."
+        });
+    }
 
-    if (matchingReference != null && room.OccupiedBeds > 0)
+    db.RoomOccupancyReferences.Remove(releaseReference);
+    room.OccupancyReferences.Remove(releaseReference);
+
+    if (room.OccupiedBeds > 0)
         room.OccupiedBeds--;
 
+    NormalizeBedNumbers(room);
     room.RefreshStatus();
+
+    await db.SaveChangesAsync();
+
+    var buildings = await LoadBuildingsAsync(db);
+
+    return Results.Ok(RoomResponse.FromRoom(room, buildings));
+});
+
+app.MapPost("/api/rooms/{roomId:long}/beds/move", async (
+    long roomId,
+    MoveBedRequest request,
+    RoomBuildingDbContext db) =>
+{
+    var room = await LoadRoomAsync(db, roomId, tracking: true);
+
+    if (room == null)
+        return Results.NotFound(new { message = "Room not found." });
+
+    if (request.StudentId <= 0)
+        return Results.BadRequest(new { message = "StudentId is required." });
+
+    if (request.TargetBedNumber < 1 || request.TargetBedNumber > room.Capacity)
+        return Results.BadRequest(new { message = "Target bed is outside room capacity." });
+
+    NormalizeBedNumbers(room);
+
+    var reference = room.OccupancyReferences
+        .FirstOrDefault(item => item.StudentId == request.StudentId);
+
+    if (reference == null)
+        return Results.NotFound(new { message = "Student is not occupying this room." });
+
+    var occupiedByOther = room.OccupancyReferences.Any(item =>
+        item.Id != reference.Id &&
+        item.BedNumber == request.TargetBedNumber);
+
+    if (occupiedByOther)
+        return Results.BadRequest(new { message = "Target bed is already occupied." });
+
+    reference.BedNumber = request.TargetBedNumber;
     await db.SaveChangesAsync();
 
     var buildings = await LoadBuildingsAsync(db);
@@ -935,6 +981,92 @@ static async Task<DormRoom?> LoadRoomAsync(
     return await query.FirstOrDefaultAsync(room =>
         room.RoomId == roomId ||
         room.RoomNumber == roomNumber);
+}
+
+static async Task<ReleaseRoomRequest?> ReadOptionalReleaseRoomRequestAsync(
+    HttpRequest httpRequest)
+{
+    if (httpRequest.ContentLength is null or 0)
+        return null;
+
+    try
+    {
+        return await JsonSerializer.DeserializeAsync<ReleaseRoomRequest>(
+            httpRequest.Body,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+    }
+    catch (JsonException)
+    {
+        return null;
+    }
+}
+
+static RoomOccupancyReference? FindReleaseReference(
+    DormRoom room,
+    ReleaseRoomRequest? request)
+{
+    if (request is not null)
+    {
+        var contractCode = request.ContractCode?.Trim();
+        var hasTarget = request.StudentId.HasValue ||
+            request.RegistrationId.HasValue ||
+            !string.IsNullOrWhiteSpace(contractCode);
+
+        var exactReference = room.OccupancyReferences.FirstOrDefault(reference =>
+            (!request.StudentId.HasValue || reference.StudentId == request.StudentId.Value) &&
+            (!request.RegistrationId.HasValue || reference.RegistrationId == request.RegistrationId.Value) &&
+            (string.IsNullOrWhiteSpace(contractCode) ||
+                reference.ContractCode.Equals(contractCode, StringComparison.OrdinalIgnoreCase)));
+
+        if (exactReference != null)
+            return exactReference;
+
+        if (hasTarget)
+            return null;
+    }
+
+    return room.OccupancyReferences
+        .OrderByDescending(reference => reference.OccupiedAt)
+        .FirstOrDefault();
+}
+
+static void NormalizeBedNumbers(DormRoom room)
+{
+    var usedBeds = new HashSet<int>();
+    var references = room.OccupancyReferences
+        .OrderBy(reference => reference.OccupiedAt)
+        .ThenBy(reference => reference.Id)
+        .ToList();
+
+    foreach (var reference in references)
+    {
+        var bedNumber = reference.BedNumber ?? 0;
+
+        if (bedNumber < 1 ||
+            bedNumber > room.Capacity ||
+            usedBeds.Contains(bedNumber))
+        {
+            bedNumber = Enumerable.Range(1, Math.Max(room.Capacity, 1))
+                .FirstOrDefault(candidate => !usedBeds.Contains(candidate));
+        }
+
+        if (bedNumber <= 0)
+            bedNumber = usedBeds.Count + 1;
+
+        reference.BedNumber = bedNumber;
+        usedBeds.Add(bedNumber);
+    }
+}
+
+static int NextAvailableBedNumber(DormRoom room)
+{
+    var usedBeds = room.OccupancyReferences
+        .Select(reference => reference.BedNumber ?? 0)
+        .Where(bedNumber => bedNumber > 0)
+        .ToHashSet();
+
+    return Enumerable.Range(1, Math.Max(room.Capacity, 1))
+        .FirstOrDefault(candidate => !usedBeds.Contains(candidate));
 }
 
 static Task<DormBuilding?> FindBuildingAsync(
@@ -1125,6 +1257,12 @@ static Task EnsureRoomBuildingSchemaAsync(RoomBuildingDbContext db)
 
             CREATE INDEX [IX_BuildingFacilityNotices_BuildingName_IsActive]
                 ON [dbo].[BuildingFacilityNotices] ([BuildingName], [IsActive]);
+        END
+
+        IF COL_LENGTH(N'[dbo].[RoomOccupancyReferences]', N'BedNumber') IS NULL
+        BEGIN
+            ALTER TABLE [dbo].[RoomOccupancyReferences]
+                ADD [BedNumber] int NULL;
         END
         """);
 }
@@ -1466,6 +1604,9 @@ public sealed class RoomBuildingDbContext(DbContextOptions<RoomBuildingDbContext
             entity.ToTable("RoomOccupancyReferences");
             entity.HasKey(reference => reference.Id);
             entity.Property(reference => reference.ContractCode).HasMaxLength(64);
+            entity.HasIndex(reference => new { reference.RoomId, reference.BedNumber })
+                .IsUnique()
+                .HasFilter("[BedNumber] IS NOT NULL");
             entity.HasIndex(reference => reference.StudentId).IsUnique();
             entity.HasIndex(reference => reference.RegistrationId).IsUnique();
             entity.HasOne<DormRoom>()
@@ -1599,6 +1740,8 @@ public sealed class RoomOccupancyReference
 
     public string ContractCode { get; set; } = string.Empty;
 
+    public int? BedNumber { get; set; }
+
     public DateTime OccupiedAt { get; set; }
 }
 
@@ -1635,9 +1778,13 @@ public sealed record OccupyRoomRequest(
     bool AllowMaintenance = false);
 
 public sealed record ReleaseRoomRequest(
-    long StudentId,
+    long? StudentId,
     long? RegistrationId,
-    string ContractCode);
+    string? ContractCode);
+
+public sealed record MoveBedRequest(
+    long StudentId,
+    int TargetBedNumber);
 
 public sealed record BuildingFacilityNoticeRequest(
     string? AreaName,
@@ -1923,6 +2070,7 @@ public sealed record RoomOccupancyResponse(
     long StudentId,
     long RegistrationId,
     string ContractCode,
+    int? BedNumber,
     DateTime OccupiedAt)
 {
     public static RoomOccupancyResponse FromReference(
@@ -1932,6 +2080,7 @@ public sealed record RoomOccupancyResponse(
             reference.StudentId,
             reference.RegistrationId,
             reference.ContractCode,
+            reference.BedNumber,
             reference.OccupiedAt);
     }
 }

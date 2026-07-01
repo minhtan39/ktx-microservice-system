@@ -14,7 +14,10 @@ public interface IRoomRegistrationService
 
     Task<bool> DeleteAsync(long id);
 
-    Task<RoomRegistration?> ApproveAsync(long id, long? roomId);
+    Task<RoomRegistration?> ApproveAsync(
+        long id,
+        long? roomId,
+        string? assignmentNote);
 
     Task<RoomRegistration?> RejectAsync(long id, string reason);
 }

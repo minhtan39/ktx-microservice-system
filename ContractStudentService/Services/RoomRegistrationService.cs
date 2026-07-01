@@ -1,4 +1,5 @@
-
+using System.Collections.Concurrent;
+using ContractStudentService.DTOs.Integration;
 using ContractStudentService.Entities;
 using ContractStudentService.Interfaces;
 
@@ -6,6 +7,8 @@ namespace ContractStudentService.Services;
 
 public class RoomRegistrationService : IRoomRegistrationService
 {
+    private static readonly ConcurrentDictionary<long, SemaphoreSlim> ApprovalLocks = new();
+
     private readonly IRoomRegistrationRepository _repository;
     private readonly IContractRepository _contractRepository;
     private readonly IStudentRepository _studentRepository;
@@ -98,12 +101,21 @@ public class RoomRegistrationService : IRoomRegistrationService
 
     public async Task<RoomRegistration?> ApproveAsync(
         long id,
-        long? roomId)
+        long? roomId,
+        string? assignmentNote)
     {
-        var registration = await _repository.GetByIdAsync(id);
+        var approvalLock = ApprovalLocks.GetOrAdd(id, _ => new SemaphoreSlim(1, 1));
+        await approvalLock.WaitAsync();
+
+        try
+        {
+            var registration = await _repository.GetByIdAsync(id);
 
         if (registration == null)
             return null;
+
+        if (registration.Status.Equals("Approved", StringComparison.OrdinalIgnoreCase))
+            return registration;
 
         if (!registration.Status.Equals("Pending", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("Chỉ được duyệt đơn đang chờ xử lý.");
@@ -113,6 +125,8 @@ public class RoomRegistrationService : IRoomRegistrationService
         if (student == null)
             throw new Exception("Student không tồn tại.");
 
+        await EnsureStudentHasNoActiveContractAsync(student.Id);
+
         var assignedRoom = await _roomGatewayClient.FindAvailableRoomAsync(
             registration,
             student,
@@ -120,6 +134,19 @@ public class RoomRegistrationService : IRoomRegistrationService
 
         if (assignedRoom == null)
             throw new Exception("Không tìm thấy phòng phù hợp hoặc phòng đã hết giường.");
+
+        var normalizedAssignmentNote = NormalizeAssignmentNote(assignmentNote);
+        var assignmentMode = roomId.HasValue ? "Manual" : "Automatic";
+        var isOverride = roomId.HasValue && IsAssignmentOverride(registration, assignedRoom);
+
+        if (isOverride && string.IsNullOrWhiteSpace(normalizedAssignmentNote))
+            throw new InvalidOperationException("Vui lòng nhập lý do khi xếp phòng khác nguyện vọng ban đầu.");
+
+        if (string.IsNullOrWhiteSpace(normalizedAssignmentNote))
+            normalizedAssignmentNote = BuildAssignmentNote(
+                registration,
+                assignedRoom,
+                assignmentMode);
 
         var contractCode = $"HD-{DateTime.Now:yyyyMMddHHmmss}";
 
@@ -144,7 +171,7 @@ public class RoomRegistrationService : IRoomRegistrationService
                 EndDate = registration.EndDate,
                 DepositAmount = 500000,
                 MonthlyFee = assignedRoom.MonthlyFee,
-                Terms = BuildDefaultTerms(registration),
+                Terms = BuildDefaultTerms(registration, normalizedAssignmentNote),
                 Status = "PendingSignature"
             };
 
@@ -154,6 +181,9 @@ public class RoomRegistrationService : IRoomRegistrationService
 
             registration.Status = "Approved";
             registration.AssignedRoomId = assignedRoom.RoomId;
+            registration.AssignmentMode = assignmentMode;
+            registration.AssignmentNote = normalizedAssignmentNote;
+            registration.AssignedAt = DateTime.UtcNow;
             await _repository.UpdateAsync(registration);
 
             student.Status = "PendingSignature";
@@ -178,6 +208,11 @@ public class RoomRegistrationService : IRoomRegistrationService
             }
 
             throw;
+        }
+        }
+        finally
+        {
+            approvalLock.Release();
         }
     }
 
@@ -227,6 +262,20 @@ public class RoomRegistrationService : IRoomRegistrationService
         }
     }
 
+    private async Task EnsureStudentHasNoActiveContractAsync(long studentId)
+    {
+        var contracts = await _contractRepository.GetByStudentIdAsync(studentId);
+        var blockingContractStatuses = new HashSet<string>(
+            new[] { "Active", "PendingSignature" },
+            StringComparer.OrdinalIgnoreCase);
+
+        if (contracts.Any(item =>
+            blockingContractStatuses.Contains(item.Status)))
+        {
+            throw new InvalidOperationException("Sinh viên đang có hợp đồng nội trú hiệu lực hoặc đang chờ ký.");
+        }
+    }
+
     private static void ValidateRegistrationDates(DateTime startDate, DateTime endDate)
     {
         if (endDate <= startDate)
@@ -250,11 +299,52 @@ public class RoomRegistrationService : IRoomRegistrationService
         return score + (int)Math.Round(riskScore);
     }
 
-    private static string BuildDefaultTerms(RoomRegistration registration)
+    private static string NormalizeAssignmentNote(string? assignmentNote)
+    {
+        return string.IsNullOrWhiteSpace(assignmentNote)
+            ? string.Empty
+            : assignmentNote.Trim();
+    }
+
+    private static bool IsAssignmentOverride(
+        RoomRegistration registration,
+        AvailableRoomDto assignedRoom)
+    {
+        return !IsSameCode(registration.BuildingName, assignedRoom.BuildingName) ||
+            !IsSameCode(registration.RoomType, assignedRoom.RoomType);
+    }
+
+    private static string BuildAssignmentNote(
+        RoomRegistration registration,
+        AvailableRoomDto assignedRoom,
+        string assignmentMode)
+    {
+        var fitNote = IsAssignmentOverride(registration, assignedRoom)
+            ? "Xếp phòng thay thế do phòng mong muốn không còn giường phù hợp."
+            : "Xếp đúng nguyện vọng đăng ký.";
+
+        return $"{assignmentMode}: {fitNote}";
+    }
+
+    private static bool IsSameCode(string? first, string? second)
+    {
+        if (string.IsNullOrWhiteSpace(first) || string.IsNullOrWhiteSpace(second))
+            return true;
+
+        return string.Equals(
+            first.Trim(),
+            second.Trim(),
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string BuildDefaultTerms(
+        RoomRegistration registration,
+        string assignmentNote)
     {
         return "Sinh viên sử dụng phòng đúng thời hạn, đóng tiền đúng hạn, "
             + "không tự ý chuyển phòng, tuân thủ nội quy ký túc xá và bàn giao "
-            + $"phòng khi kết thúc hợp đồng ngày {registration.EndDate:dd/MM/yyyy}.";
+            + $"phòng khi kết thúc hợp đồng ngày {registration.EndDate:dd/MM/yyyy}. "
+            + $"Ghi chú xếp phòng: {assignmentNote}";
     }
 
 }
