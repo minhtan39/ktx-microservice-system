@@ -126,8 +126,15 @@ public sealed class AccountStore
 
                 if (existing != null)
                 {
+                    var targetUsername = string.IsNullOrWhiteSpace(student.Username)
+                        ? existing.Username
+                        : student.Username;
+                    var shouldRename = !existing.Username.Equals(targetUsername, StringComparison.OrdinalIgnoreCase) &&
+                        !Users.ContainsKey(targetUsername);
+
                     var enriched = existing with
                     {
+                        Username = shouldRename ? targetUsername : existing.Username,
                         StudentId = student.StudentId is > 0
                             ? student.StudentId
                             : existing.StudentId,
@@ -148,7 +155,10 @@ public sealed class AccountStore
 
                     if (!Equals(existing, enriched))
                     {
-                        Users[existing.Username] = enriched;
+                        if (shouldRename)
+                            Users.TryRemove(existing.Username, out _);
+
+                        Users[enriched.Username] = enriched;
                         changed = true;
                     }
 

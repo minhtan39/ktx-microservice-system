@@ -429,7 +429,10 @@ app.MapPost("/api/auth/accounts/{username}/access-link", async (
     var recipientEmail = account.Email;
     var recipientName = account.FullName;
 
-    if (account.Role.Equals("Student", StringComparison.OrdinalIgnoreCase))
+    if (account.Role.Equals("Student", StringComparison.OrdinalIgnoreCase) &&
+        (string.IsNullOrWhiteSpace(recipientEmail) ||
+         string.IsNullOrWhiteSpace(recipientName) ||
+         recipientName.Equals(account.Username, StringComparison.OrdinalIgnoreCase)))
     {
         var contact = await TryResolveStudentContactAsync(
             account,
@@ -437,10 +440,13 @@ app.MapPost("/api/auth/accounts/{username}/access-link", async (
 
         if (contact != null)
         {
-            recipientEmail = string.IsNullOrWhiteSpace(contact.Email)
-                ? recipientEmail
-                : contact.Email;
-            recipientName = string.IsNullOrWhiteSpace(contact.FullName)
+            recipientEmail = string.IsNullOrWhiteSpace(recipientEmail) &&
+                !string.IsNullOrWhiteSpace(contact.Email)
+                    ? contact.Email
+                    : recipientEmail;
+            recipientName = string.IsNullOrWhiteSpace(contact.FullName) ||
+                (!string.IsNullOrWhiteSpace(recipientName) &&
+                 !recipientName.Equals(account.Username, StringComparison.OrdinalIgnoreCase))
                 ? recipientName
                 : contact.FullName;
         }
