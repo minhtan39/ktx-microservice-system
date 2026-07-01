@@ -82,6 +82,7 @@ services:
       Payment__WebhookSecret: "${PAYMENT_WEBHOOK_SECRET:-}"
       Integration__AuthServiceBaseUrl: "http://auth-service:8080"
       Integration__RoomServiceBaseUrl: "http://room-service:8080"
+      Integration__ContractStudentServiceBaseUrl: "http://contract-student-service:8080"
       InternalService__ApiKey: "${INTERNAL_SERVICE_KEY:?Set INTERNAL_SERVICE_KEY in .env}"
       AI__ApiKey: "${AI_API_KEY:-}"
       AI__Endpoint: "${AI_ENDPOINT:-https://api.openai.com/v1/chat/completions}"

@@ -46,6 +46,13 @@ builder.Services.AddHttpClient("AuthService", client =>
     if (!string.IsNullOrWhiteSpace(internalServiceKey))
         client.DefaultRequestHeaders.Add("X-Internal-Service-Key", internalServiceKey);
 });
+builder.Services.AddHttpClient("ContractStudentService", client =>
+{
+    var contractStudentServiceBaseUrl = builder.Configuration["Integration:ContractStudentServiceBaseUrl"]
+        ?? "http://contract-student-service:8080";
+
+    client.BaseAddress = new Uri(contractStudentServiceBaseUrl);
+});
 
 var app = builder.Build();
 
@@ -1087,11 +1094,24 @@ app.MapPost("/api/incidents/analyze", async Task<IResult> (
     return Results.Ok(result);
 });
 
-app.MapPost("/api/incidents", (
+app.MapPost("/api/incidents", async Task<IResult> (
     CreateIncidentRequest request,
     HttpRequest httpRequest,
-    BillingStore store) =>
-    CreateIncident(request, GetRequestIdentity(httpRequest), store));
+    BillingStore store,
+    IHttpClientFactory httpClientFactory) =>
+{
+    var identity = GetRequestIdentity(httpRequest);
+    var contractValidation = await ValidateIncidentContractAsync(
+        request,
+        identity,
+        httpRequest,
+        httpClientFactory);
+
+    if (contractValidation != null)
+        return contractValidation;
+
+    return CreateIncident(request, identity, store);
+});
 
 app.MapMethods(
     "/api/incidents/{id:long}/assign",
@@ -2320,6 +2340,45 @@ static decimal GetDecimal(JsonElement element, params string[] names)
         : 0;
 }
 
+static DateTime? GetNullableDate(JsonElement element, params string[] names)
+{
+    var value = GetString(element, names);
+
+    return DateTime.TryParse(
+        value,
+        CultureInfo.InvariantCulture,
+        DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+        out var parsed)
+            ? parsed
+            : null;
+}
+
+static string NormalizeIncidentRoom(string? value)
+{
+    var normalized = NormalizeText(value ?? string.Empty)
+        .Replace("phong", string.Empty, StringComparison.OrdinalIgnoreCase)
+        .Replace("room", string.Empty, StringComparison.OrdinalIgnoreCase)
+        .Replace("#", string.Empty, StringComparison.OrdinalIgnoreCase)
+        .Replace("-", string.Empty, StringComparison.OrdinalIgnoreCase)
+        .Trim();
+
+    return normalized;
+}
+
+static string NormalizeText(string value)
+{
+    var builder = new StringBuilder(value.Length);
+    var normalized = value.Trim().Normalize(NormalizationForm.FormD);
+
+    foreach (var character in normalized)
+    {
+        if (CharUnicodeInfo.GetUnicodeCategory(character) != UnicodeCategory.NonSpacingMark)
+            builder.Append(char.ToLowerInvariant(character));
+    }
+
+    return Regex.Replace(builder.ToString().Normalize(NormalizationForm.FormC), @"\s+", string.Empty);
+}
+
 static async Task<RoomSyncResult> SyncRoomForIncidentAsync(
     MaintenanceIncident incident,
     string nextStatus,
@@ -2686,6 +2745,110 @@ static IResult CreateIncident(CreateIncidentRequest request, RequestIdentity ide
     });
 
     return Results.Ok(incident);
+}
+
+static async Task<IResult?> ValidateIncidentContractAsync(
+    CreateIncidentRequest request,
+    RequestIdentity identity,
+    HttpRequest httpRequest,
+    IHttpClientFactory httpClientFactory)
+{
+    if (request.StudentId <= 0)
+        return Results.BadRequest(new { message = "studentId is required." });
+
+    if (identity.Role.Equals("Student", StringComparison.OrdinalIgnoreCase))
+    {
+        var requestCode = request.StudentCode?.Trim();
+        var sameStudentId = identity.StudentId.HasValue &&
+            identity.StudentId.Value == request.StudentId;
+        var sameStudentCode = !string.IsNullOrWhiteSpace(identity.StudentCode) &&
+            !string.IsNullOrWhiteSpace(requestCode) &&
+            identity.StudentCode.Equals(requestCode, StringComparison.OrdinalIgnoreCase);
+
+        if (!sameStudentId && !sameStudentCode)
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+    }
+
+    var client = httpClientFactory.CreateClient("ContractStudentService");
+    var authorization = httpRequest.Headers.Authorization.ToString();
+
+    if (!string.IsNullOrWhiteSpace(authorization))
+        client.DefaultRequestHeaders.TryAddWithoutValidation("Authorization", authorization);
+
+    HttpResponseMessage response;
+
+    try
+    {
+        response = await client.GetAsync($"/api/contracts/student/{request.StudentId}");
+    }
+    catch (HttpRequestException)
+    {
+        return Results.Problem(
+            title: "Không kiểm tra được hợp đồng",
+            detail: "BillingService chưa kết nối được ContractStudentService để xác thực phòng đang thuê.",
+            statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+    catch (TaskCanceledException)
+    {
+        return Results.Problem(
+            title: "Kiểm tra hợp đồng quá thời gian",
+            detail: "ContractStudentService phản hồi quá chậm khi xác thực phòng đang thuê.",
+            statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+
+    if (response.StatusCode == System.Net.HttpStatusCode.Forbidden)
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+    if (!response.IsSuccessStatusCode)
+    {
+        return Results.Problem(
+            title: "Không kiểm tra được hợp đồng",
+            detail: "Không xác thực được hợp đồng đang thuê của sinh viên.",
+            statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+
+    using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+    var contracts = EnumeratePayloadItems(document.RootElement).ToList();
+    var today = DateTime.UtcNow.Date;
+    var requestedRoom = NormalizeIncidentRoom(request.RoomName);
+    var requestedBuilding = NormalizeText(request.Building ?? string.Empty);
+
+    foreach (var contract in contracts)
+    {
+        var status = GetString(contract, "status");
+
+        if (!status.Equals("Active", StringComparison.OrdinalIgnoreCase))
+            continue;
+
+        var startDate = GetNullableDate(contract, "startDate");
+        var endDate = GetNullableDate(contract, "endDate");
+
+        if (startDate.HasValue && startDate.Value.Date > today)
+            continue;
+
+        if (!endDate.HasValue || endDate.Value.Date < today)
+            continue;
+
+        var contractRoom = NormalizeIncidentRoom(GetString(contract, "roomId"));
+        var contractBuilding = NormalizeText(
+            GetString(contract, "buildingName", "building"));
+
+        if (string.IsNullOrWhiteSpace(requestedRoom) ||
+            requestedRoom != contractRoom)
+            continue;
+
+        if (!string.IsNullOrWhiteSpace(requestedBuilding) &&
+            !string.IsNullOrWhiteSpace(contractBuilding) &&
+            requestedBuilding != contractBuilding)
+            continue;
+
+        return null;
+    }
+
+    return Results.BadRequest(new
+    {
+        message = "Bạn chưa có hợp đồng đang thuê còn hiệu lực nên không thể gửi yêu cầu sửa chữa."
+    });
 }
 
 static bool HasAiAnalysis(CreateIncidentRequest request) =>

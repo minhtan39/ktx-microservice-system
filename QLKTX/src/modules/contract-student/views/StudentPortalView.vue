@@ -197,6 +197,9 @@
         <v-alert v-if="incidentSuccess" type="success" variant="tonal" closable class="mb-4" @click:close="incidentSuccess = ''">
           {{ incidentSuccess }}
         </v-alert>
+        <v-alert v-if="incidentBlockReason" type="warning" variant="tonal" class="mb-4">
+          {{ incidentBlockReason }}
+        </v-alert>
 
         <v-form class="registration-form" @submit.prevent="submitIncident">
           <v-row dense>
@@ -275,7 +278,7 @@
               color="primary"
               variant="tonal"
               :loading="incidentAnalyzing"
-              :disabled="!incidentForm.description.trim()"
+              :disabled="Boolean(incidentBlockReason) || !incidentForm.description.trim()"
               prepend-icon="mdi-auto-fix"
               @click="analyzeIncident"
             >
@@ -285,7 +288,7 @@
               color="success"
               type="submit"
               :loading="incidentSubmitting"
-              :disabled="!student || !repairRoom"
+              :disabled="Boolean(incidentBlockReason)"
               prepend-icon="mdi-send-outline"
             >
               Gửi yêu cầu sửa chữa
@@ -747,9 +750,52 @@ const activeRegistration = computed(() =>
   ownRegistrations.value.find((registration) =>
     String(registration.status || '').toLowerCase() === 'pending'))
 
+const startOfToday = () => {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  return today
+}
+
+const parseContractDate = (value) => {
+  if (!value)
+    return null
+
+  const parsed = new Date(value)
+
+  if (Number.isNaN(parsed.getTime()))
+    return null
+
+  parsed.setHours(0, 0, 0, 0)
+  return parsed
+}
+
+const isCurrentHousingContract = (contract) => {
+  if (String(contract?.status || '').toLowerCase() !== 'active')
+    return false
+
+  const today = startOfToday()
+  const start = parseContractDate(contract.startDate)
+  const end = parseContractDate(contract.endDate)
+
+  if (start && start > today)
+    return false
+
+  return Boolean(end && end >= today)
+}
+
 const activeHousingContract = computed(() =>
-  ownContracts.value.find((contract) =>
-    ['active', 'pendingsignature'].includes(String(contract.status || '').toLowerCase())))
+  ownContracts.value.find(isCurrentHousingContract))
+
+const registrationBlockingContract = computed(() =>
+  ownContracts.value.find((contract) => {
+    const status = String(contract.status || '').toLowerCase()
+
+    if (!['active', 'pendingsignature'].includes(status))
+      return false
+
+    const end = parseContractDate(contract.endDate)
+    return !end || end >= startOfToday()
+  }))
 
 const repairRoom = computed(() => {
   const contract = activeHousingContract.value
@@ -773,13 +819,26 @@ const repairRoomLabel = computed(() => {
 })
 
 const currentRoom = computed(() =>
-  repairRoom.value ? repairRoomLabel.value : student.value?.residenceHistory ? 'Có' : 'Chưa có')
+  repairRoom.value ? repairRoomLabel.value : 'Chưa có')
+
+const incidentBlockReason = computed(() => {
+  if (!student.value)
+    return 'Chưa tìm thấy hồ sơ sinh viên để gửi yêu cầu sửa chữa.'
+
+  if (!activeHousingContract.value)
+    return 'Bạn chưa có hợp đồng đang thuê còn hiệu lực nên không thể gửi yêu cầu sửa chữa.'
+
+  if (!repairRoom.value)
+    return 'Hợp đồng đang thuê chưa có thông tin phòng để gửi yêu cầu sửa chữa.'
+
+  return ''
+})
 
 const registrationBlockReason = computed(() => {
   if (!student.value) return 'Chưa tìm thấy hồ sơ sinh viên nên chưa thể gửi đăng ký.'
 
-  if (activeHousingContract.value) {
-    return `Bạn đang có hợp đồng ${activeHousingContract.value.contractCode} còn hiệu lực, không thể gửi thêm đơn đăng ký nội trú.`
+  if (registrationBlockingContract.value) {
+    return `Bạn đang có hợp đồng ${registrationBlockingContract.value.contractCode} còn hiệu lực, không thể gửi thêm đơn đăng ký nội trú.`
   }
 
   if (activeRegistration.value) {
@@ -942,13 +1001,8 @@ const analyzeIncident = async () => {
 }
 
 const submitIncident = async () => {
-  if (!student.value) {
-    incidentError.value = 'Chưa tìm thấy hồ sơ sinh viên để gửi yêu cầu sửa chữa.'
-    return
-  }
-
-  if (!repairRoom.value) {
-    incidentError.value = 'Bạn chưa có hợp đồng hoặc phòng đang ở để gửi yêu cầu sửa chữa.'
+  if (incidentBlockReason.value) {
+    incidentError.value = incidentBlockReason.value
     return
   }
 
@@ -988,7 +1042,9 @@ const submitIncident = async () => {
     incidentAiSuggestion.value = null
     await loadIncidents()
   } catch (err) {
-    incidentError.value = 'Không gửi được yêu cầu sửa chữa. Kiểm tra Gateway và BillingService.'
+    incidentError.value = getApiErrorMessage(
+      err,
+      'Không gửi được yêu cầu sửa chữa. Kiểm tra Gateway và BillingService.')
     console.error(err)
   } finally {
     incidentSubmitting.value = false
