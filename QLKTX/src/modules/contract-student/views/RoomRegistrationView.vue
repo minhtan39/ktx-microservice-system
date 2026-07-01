@@ -66,7 +66,19 @@
       </button>
     </div>
 
-    <v-alert v-if="message" :type="messageType" variant="tonal" class="mb-4">{{ message }}</v-alert>
+    <transition name="toast-slide">
+      <div
+        v-if="messageVisible"
+        :class="['floating-toast', messageType]"
+        role="alert"
+      >
+        <span :class="['mdi', messageIcon]"></span>
+        <span>{{ message }}</span>
+        <button type="button" @click="messageVisible = false">
+          <span class="mdi mdi-close"></span>
+        </button>
+      </div>
+    </transition>
 
     <v-card v-if="!isApprovalView" class="pa-5 mb-4 form-panel">
       <div class="panel-head">
@@ -396,7 +408,7 @@
                   v-for="room in availableRoomsForRegistration(selectedRegistration)"
                   :key="room.roomId"
                   :class="{ selected: approvalDraft(selectedRegistration).roomId === room.roomId }"
-                  @click="approvalDraft(selectedRegistration).roomId = room.roomId"
+                  @click="selectRoomForApproval(selectedRegistration, room)"
                 >
                   <td>
                     <v-radio
@@ -549,6 +561,7 @@ const loading = ref(false)
 const saving = ref(false)
 const message = ref('')
 const messageType = ref('success')
+const messageVisible = ref(false)
 const students = ref([])
 const registrations = ref([])
 const contracts = ref([])
@@ -571,6 +584,7 @@ const rejectReason = ref('')
 const rejectError = ref('')
 const currentPage = ref(1)
 const pageSize = 8
+let messageTimer = null
 
 const isApprovalView = computed(() => route.name === 'RoomRegistrationApproval')
 const pageKicker = computed(() => isApprovalView.value ? 'Room Approval' : 'Online Registration')
@@ -585,6 +599,12 @@ const emptyText = computed(() =>
     ? 'Không có đơn chờ duyệt trong nhóm đang chọn.'
     : 'Chưa có đơn đăng ký phù hợp.',
 )
+const messageIcon = computed(() => ({
+  error: 'mdi-alert-circle-outline',
+  warning: 'mdi-alert-outline',
+  info: 'mdi-information-outline',
+  success: 'mdi-check-circle-outline',
+}[messageType.value] || 'mdi-check-circle-outline'))
 
 const statusOptions = [
   { title: 'Chỉ đơn chờ duyệt', value: 'Pending' },
@@ -772,6 +792,7 @@ watch(
     roomTypeFilter.value = 'All'
     registrationSearch.value = ''
     message.value = ''
+    messageVisible.value = false
   },
   { immediate: true },
 )
@@ -787,8 +808,20 @@ watch(filteredRegistrations, () => {
 })
 
 const showMessage = (text, type = 'success') => {
+  if (messageTimer) {
+    window.clearTimeout(messageTimer)
+  }
+
   message.value = text
   messageType.value = type
+  messageVisible.value = Boolean(text)
+
+  if (text) {
+    messageTimer = window.setTimeout(() => {
+      messageVisible.value = false
+      messageTimer = null
+    }, 4500)
+  }
 }
 
 const loadStudents = async () => {
@@ -914,6 +947,7 @@ const openRejectDialog = (registration) => {
   rejectReason.value = ''
   rejectError.value = ''
   message.value = ''
+  messageVisible.value = false
   rejectDialog.value = true
 }
 
@@ -988,7 +1022,7 @@ const openApprovalDialog = async (registration) => {
 
   const suggested = suggestedRoomForRegistration(registration)
   if (suggested) {
-    draft.roomId = suggested.roomId
+    selectRoomForApproval(registration, suggested)
   }
 
   approvalDialog.value = true
@@ -1068,6 +1102,7 @@ const approvalDraft = (registration) => {
 const clearDraftRoom = (registrationId) => {
   if (approvalDrafts.value[registrationId]) {
     approvalDrafts.value[registrationId].roomId = null
+    approvalDrafts.value[registrationId].assignmentNote = ''
   }
 }
 
@@ -1112,7 +1147,40 @@ const selectSuggestedRoom = (registration) => {
   const draft = approvalDraft(registration)
   draft.buildingName = suggested.buildingName || ''
   draft.roomType = suggested.roomType || ''
-  draft.roomId = suggested.roomId
+  selectRoomForApproval(registration, suggested)
+}
+
+const selectRoomForApproval = (registration, room) => {
+  const draft = approvalDraft(registration)
+  draft.roomId = room.roomId
+
+  if (isAssignmentOverrideForRoom(registration, room)) {
+    if (!String(draft.assignmentNote || '').trim()) {
+      draft.assignmentNote = defaultAssignmentNote(registration, room)
+    }
+  } else {
+    draft.assignmentNote = ''
+  }
+}
+
+const isAssignmentOverrideForRoom = (registration, room) => {
+  return !isSameCode(room.buildingName, registration.buildingName) ||
+    !isSameCode(room.roomType, registration.roomType)
+}
+
+const defaultAssignmentNote = (registration, room) => {
+  const matchesBuilding = isSameCode(room.buildingName, registration.buildingName)
+  const matchesType = isSameCode(room.roomType, registration.roomType)
+
+  if (matchesBuilding && !matchesType) {
+    return `Phòng ${registration.roomType || 'mong muốn'} tại tòa ${registration.buildingName || ''} không còn giường phù hợp, xếp sang loại phòng ${room.roomType} cùng tòa còn giường.`
+  }
+
+  if (!matchesBuilding && matchesType) {
+    return `Tòa ${registration.buildingName || 'mong muốn'} không còn phòng phù hợp, xếp sang tòa ${room.buildingName} cùng loại phòng ${room.roomType}.`
+  }
+
+  return `Phòng theo nguyện vọng ban đầu không còn giường phù hợp, xếp sang phòng ${room.roomNumber || room.roomId} tòa ${room.buildingName} còn giường đúng giới tính.`
 }
 
 const selectedRoomForRegistration = (registration) => {
@@ -1129,8 +1197,7 @@ const needsAssignmentNote = (registration) => {
 
   if (!selectedRoom) return false
 
-  return !isSameCode(selectedRoom.buildingName, registration.buildingName) ||
-    !isSameCode(selectedRoom.roomType, registration.roomType)
+  return isAssignmentOverrideForRoom(registration, selectedRoom)
 }
 
 const roomFitNote = (registration, room) => {
@@ -1345,6 +1412,71 @@ onMounted(loadAll)
 
 .status-tabs button:not(.active) strong {
   background: #eaf8f0;
+}
+
+.floating-toast {
+  align-items: flex-start;
+  position: fixed;
+  z-index: 10000;
+  top: 22px;
+  right: 24px;
+  display: flex;
+  max-width: min(460px, calc(100vw - 32px));
+  min-width: min(360px, calc(100vw - 32px));
+  padding: 15px 16px;
+  border: 1px solid rgba(255, 255, 255, .22);
+  border-radius: 8px;
+  box-shadow: 0 22px 50px rgba(15, 23, 42, .28);
+  gap: 10px;
+  color: #ffffff;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.floating-toast.success {
+  background: #15803d;
+}
+
+.floating-toast.error {
+  background: #b91c1c;
+}
+
+.floating-toast.warning {
+  background: #c2410c;
+}
+
+.floating-toast.info {
+  background: #1d4ed8;
+}
+
+.floating-toast .mdi {
+  font-size: 22px;
+  line-height: 1.2;
+}
+
+.floating-toast button {
+  align-items: center;
+  display: inline-flex;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin: -4px -4px 0 6px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .14);
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.toast-slide-enter-active,
+.toast-slide-leave-active {
+  transition: opacity .18s ease, transform .18s ease;
+}
+
+.toast-slide-enter-from,
+.toast-slide-leave-to {
+  opacity: 0;
+  transform: translateY(-8px);
 }
 
 .mode-card {
